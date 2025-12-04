@@ -1,0 +1,10 @@
+{
+  "node-option": ["loader=ts-node/esm", "no-warnings"],
+  "extension": ["ts"],
+  "spec": "e2e-selenium/**/*.spec.ts",
+  "timeout": 60000,
+  "slow": 10000,
+  "reporter": "spec",
+  "exit": true,
+  "tsconfig": "./e2e-selenium/tsconfig.json"
+}

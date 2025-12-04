@@ -1,0 +1,267 @@
+@startuml FILE_SYSTEM_WORKFLOWS_V2
+
+title File Attachments System Workflows V2\n(Context-based Permissions)
+
+skinparam backgroundColor #FEFEFE
+skinparam roundcorner 10
+skinparam shadowing false
+
+actor User as U
+participant "Frontend" as FE
+participant "ChatAPI" as API
+participant "File" as FM
+participant "FileLink" as CFL
+participant "FileLinkPermission" as CFLP
+participant "MessageFileAttachment" as MFA
+participant "Message" as MSG
+database "FileSystem" as FS
+
+== Workflow 1: Upload File to Chat ==
+
+U -> FE: Click 📎, select file
+activate FE
+
+FE -> API: POST /chats/{chat_id}/upload-file\n[file binary]
+activate API
+
+API -> FM: Create File object
+activate FM
+FM -> FS: Save physical file
+FS --> FM: File path
+FM --> API: File object (file_id)
+deactivate FM
+
+API -> CFL: Create FileLink
+activate CFL
+note right: Создает ссылку на файл
+CFL --> API: FileLink (link_id)
+deactivate CFL
+
+API -> API: Get all chat participants
+
+loop For each participant
+    API -> CFLP: Create FileLinkPermission
+    activate CFLP
+    alt Is uploader?
+        CFLP -> CFLP: can_view=T, can_download=T, can_delete=T
+    else Is participant
+        CFLP -> CFLP: can_view=T, can_download=T, can_delete=F
+    end
+    deactivate CFLP
+end
+
+API --> FE: {link_id: "uuid", filename: "doc.pdf"}
+deactivate API
+
+FE -> FE: Update attachedFiles\n{file, link_id, uploading: false}
+
+deactivate FE
+
+== Workflow 2: Send Message with File ==
+
+U -> FE: Type message, click Send
+activate FE
+
+FE -> FE: Collect file_link_ids from attachedFiles
+
+FE -> API: POST /chats/{chat_id}/messages\n{content: "text", file_link_ids: ["link1"]}
+activate API
+
+API -> MSG: Create Message
+MSG --> API: Message object
+
+loop For each file_link_id
+    API -> CFL: Get FileLink by ID
+    CFL --> API: FileLink
+
+    API -> API: Verify link.chat_id == chat_id
+    API -> API: Verify link.is_deleted == False
+
+    API -> CFLP: Check permission
+    activate CFLP
+    CFLP -> CFLP: Filter(file_link=link, person=sender,\n can_view=True)
+    CFLP --> API: Has permission?
+    deactivate CFLP
+
+    alt Has permission
+        API -> MFA: Create MessageFileAttachment
+        activate MFA
+        MFA -> MFA: message=msg, file_link=link, order=idx
+        deactivate MFA
+    else No permission
+        API -> API: Skip this file
+    end
+end
+
+API --> FE: {message_id, attachments_count: 1}
+deactivate API
+
+FE -> FE: Clear attachedFiles, update UI
+
+deactivate FE
+
+== Workflow 3: Share File to Another Chat ==
+
+U -> FE: Click "Share to Chat B"
+activate FE
+
+FE -> API: POST /chats/{chat_B_id}/share-file\n{source_link_id: "link_from_chat_A"}
+activate API
+
+API -> CFL: Get source FileLink
+CFL --> API: source_link (chat_A, file_123)
+
+API -> CFLP: Check permission on source link
+activate CFLP
+CFLP -> CFLP: Filter(file_link=source_link,\n person=current_user, can_view=True)
+CFLP --> API: Has permission?
+deactivate CFLP
+
+alt Has permission
+    API -> CFL: Create NEW FileLink
+    activate CFL
+    note right
+        NEW link in Chat B
+        Same File object (file_123)
+        Different permissions!
+    end note
+    CFL -> CFL: chat=chat_B, file=source_link.file,\n uploaded_by=current_user
+    CFL --> API: new_link (chat_B, file_123)
+    deactivate CFL
+
+    API -> API: Get participants of Chat B
+
+    loop For each Chat B participant
+        API -> CFLP: Create FileLinkPermission
+        activate CFLP
+        CFLP -> CFLP: file_link=new_link,\n person=participant,\n can_view=T, can_download=T
+        deactivate CFLP
+    end
+
+    API --> FE: {new_link_id: "uuid_B"}
+else No permission
+    API --> FE: 403 Forbidden
+end
+
+deactivate API
+deactivate FE
+
+== Workflow 4: Delete File from Chat ==
+
+U -> FE: Click "Delete" in Chat A
+activate FE
+
+FE -> API: DELETE /chats/{chat_A_id}/files/{link_id}
+activate API
+
+API -> CFL: Get FileLink
+CFL --> API: file_link (chat_A, file_123)
+
+API -> CFLP: Check can_delete permission
+activate CFLP
+CFLP -> CFLP: Filter(file_link=link,\n person=current_user, can_delete=True)
+CFLP --> API: Has permission?
+deactivate CFLP
+
+alt Has permission
+    API -> CFL: Soft delete
+    activate CFL
+    CFL -> CFL: is_deleted = True
+    CFL -> CFL: save()
+    deactivate CFL
+
+    note right
+        **Important:**
+        • File object still exists
+        • FileLink in Chat B still works
+        • User can still access file in Chat B
+        • MessageFileAttachment in Chat A shows "deleted"
+    end note
+
+    API --> FE: 200 OK
+else No permission
+    API --> FE: 403 Forbidden
+end
+
+deactivate API
+
+FE -> FE: Update UI: show "File deleted"
+
+deactivate FE
+
+== Workflow 5: Download File (Context Check) ==
+
+U -> FE: Click download in Chat A
+activate FE
+
+FE -> API: GET /chats/{chat_id}/files/{link_id}/download
+activate API
+
+API -> CFL: Get FileLink
+CFL --> API: file_link
+
+API -> API: Verify link.chat_id == chat_id
+API -> API: Verify link.is_deleted == False
+
+alt Link is deleted
+    API --> FE: 404 Not Found\n"File deleted from this chat"
+else Link active
+    API -> CFLP: Check permission
+    activate CFLP
+    CFLP -> CFLP: Filter(file_link=link,\n person=current_user, can_download=True)
+    CFLP --> API: Has permission?
+    deactivate CFLP
+
+    alt Has permission
+        API -> FM: Get File object
+        FM --> API: file_obj
+
+        API -> FS: Read physical file
+        activate FS
+        FS --> API: Binary data
+        deactivate FS
+
+        API --> FE: 200 OK [file binary]
+        FE -> FE: Browser downloads file
+    else No permission
+        API --> FE: 403 Forbidden
+    end
+end
+
+deactivate API
+deactivate FE
+
+== Workflow 6: User in Multiple Chats Scenario ==
+
+note over U, FS
+    **Сценарий:** Пользователь имеет доступ к Chat A и Chat B.
+    Один файл (file_123.pdf) используется в обоих чатах.
+end note
+
+U -> FE: Delete file from Chat A
+FE -> API: DELETE /chats/A/files/{link_A}
+API -> CFL: Set link_A.is_deleted = True
+API --> FE: OK
+
+note right
+    file_link в Chat A: is_deleted = True
+    file_link в Chat B: is_deleted = False
+    Объект File: все еще существует
+end note
+
+U -> FE: Open Chat B, try to download same file
+FE -> API: GET /chats/B/files/{link_B}/download
+API -> CFL: Get link_B
+API -> API: link_B.is_deleted == False ✓
+API -> CFLP: Check permission on link_B
+API -> FS: Read file
+API --> FE: 200 OK [file downloads successfully!]
+
+note right
+    **Результат:**
+    Пользователь удалил из Chat A, но все еще может
+    получить доступ к файлу в Chat B, потому что
+    права привязаны к ссылке, а не к файлу!
+end note
+
+@enduml

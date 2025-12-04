@@ -1,0 +1,360 @@
+syntax = "proto3";
+
+package chat;
+
+option go_package = "github.com/icegreg/chat-smpl/proto/chat";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Chat service definition
+service ChatService {
+    // Chat operations
+    rpc CreateChat(CreateChatRequest) returns (Chat);
+    rpc GetChat(GetChatRequest) returns (Chat);
+    rpc ListChats(ListChatsRequest) returns (ListChatsResponse);
+    rpc UpdateChat(UpdateChatRequest) returns (Chat);
+    rpc DeleteChat(DeleteChatRequest) returns (google.protobuf.Empty);
+    rpc SearchChats(SearchChatsRequest) returns (ListChatsResponse);
+
+    // Participant operations
+    rpc AddParticipant(AddParticipantRequest) returns (ChatParticipant);
+    rpc RemoveParticipant(RemoveParticipantRequest) returns (google.protobuf.Empty);
+    rpc UpdateParticipantRole(UpdateParticipantRoleRequest) returns (ChatParticipant);
+    rpc ListParticipants(ListParticipantsRequest) returns (ListParticipantsResponse);
+
+    // Message operations
+    rpc SendMessage(SendMessageRequest) returns (Message);
+    rpc GetMessage(GetMessageRequest) returns (Message);
+    rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+    rpc UpdateMessage(UpdateMessageRequest) returns (Message);
+    rpc DeleteMessage(DeleteMessageRequest) returns (google.protobuf.Empty);
+    rpc GetThreadMessages(GetThreadMessagesRequest) returns (ListMessagesResponse);
+
+    // Reaction operations
+    rpc AddReaction(AddReactionRequest) returns (google.protobuf.Empty);
+    rpc RemoveReaction(RemoveReactionRequest) returns (google.protobuf.Empty);
+    rpc ListReactions(ListReactionsRequest) returns (ListReactionsResponse);
+
+    // Read status operations
+    rpc MarkAsRead(MarkAsReadRequest) returns (google.protobuf.Empty);
+    rpc GetReadStatus(GetReadStatusRequest) returns (ReadStatusResponse);
+
+    // Favorites operations
+    rpc AddToFavorites(AddToFavoritesRequest) returns (google.protobuf.Empty);
+    rpc RemoveFromFavorites(RemoveFromFavoritesRequest) returns (google.protobuf.Empty);
+
+    // Archive operations
+    rpc ArchiveChat(ArchiveChatRequest) returns (google.protobuf.Empty);
+    rpc UnarchiveChat(UnarchiveChatRequest) returns (google.protobuf.Empty);
+    rpc ListArchivedChats(ListArchivedChatsRequest) returns (ListChatsResponse);
+
+    // Poll operations
+    rpc CreatePoll(CreatePollRequest) returns (Poll);
+    rpc VotePoll(VotePollRequest) returns (google.protobuf.Empty);
+    rpc FinishPoll(FinishPollRequest) returns (Poll);
+    rpc DeletePoll(DeletePollRequest) returns (google.protobuf.Empty);
+}
+
+// Enums
+enum ChatType {
+    CHAT_TYPE_UNSPECIFIED = 0;
+    CHAT_TYPE_PRIVATE = 1;
+    CHAT_TYPE_GROUP = 2;
+    CHAT_TYPE_CHANNEL = 3;
+}
+
+enum ParticipantRole {
+    PARTICIPANT_ROLE_UNSPECIFIED = 0;
+    PARTICIPANT_ROLE_ADMIN = 1;
+    PARTICIPANT_ROLE_MEMBER = 2;
+    PARTICIPANT_ROLE_READONLY = 3;
+}
+
+// Messages
+message Chat {
+    string id = 1;
+    string name = 2;
+    ChatType chat_type = 3;
+    string created_by = 4;
+    google.protobuf.Timestamp created_at = 5;
+    google.protobuf.Timestamp updated_at = 6;
+    int32 participants_count = 7;
+    int32 unread_count = 8;
+    Message last_message = 9;
+}
+
+message ChatParticipant {
+    string id = 1;
+    string chat_id = 2;
+    string user_id = 3;
+    ParticipantRole role = 4;
+    google.protobuf.Timestamp joined_at = 5;
+    string username = 6;
+    string email = 7;
+}
+
+message Message {
+    string id = 1;
+    string chat_id = 2;
+    string parent_id = 3;
+    string sender_id = 4;
+    string content = 5;
+    google.protobuf.Timestamp sent_at = 6;
+    google.protobuf.Timestamp updated_at = 7;
+    bool is_deleted = 8;
+    repeated Reaction reactions = 9;
+    repeated string file_link_ids = 10;
+    int32 thread_count = 11;
+    string sender_username = 12;
+}
+
+message Reaction {
+    string id = 1;
+    string message_id = 2;
+    string user_id = 3;
+    string reaction = 4;
+    google.protobuf.Timestamp created_at = 5;
+}
+
+message Poll {
+    string id = 1;
+    string chat_id = 2;
+    string message_id = 3;
+    string created_by = 4;
+    string question = 5;
+    repeated PollOption options = 6;
+    bool is_multiple_choice = 7;
+    bool is_anonymous = 8;
+    bool is_finished = 9;
+    google.protobuf.Timestamp created_at = 10;
+    google.protobuf.Timestamp finished_at = 11;
+}
+
+message PollOption {
+    string id = 1;
+    string text = 2;
+    int32 vote_count = 3;
+    int32 sort_order = 4;
+    repeated string voters = 5;
+}
+
+message Pagination {
+    int32 page = 1;
+    int32 count = 2;
+    int32 total = 3;
+    int32 total_pages = 4;
+}
+
+// Request/Response messages
+
+// Chat operations
+message CreateChatRequest {
+    string name = 1;
+    ChatType chat_type = 2;
+    string created_by = 3;
+    repeated string participant_ids = 4;
+}
+
+message GetChatRequest {
+    string chat_id = 1;
+    string user_id = 2;
+}
+
+message ListChatsRequest {
+    string user_id = 1;
+    int32 page = 2;
+    int32 count = 3;
+}
+
+message ListChatsResponse {
+    repeated Chat chats = 1;
+    Pagination pagination = 2;
+}
+
+message UpdateChatRequest {
+    string chat_id = 1;
+    string name = 2;
+    string user_id = 3;
+}
+
+message DeleteChatRequest {
+    string chat_id = 1;
+    string user_id = 2;
+}
+
+message SearchChatsRequest {
+    string user_id = 1;
+    string query = 2;
+    int32 page = 3;
+    int32 count = 4;
+}
+
+// Participant operations
+message AddParticipantRequest {
+    string chat_id = 1;
+    string user_id = 2;
+    string added_by = 3;
+    ParticipantRole role = 4;
+}
+
+message RemoveParticipantRequest {
+    string chat_id = 1;
+    string user_id = 2;
+    string removed_by = 3;
+}
+
+message UpdateParticipantRoleRequest {
+    string chat_id = 1;
+    string user_id = 2;
+    string updated_by = 3;
+    ParticipantRole role = 4;
+}
+
+message ListParticipantsRequest {
+    string chat_id = 1;
+    int32 page = 2;
+    int32 count = 3;
+}
+
+message ListParticipantsResponse {
+    repeated ChatParticipant participants = 1;
+    Pagination pagination = 2;
+}
+
+// Message operations
+message SendMessageRequest {
+    string chat_id = 1;
+    string sender_id = 2;
+    string content = 3;
+    string parent_id = 4;
+    repeated string file_link_ids = 5;
+}
+
+message GetMessageRequest {
+    string message_id = 1;
+    string user_id = 2;
+}
+
+message ListMessagesRequest {
+    string chat_id = 1;
+    string user_id = 2;
+    int32 page = 3;
+    int32 count = 4;
+    google.protobuf.Timestamp before = 5;
+    google.protobuf.Timestamp after = 6;
+}
+
+message ListMessagesResponse {
+    repeated Message messages = 1;
+    Pagination pagination = 2;
+}
+
+message UpdateMessageRequest {
+    string message_id = 1;
+    string user_id = 2;
+    string content = 3;
+}
+
+message DeleteMessageRequest {
+    string message_id = 1;
+    string user_id = 2;
+}
+
+message GetThreadMessagesRequest {
+    string parent_id = 1;
+    string user_id = 2;
+    int32 page = 3;
+    int32 count = 4;
+}
+
+// Reaction operations
+message AddReactionRequest {
+    string message_id = 1;
+    string user_id = 2;
+    string reaction = 3;
+}
+
+message RemoveReactionRequest {
+    string message_id = 1;
+    string user_id = 2;
+    string reaction = 3;
+}
+
+message ListReactionsRequest {
+    string message_id = 1;
+}
+
+message ListReactionsResponse {
+    repeated Reaction reactions = 1;
+}
+
+// Read status operations
+message MarkAsReadRequest {
+    string chat_id = 1;
+    string message_id = 2;
+    string user_id = 3;
+}
+
+message GetReadStatusRequest {
+    string message_id = 1;
+}
+
+message ReadStatusResponse {
+    repeated string reader_ids = 1;
+    int32 count = 2;
+}
+
+// Favorites operations
+message AddToFavoritesRequest {
+    string chat_id = 1;
+    string user_id = 2;
+}
+
+message RemoveFromFavoritesRequest {
+    string chat_id = 1;
+    string user_id = 2;
+}
+
+// Archive operations
+message ArchiveChatRequest {
+    string chat_id = 1;
+    string user_id = 2;
+}
+
+message UnarchiveChatRequest {
+    string chat_id = 1;
+    string user_id = 2;
+}
+
+message ListArchivedChatsRequest {
+    string user_id = 1;
+    int32 page = 2;
+    int32 count = 3;
+}
+
+// Poll operations
+message CreatePollRequest {
+    string chat_id = 1;
+    string created_by = 2;
+    string question = 3;
+    repeated string options = 4;
+    bool is_multiple_choice = 5;
+    bool is_anonymous = 6;
+}
+
+message VotePollRequest {
+    string poll_id = 1;
+    string user_id = 2;
+    repeated string option_ids = 3;
+}
+
+message FinishPollRequest {
+    string poll_id = 1;
+    string user_id = 2;
+}
+
+message DeletePollRequest {
+    string poll_id = 1;
+    string user_id = 2;
+}

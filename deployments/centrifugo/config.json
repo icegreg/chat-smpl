@@ -1,0 +1,28 @@
+{
+  "token_hmac_secret_key": "your-centrifugo-secret-key-change-in-production",
+  "api_key": "centrifugo-api-key",
+  "admin": true,
+  "admin_password": "admin",
+  "admin_secret": "admin-secret",
+  "health": true,
+  "allowed_origins": ["http://localhost", "http://localhost:80", "http://localhost:8080"],
+  "namespaces": [
+    {
+      "name": "chat",
+      "presence": true,
+      "join_leave": true,
+      "history_size": 100,
+      "history_ttl": "24h",
+      "recover": true
+    },
+    {
+      "name": "user",
+      "presence": false,
+      "join_leave": false,
+      "history_size": 10,
+      "history_ttl": "1h"
+    }
+  ],
+  "client_insecure": false,
+  "log_level": "info"
+}

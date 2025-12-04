@@ -1,0 +1,176 @@
+@startuml FILE_SYSTEM_ARCHITECTURE_V2
+
+title File Attachments System Architecture V2\n(Context-based Permissions via File Links)
+
+skinparam backgroundColor #FEFEFE
+skinparam roundcorner 10
+skinparam shadowing false
+skinparam class {
+    BackgroundColor #E8F5E9
+    BorderColor #4CAF50
+    ArrowColor #666666
+}
+
+' ============ FILES APP ============
+
+class File <<files.File>> {
+    + id: UUID (pk)
+    + file: FileField
+    + filename: CharField(255)
+    + original_filename: CharField(255)
+    + content_type: CharField(100)
+    + size: PositiveIntegerField
+    --
+    + uploaded_by: FK(Person)
+    + uploaded_at: DateTimeField
+    + status: CharField
+    + metadata: JSONField
+}
+
+class FileShareLink <<files.FileShareLink>> {
+    + id: UUID (pk)
+    + file: FK(File)
+    + token: CharField(64)
+    --
+    + password: CharField
+    + max_downloads: PositiveIntegerField
+    + download_count: PositiveIntegerField
+    --
+    + created_by: FK(Person)
+    + created_at: DateTimeField
+    + expires_at: DateTimeField
+    + is_active: BooleanField
+}
+
+' ============ CHAT APP ============
+
+class FileLink <<chat.FileLink>> {
+    + id: UUID (pk)
+    + file: FK(files.File)
+    --
+    + uploaded_by: FK(Person)
+    + uploaded_at: DateTimeField
+    + is_deleted: BooleanField
+}
+
+class MessageFileAttachment <<chat.MessageFileAttachment>> {
+    + id: UUID (pk)
+    + message: FK(Message)
+    + file_link_id: UUIDField
+    + order: PositiveIntegerField
+}
+
+class Message <<chat.Message>> {
+    + id: UUID (pk)
+    + chat: FK(Chat)
+    + sender: FK(Person)
+    + content: TextField
+    + sent_at: DateTimeField
+    --
+    + file_attachments: Reverse(MessageFileAttachment)
+}
+
+class Chat <<chat.Chat>> {
+    + id: UUID (pk)
+    + name: CharField
+    + chat_type: CharField
+    + created_at: DateTimeField
+    --
+    + file_links: Reverse(FileLink)
+    + participants: M2M(Person)
+}
+
+class ChatParticipant <<chat.ChatParticipant>> {
+    + id: UUID (pk)
+    + chat: FK(Chat)
+    + person: FK(Person)
+    + role: CharField
+    + joined_at: DateTimeField
+}
+
+class Person <<chat.Person>> {
+    + id: UUID (pk)
+    + user: OneToOne(User)
+    + username: CharField
+    + email: EmailField
+}
+
+' ============ RELATIONSHIPS ============
+
+' File can have multiple links
+File "1" -- "0..*" FileLink : referenced by
+
+' File can have public share links
+File "1" -- "0..*" FileShareLink : has public links
+FileShareLink "*" -- "1" Person : created by
+
+' FileLink - central entity (no chat dependency)
+FileLink "*" -- "1" Person : uploaded by
+
+' Permissions on LINK (not on File!)
+FileLink "1" -- "0..*" FileLinkPermission : has permissions
+FileLinkPermission "*" -- "1" Person : granted to
+
+' Message attachments reference link by ID
+MessageFileAttachment "*" -- "1" Message : belongs to
+
+' Chat relationships
+Chat "1" -- "*" ChatParticipant : has participants
+Chat "1" -- "*" Message : has messages
+ChatParticipant "*" -- "1" Person : links to
+Message "*" -- "1" Person : sent by
+
+' ============ NOTES ============
+
+note right of FileLink
+  **КЛЮЧЕВАЯ КОНЦЕПЦИЯ: Права на основе ссылок**
+
+  • Один File → Множество FileLinks
+  • Каждый FileLink имеет свои права доступа
+  • Права СПЕЦИФИЧНЫ ДЛЯ ССЫЛКИ (не глобальные)
+
+  **Пример:**
+  file_123.pdf:
+    → FileLink A → Пользователь может просматривать/скачивать
+    → FileLink B → Пользователь может только просматривать
+
+  Один файл, разные права для каждой ссылки!
+end note
+
+note right of FileLinkPermission
+  **Права на основе ссылок**
+
+  • Права привязаны к ССЫЛКЕ, а не к файлу
+  • Каждая ссылка имеет независимые права
+  • Удаление одной ссылки не влияет на другие
+
+  **Преимущества:**
+  • Изоляция: права для Link A ≠ права для Link B
+  • Гибкость: один файл, разные уровни доступа
+  • Безопасность: удалить одну ссылку, сохранить другие
+end note
+
+note bottom of MessageFileAttachment
+  **Поддержка мягкого удаления**
+
+  • Если FileLink.is_deleted = True
+  • MessageFileAttachment сохраняется (история)
+  • Отображение: "Файл удален"
+  • Скачивание: заблокировано
+
+  **Множественные ссылки:**
+  • Один файл может иметь несколько ссылок
+  • Удалить одну ссылку → другие ссылки работают
+  • Сохраняет историю вложений
+end note
+
+note top of File
+  **Центральное хранилище (без изменений)**
+
+  • Один физический файл = один объект File
+  • Хранится в /media/files/%Y/%m/%d/
+  • Никогда не дублируется
+  • Удаляется только когда ВСЕ ссылки удалены
+end note
+
+@enduml

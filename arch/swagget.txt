@@ -1,0 +1,6037 @@
+openapi: 3.0.3
+info:
+  title:  RTU UC Confserver API
+  description: part of Public API for RTU UC Confserver
+  version: 1.0.0
+
+servers:
+  - url: https://connect2.satel.org/api/connect/v1
+    description: RTU UC Confserver, поддерживающий HTTP/2.0 
+    variables: 
+      protocol: 
+        enum:
+          - http
+          - https
+        default: http
+
+tags:
+  - name: User
+    description: Everything about Users
+    externalDocs:
+      description: Find out more
+      url: https://connect2.satel.org/api/connect/v1
+  - name: Chat
+    description: Access to user's chats
+    externalDocs:
+      description: Find out more 
+      url: https://connect2.satel.org/api/connect/v1
+  - name: Call
+    description: Everything about calling
+  - name: Meeting
+    description: Everything about Meetings
+  - name: Calendar 
+    description: Everything about Calendar
+
+paths:
+  /users:
+    get:
+      tags:
+        - User
+      summary: Get all users
+      operationId: GetUsers
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Номер страницы
+          schema:
+            type: integer
+            default: 1
+        - name: count
+          in: query
+          required: false
+          description: Количество объектов на странице
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Успешный ответ "List of users found"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                 users:
+                   type: array
+                   items:
+                    $ref: '#/components/schemas/User'
+                 pagination:
+                      $ref: '#/components/schemas/Pagination'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  # /users/{page}:
+  #   get:
+  #     tags:
+  #       - User
+  #     summary: Get all users in a page 
+  #     operationId: GetUsersByPage 
+  #     parameters:
+  #       - name: page
+  #         in: path
+  #         required: true
+  #         description: Номер страницы
+  #         schema:
+  #           type: integer
+  #       - name: count
+  #         in: query
+  #         required: false
+  #         description: Количество объектов на странице
+  #         schema:
+  #           type: integer
+  #     responses:
+  #       '200':
+  #         description: List of users found
+  #         content:
+  #           application/json:
+  #             schema:
+  #               type: array
+  #               items:
+  #                 $ref: '#/components/schemas/User'
+  #       '400':
+  #         description: Bad request 
+  #       '403':
+  #         description: Forbidden to access 
+  #       '500':
+  #         description: Server error 
+          
+  /users/{userGUID}:
+    get:
+      tags:
+        - User
+      summary: Get an user by GUID
+      operationId: GetUserByGUID
+      parameters:
+        - name: userGUID
+          in: path
+          required: true
+          description: Идентификатор пользователя 
+          schema:
+            type: string
+            example: 1234-567-894-4566
+      responses:
+        '200':
+          description: Успешный ответ "User found"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /users/{userURI}:
+    get:
+      tags:
+        - User
+      summary: Get an user by URI
+      operationId: GetUserByURI
+      parameters:
+        - name: userURI
+          in: path
+          required: true
+          description: Идентификатор пользователя 
+          schema:
+            type: string
+            example: 4564@ROOT
+      responses:
+        '200':
+          description: Успешный ответ "User found"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+
+  /users/{userGUID}/meetings:
+    get:
+      tags:
+        - Meeting
+      summary: Get user's planning meetings by user GUID
+      operationId: GetUserPlanningMeetingsByUserGUID
+      parameters:
+        - name: userGUID
+          in: path
+          required: true
+          description: Идентификатор пользователя 
+          schema:
+            type: string
+            example: 1234-567-894-4566
+        - name: date
+          in: query
+          required: true
+          description: Запрашиваемые мероприятия на дату 
+          schema:
+            type: string
+            format: date-time
+            example: 2025-11-05T10:00:00Z 
+      responses:
+        '200':
+          description: Успешный ответ "User's meetings found" 
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Meeting'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /groups:
+    get:
+      tags:
+        - User
+      summary: Get all groups 
+      operationId: GetGroups
+      responses:
+        '200':
+          description: Успешный ответ "Get list of Groups"(группы пользователя найдены)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Group'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+
+  /groups/{groupID}:
+    get:
+      tags:
+        - User
+      summary: Get a group by ID
+      operationId: GetGroupByID
+      parameters:
+        - name: groupID
+          in: path
+          required: true
+          description: Идентификатор группы 
+          schema:
+            type: string
+            example: 5656-567-894-4566
+      responses:
+        '200':
+          description: Успешный ответ "Group found"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /chat:        
+    post:
+       tags:
+        - Chat
+       summary: Create a new chat
+       operationId: CreateChat
+       parameters:
+        - name: chat
+          in: query
+          required: true
+          description: Объект чат
+          schema:
+            # Body schema with atomic property examples
+            type: object
+            properties:
+              chatName:
+                    type: string
+                    example: kotik
+              type:
+                    type: string
+                    example: group
+              users: 
+                    type: array
+                    description: Участники чата 
+                    items:
+                         type: string
+                         format: GUID
+                         example: ["1112-abdc-dsds-1121", "22bavc-fd121-sasda112"]
+              chatAvatar:
+                    type: string
+                    example: test.jpg    
+       responses:
+        '200':
+          description: Успешный ответ "Chat created" 
+          content:
+            application/json:
+             schema:
+                type: object
+                properties:
+                 id:
+                    type: string
+                    example: 123abc-456efd
+                required: ["ID"]
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+   
+  /chats:
+    get:
+      tags:
+        - Chat
+      summary: Get all chats
+      operationId: GetChats
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Страница
+          schema:
+            type: integer
+            default: 1
+        - name: count
+          in: query
+          required: false
+          description: Количество объектов на странице 
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Успешный ответ "Chats found"  
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                 chats:
+                    type: array
+                    items:
+                     $ref: '#/components/schemas/Chat'
+                 unreadMessagesCount:
+                    # Количество непрочитанных сообщений по всем чатам
+                    type: integer
+                    example: 100
+                 pagination:
+                      $ref: '#/components/schemas/Pagination'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /chats/{chatID}:
+    get:
+      tags:
+        - Chat
+      summary: Get a chat by ID
+      operationId: GetChatByID
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 6656-567-894-4566
+      responses:
+        '200':
+          description: Успешный ответ "Chat found"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                 id:
+                    type: string
+                    example: 123abc-456efd
+                 users: 
+                     type: array
+                     items:
+                          type: string
+                          format: GUID
+                          example: ["1112-abdc-dsds-1121", "22bavc-fd121-sasda112"]
+                 latestMessage:
+                    type: object
+                    items:
+                     $ref: '#/components/schemas/Message'   
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+    put:
+      tags:
+        - Chat
+      summary: Change chat's settings
+      operationId: ChangeChatSettings
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 6656-567-894-4566
+        - name: chatname
+          in: query
+          required: true
+          description: Название чата
+          schema:
+            type: string
+            example: Kotiki
+        - name: chatavatar
+          in: query
+          required: true
+          description: Аватар чата
+          schema:
+            type: string
+            example: avatar.jpg
+        - name: settings
+          in: query
+          required: true
+          description: Настройки чата
+          schema:
+            $ref: '#/components/schemas/ChatSettings'
+      responses:
+        '200':
+          description: Успешный ответ "Settings changed"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+    delete:
+      tags:
+        - Chat
+      summary: Delete a chat
+      operationId: DeleteChatByID
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 6656-567-894-4566
+      responses:
+        '200':
+          description: Успешный ответ "Chat deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /chats/{chatID}/favorites:
+   post:
+      tags:
+        - Chat
+      summary: Add chat to favorite's chat 
+      operationId: AddChatToFavorites
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 6656-567-894-4566
+      responses:
+        '200':
+          description: Успешный ответ "Chat added in favorites"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+   delete:
+      tags:
+        - Chat
+      summary: Delete a chat from favorite's chat
+      operationId: DeleteChatFromFavorites
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 6656-567-894-4566
+      responses:
+        '200':
+          description: Успешный ответ "Chat deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /chats/{chatID}/search:
+    get:
+      tags:
+        - Chat
+      summary: Get searching
+      operationId: SearchChatMessages
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 6656-567-894-4566
+        - name: users
+          in: query
+          required: true
+          description: Массив GUID пользователей
+          schema:
+            # Body schema with atomic property examples
+                    type: array
+                    items:
+                         type: string
+                         format: GUID
+                         example: ["121-vc-11", "1230cc012"]
+        - name: startDate
+          in: query
+          required: false
+          description: Дата старта поиска 
+          schema:
+            type: string
+            format: date-time
+            example: 2025-11-05T10:04:00Z
+        - name: endDate
+          in: query
+          required: false
+          description: Дата окончания поиска 
+          schema:
+            type: string
+            format: date-time
+            example: 2025-11-05T10:04:00Z
+        - name: hasAttachment
+          in: query
+          required: false
+          description: Наличие вложения
+          schema:
+            type: boolean
+            default: false
+        - name: query
+          in: query
+          required: true
+          description: Значение в поисковом запросе 
+          schema:
+            type: string
+            example: привет. 
+      responses:
+        '200':
+          description: Успешный ответ "Get result of searching"  
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                 messages:
+                    type: array
+                    items:
+                     $ref: '#/components/schemas/Message'  
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+   
+  /chats/{chatID}/users: 
+    get:
+      tags:
+        - Chat
+      summary: Get users in chat by GUID  
+      operationId: GetUsersFromChat
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: page
+          in: query
+          required: false
+          description: Страница
+          schema:
+            type: integer
+            default: 1
+        - name: count
+          in: query
+          required: false
+          description: Количество объектов на странице 
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Успешный ответ "Chat's users found"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                 users:
+                    type: array
+                    items:
+                     $ref: '#/components/schemas/User'
+                 pagination:
+                      $ref: '#/components/schemas/Pagination'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+    post:
+      tags:
+        - Chat
+      summary: Add new user(s) a chat by GUID
+      operationId: AddUsersToChat
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: users
+          in: query
+          required: true
+          description: Массив  GUID пользователей
+          schema:
+            # Body schema with atomic property examples
+                    type: array
+                    items:
+                         type: string
+                         format: GUID
+                         example: ["121-vc-11", "1230cc012"]
+      responses:
+        '200':
+          description: Успешный ответ "Users added"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /chats/{chatID}/users/{userGUID}:       
+    put:
+      tags:
+        - Chat
+      summary: Set user's settings and role
+      operationId: SetChatUserSettings
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: userGUID
+          in: path
+          required: true
+          description: Идентификатор пользователя
+          schema:
+            type: string
+            example: 2341-767-323-222
+        - name: role
+          in: query
+          required: true
+          description: Роль пользователя
+          schema:
+            type: string
+            example: moderator
+        - name: userSettings
+          in: query
+          required: true
+          description: Настройки пользователя в чате
+          schema:
+            $ref: '#/components/schemas/UserSettings'
+      responses:
+        '200':
+          description: Успешный ответ "User's settings changed"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+    delete:
+      tags:
+        - Chat
+      summary: Delete user from a chat
+      operationId: DeleteUserFromChat
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: userGUID
+          in: path
+          required: true
+          description: Идентификатор пользователя
+          schema:
+            type: string
+            example: 2234-767-323-222
+      responses:
+        '200':
+          description: Успешный ответ "User deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /chats/{chatID}/message:
+    post:
+       tags:
+        - Chat
+       summary: Create a new message
+       operationId: CreateMessage
+       parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: message
+          in: query
+          required: true
+          description: Объект создания сообщения
+          schema:
+             $ref: '#/components/schemas/CreateMessage'
+                  
+       responses:
+        '200':
+          description: Успешный ответ "Message created" 
+          content:
+            application/json:
+             schema:
+                type: object
+                properties:
+                 id:
+                    type: string
+                    example: 123abc-456efd
+                required: ["ID"]
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /chats/{chatID}/messages:
+    get:
+      tags:
+        - Chat
+      summary: Get a message's in a chat by ID
+      operationId: GetMessages
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: page
+          in: query
+          required: false
+          description: Номер страницы
+          schema:
+            type: integer
+            default: 1
+        - name: count
+          in: query
+          required: false
+          description: Количество объектов на странице
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Успешный ответ "Messages found"
+          content:
+            application/json:
+              schema:
+                properties:
+                 messages:
+                    type: object
+                    items:
+                     $ref: '#/components/schemas/Message'
+                 pagination:
+                      $ref: '#/components/schemas/Pagination'
+                
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+   
+  /chats/{chatID}/messages/{messageID}:
+    put:
+       tags:
+        - Chat
+       summary: Change a message
+       operationId: ChangeMessage
+       parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: messageID
+          in: path
+          required: true
+          description: Идентификатор сообщения
+          schema:
+            type: string
+            example: 1334-767-323-222
+        - name: message
+          in: query
+          required: true
+          description: Объект сообщения
+          schema:
+            $ref: '#/components/schemas/CreateMessage'
+       responses:
+        '200':
+          description: Успешный ответ "Message changed"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+    
+    delete:
+       tags:
+        - Chat
+       summary: Delete a message
+       operationId: DeleteMessage
+       parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: messageID
+          in: path
+          required: true
+          description: Идентификатор сообщения
+          schema:
+            type: string
+            example: 1224-767-323-222
+       responses:
+        '200':
+          description: Успешный ответ "Message deleted" 
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+   
+   
+  /chats/{chatID}/messages/{messageID}/reaction:
+    post:
+      tags:
+        - Chat
+      summary: Add a message's reaction 
+      operationId: AddMessageReaction
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 4234-767-323-222
+        - name: messageID
+          in: path
+          required: true
+          description: Идентификатор сообщения
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: reaction
+          in: query
+          required: true
+          description: Объект реакция на сообщение
+          schema:
+              type: object
+              properties:
+                reaction:
+                    $ref: '#/components/schemas/MessageReaction'
+      responses:
+        '200':
+          description: Успешный ответ "Reaction added"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+        
+    delete:
+      tags:
+        - Chat
+      summary: Delete a message's reaction
+      operationId: DeleteMessageReaction
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: messageID
+          in: path
+          required: true
+          description: Идентификатор сообщения 
+          schema:
+            type: string
+            example: 1934-767-323-222
+        - name: reaction
+          in: query
+          required: true
+          description: Объект реакция на сообщение
+          schema:
+              type: object
+              properties:
+                reaction:
+                     $ref: '#/components/schemas/MessageReaction'
+      responses:
+        '200':
+          description: Успешный ответ "Reaction deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /chats/{chatID}/messages/{messageID}/readers:
+    put:
+      tags:
+        - Chat
+      summary: Add who read 
+      operationId: MarkMessageAsRead
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: messageID
+          in: path
+          required: true
+          description: Идентификатор сообщения 
+          schema:
+            type: string
+            example: 1534-767-323-222
+      responses:
+        '200':
+          description: Успешный ответ "Readers added" 
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+    get:
+      tags:
+        - Chat
+      summary: Get who read 
+      operationId: GetMessageReaders
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: messageID
+          in: path
+          required: true
+          description: Идентификатор сообщения 
+          schema:
+            type: string
+            example: 2234-767-323-222
+      responses:
+        '200':
+          description: Успешный ответ "List of readers found"
+          content:
+            application/json:
+              schema:
+                  $ref: '#/components/schemas/WhoRead'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z" 
+          
+  /chats/{chatID}/poll:
+    post:
+      tags:
+        - Chat
+      summary: Create a poll
+      operationId: CreatePoll
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: poll
+          in: query
+          required: true
+          description: Объект опроса
+          schema:
+              type: object
+              properties:
+                poll:
+                   $ref: '#/components/schemas/Poll'
+      responses:
+        '200':
+          description: Успешный ответ "Poll created" 
+          content:
+            application/json:
+              schema:
+                properties:
+                 messageId: 
+                    type: string
+                    example: 123abc-456efd
+                 pollId: 
+                    type: string
+                    example: 123abc-456efd-11111
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+    
+  /chats/{chatID}/polls/{pollID}/finish:      
+    post:
+      tags:
+        - Chat
+      summary: Finish a poll
+      operationId: FinishPoll
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: pollID
+          in: path
+          required: true
+          description: Идентификатор опроса
+          schema:
+            type: string
+            example: 1734-767-323-222
+      responses:
+        '200':
+          description: Успешный ответ "Poll finished"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /chats/{chatID}/polls/{pollID}/votes:     
+    post:
+      tags:
+        - Chat
+      summary: Add vote  a poll
+      operationId: AddPollVotes
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: pollID
+          in: path
+          required: true
+          description: Идентификатор опроса
+          schema:
+            type: string
+            example: 3234-767-323-222
+        - name: options
+          in: query
+          required: true
+          description: Объект вариантов ответов 
+          schema:
+             $ref: '#/components/schemas/VotingPoll'
+      responses:
+        '200':
+          description: Успешный ответ "Vote added"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+      
+          
+  /chats/{chatID}/messages/{messageID}/polls/{pollID}: 
+    delete:
+      tags:
+        - Chat
+      summary: Delete a poll
+      operationId: DeletePoll
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+        - name: messageID
+          in: path
+          required: true
+          description: Идентификатор сообщения
+          schema:
+            type: string
+            example: 2234-767-323-222
+        - name: pollID
+          in: path
+          required: true
+          description: Идентификатор опроса 
+          schema:
+            type: string
+            example: 3234-767-323-222
+      responses:
+        '200':
+          description: Успешный ответ "Poll deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /chats/archive-chats:
+    get:
+      tags:
+        - Chat
+      summary: Get all archive chats  
+      operationId: GetArchiveChats
+      responses:
+        '200':
+          description: Успешный ответ "Chats found"
+          content:
+            application/json:
+              schema:
+                    type: array
+                    items:
+                     $ref: '#/components/schemas/Chat'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /chats/archive-chats/{chatID}/recovery:
+    post:
+      tags:
+        - Chat
+      summary: Recovery a chat by ID
+      operationId: RecoveryArchiveChat
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+      responses:
+        '200':
+          description: Успешный ответ "Chat recovered"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /chats/archive-chats/{chatID}:
+    delete:
+      tags:
+        - Chat
+      summary: Delete an Archive chat
+      operationId: DeleteArchiveChatByID
+      parameters:
+        - name: chatID
+          in: path
+          required: true
+          description: Идентификатор чата
+          schema:
+            type: string
+            example: 1234-767-323-222
+      responses:
+        '200':
+          description: Успешный ответ "Chat deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /calls:
+    get:
+      tags:
+        - Call
+      summary: Get all calls
+      operationId: GetAllCalls
+      parameters:
+        - name: status
+          in: query
+          description: Статус звонка
+          required: false
+          schema:
+            type: string
+            enum: [ringing, active, completed, declined, missed, cancelled, failed, all]
+            default: all
+        - name: type
+          in: query
+          description: Тип звонка
+          required: false
+          schema:
+            type: string
+            enum: [p2p, meeting,all] 
+            default: all
+        - name: direction
+          in: query
+          description: Направление P2P звонка (фильтр)
+          required: false
+          schema:
+            type: string
+            enum: [inbound, outbound]
+        - name: limit
+          in: query
+          description: Количество записей на странице
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          description: Смещение для пагинации
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: from_date 
+          in: query
+          description: Начальная дата для фильтрации 
+          required: false
+          schema:
+            type: string
+            format: date-time
+            example: "2025-10-01T00:00:00Z"
+        - name: to_date 
+          in: query
+          description: Конечная дата для фильтрации 
+          required: false
+          schema:
+            type: string
+            format: date-time
+            example: "2025-10-31T23:59:59Z"
+        - name: participant_uri 
+          in: query
+          description: URI участника для фильтрации звонков (user:, tel:, sip:)
+          required: false
+          schema:
+            type: string
+            format: uri # номер абонента 
+            example: "2765@root" # 2765 или +7985111222
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Call'
+                  pagination:
+                      $ref: '#/components/schemas/Pagination'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "Параметр 'status' имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+ 
+  /meetings/{meetingID}:
+    get:
+      tags:
+        - Meeting
+      summary: Get meeting by ID
+      operationId: GetUserMeeting 
+      parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 1234-567-894-6762
+      responses:
+        '200':
+          description: Успешный ответ "User's meeting found"
+          content:
+            application/json:
+              schema:
+                  $ref: '#/components/schemas/Meeting'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /meetings/start-adhoc:        
+    post:
+       tags:
+        - Meeting
+       summary: Start Ad-hoc meeting
+       operationId: StartAdhocMeeting
+       parameters:
+        - name: chatID
+          in: query
+          required: false
+          description: Идентификатор чата #необязательный параметр
+          schema:
+            type: string
+            example: 1234-567-894-4566
+       responses:
+        '200':
+          description: Успешный ответ "Meeting started"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meeting'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /meetings/{meetingID}/stop:        
+    post:
+       tags:
+        - Meeting
+       summary: Stop meeting for ALL
+       operationId: StopMeeting
+       parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 3421-567-894-4566
+       responses:
+        '200':
+          description: Успешный ответ "Meeting stopped" 
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /meetings/{meetingID}/kick/peers/{peerID}:        
+    post:
+       tags:
+        - Meeting
+       summary: Stop meeting by peer ID
+       operationId: StopMeetingForDevice
+       parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 3421-567-894-4566
+        - name: peerID
+          in: path
+          required: true
+          description: Идентификатор устройства пользователя
+          schema:
+            type: string
+            example: 4321-567-894-4566
+       responses:
+        '200':
+          description: Успешный ответ "Meeting stopped for user by peerID"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /meetings/{meetingID}/kick/users/{userURI}:        
+    post:
+       tags:
+        - Meeting
+       summary: Stop meeting for user by URI
+       operationId: StopMeetingForUser
+       parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 3421-567-894-4566
+        - name: userURI
+          in: path
+          required: true
+          description: Идентификатор пользователя URI  
+          schema:
+            type: string
+            example: 3421@ROOT
+       responses:
+        '200':
+          description: Meeting stopped for user by URI
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /meetings/{meetingID}/users:
+    get:
+       tags:
+        - Meeting
+       summary: Get list of users in an active meeting
+       operationId: GetMeetingUsers
+       parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 3421-567-894-4566
+       responses:
+        '200':
+          description: Успешный ответ "Users found"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                 meetingusers:
+                    type: array
+                    items:
+                     $ref: '#/components/schemas/MeetingUser'
+                 otherusers:
+                    type: array
+                    items:
+                     $ref: '#/components/schemas/OtherUser'  
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+    post:
+      tags:
+        - Meeting
+      summary: Add new users a meeting by  GUID
+      operationId: AddMeetingUsers
+      parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 1234-5678-0989-0986
+        # - name: usersURI
+        #   in: query
+        #   required: true
+        #   description: Массив URI  пользователей (комит, убрать)
+        #   schema:
+        #     # Body schema with atomic property examples
+        #             type: array
+        #             items:
+        #                 type: string
+        #                 format: URI 
+        #                 example: ["2323@ROOt", "2325@ROOt"]
+        - name: usersGUID
+          in: query
+          required: true
+          description: Массив GUID пользователей
+          schema:
+            # Body schema with atomic property examples
+                    type: array
+                    items:
+                         type: string
+                         format: GUID 
+                         example: ["2323fff-1223dsd011-asd", "11212-321asda-fs21"]
+      responses:
+        '200':
+          description: Успешный ответ "Users added"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /meetings/{meetingID}/users/dialpad:
+     post:
+      tags:
+        - Meeting
+      summary: Add new users a meeting by dealpad 
+      operationId: AddMeetingUsersByDeal
+      parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 1234-5667-0908-0099
+        - name: phoneNumber
+          in: query
+          required: true
+          description: Номер телефона 
+          schema:
+            type: string
+            example: 3434
+      responses:
+        '200':
+          description: Успешный ответ "Users added"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /meetings/{meetingID}/{registerID}/call:
+    post:
+      tags:
+        - Meeting
+      summary: Call user 
+      operationId: CallMeetingUser
+      parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 1234-4556-233-111
+        - name: registerID
+          in: path
+          required: true
+          description: Идентификатор конктретной регистрации терминала 
+          schema:
+            type: string
+            example: 1122-3334-444-5555
+      responses:
+        '200':
+          description: Успешный ответ "User called"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /meetings/{meetingID}/users/{userGUID}:
+    put:
+      tags:
+        - Meeting
+      summary: Set user's settings and role
+      operationId: SetMeetingUserSettings
+      parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия 
+          schema:
+            type: string
+            example: 1112-3333-4444-5555
+        - name: userGUID
+          in: path
+          required: true
+          description: Идентификатор пользователя   
+          schema:
+            type: string
+            example: 2222-3333-4444-555
+        - name: role
+          in: query
+          required: true
+          description: Роль пользователя
+          schema:
+            type: string
+            example: moderator
+        - name: userSettings
+          in: query
+          required: true
+          description: Настройки пользователя
+          schema:
+             $ref: '#/components/schemas/UserSettings'  
+      responses:
+        '200':
+          description: Успешный ответ "Settings changed"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+    delete:
+       tags:
+        - Meeting
+       summary: Delete user from the meeting by GUID
+       operationId: DeleteUserFromMeeting
+       parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 1234-4444-3333-5555
+        - name: userGUID
+          in: path
+          required: true
+          description: Идентификатор пользователя  
+          schema:
+            type: string
+            example: 4545@ROOT
+       responses:
+        '200':
+          description: Успешный ответ "User deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /meetings:
+    get:
+      tags:
+        - Meeting
+      summary: Get user's meetings 
+      operationId: GetMeetings
+      parameters:
+        - name: dateStart
+          in: query
+          required: false 
+          description: Дата старта меропрития
+          schema:
+            type: string
+            format: date-time
+            example: 2025-11-05T10:04:00Z
+        - name: dateEnd
+          in: query
+          required: false 
+          description: Дата окончания меропрития
+          schema:
+            type: string
+            format: date-time
+            example: 2025-11-05T10:04:00Z
+      responses:
+        '200':
+          description: Успешный ответ  "User's meetings found"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Meeting'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /meetings/{meetingID}/layouts:
+    get:
+      tags:
+        - Meeting
+      summary: Get a layout for meeting (раскладки мероприятия)
+      operationId: GetMeetingsLayouts
+      parameters:
+        - name: meetingID
+          in: path
+          required: true
+          description: Идентификатор мероприятия
+          schema:
+            type: string
+            example: 1234-4444-3333-5555
+      responses:
+        '200':
+          description: Успешный ответ "Layouts found"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Layout'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+   
+  /planning-meeting: 
+    post:
+       tags:
+        - Meeting
+       summary: Create planning meeting
+       operationId: planningMeeting
+       parameters:
+        - name: createPlanningMeeting
+          in: query
+          required: true
+          description: Объект запланированного мероприятия 
+          schema:
+              type: object
+              properties:
+                createPlanningMeeting:
+                     $ref: '#/components/schemas/CreatePlanningMeeting'
+       responses:
+        '200':
+          description: Успешный ответ "Planning Meeting created" 
+          content:
+            application/json:
+              schema:
+                properties:
+                 planningMeetingid:
+                    type: string
+                    example: 123abc-456efd
+                 messageId:
+                    type: string
+                    example: 123abc-456efddd-1dsad
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /planning-meetings/{planningmeetingID}:
+    get:
+      tags:
+        - Meeting
+      summary: Get a Planning Meetings by ID
+      operationId: GetPlanningMeeting
+      parameters:
+        - name: planningmeetingID
+          in: path
+          required: true
+          description: Идентификатор запланированного мероприятия
+          schema:
+            type: string
+            example: 1234-2222-4444-2222
+      responses:
+        '200':
+          description: Успешный ответ "Planning Meeting found"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                 meetingsid: 
+                     type: array
+                     items:
+                          type: string
+                          format: ID
+                          example: ["1112-abdc-dsds-1121", "22bavc-fd121-sasda112"]
+                 description:
+                    type: object
+                    items:
+                     $ref: '#/components/schemas/PlanningMeeting'       
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+    
+    put:
+       tags:
+        - Meeting
+       summary: Change a planning meeting
+       operationId: ChangePlanningMeeting
+       parameters:
+        - name: planningmeetingID
+          in: path
+          required: true
+          description: Идентификатор запланированного мероприятия
+          schema:
+            type: string
+            example: 1233-1222-1111-2222
+        - name: planningMeetingEdit
+          in: query
+          required: true
+          description: Объект запланированного мероприятия
+          schema:
+              $ref: '#/components/schemas/EditPlanningMeeting'
+       responses:
+        '200':
+          description: Успешный ответ "Planning Meeting changed"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+    
+    delete:
+       tags:
+        - Meeting
+       summary: Delete a planning meeting
+       operationId: DeletePlanningMeeting
+       parameters:
+        - name: planningmeetingID
+          in: path
+          required: true
+          description: Идентификатор запланированного мероприятия 
+          schema:
+            type: string
+            example: 1233-2222-3333-1111
+       responses:
+        '200':
+          description: Успешный ответ "Planning Meeting deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+     
+  /planning-meetings/{planningmeetingID}/users: 
+     post:
+      tags:
+        - Meeting
+      summary: Add new users a Planning Meeting by GUID
+      operationId: AddUsersToPlanningMeeting
+      parameters:
+        - name: planningmeetingID
+          in: path
+          required: true
+          description: Идентификатор запланированного мероприятия 
+          schema:
+            type: string
+            example: 1233-3333-2222-1111
+        - name: users
+          in: query
+          required: true
+          description: Массив GUID пользователей
+          schema:
+                    type: array
+                    items:
+                         type: string
+                         format: GUID 
+                         example: ["121-vc-11", "1230cc012"]
+      responses:
+        '200':
+          description: Успешный ответ  "Users added"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+     
+  /planning-meetings/{planningmeetingID}/users/{userGUID}:      
+     delete:
+      tags:
+        - Meeting
+      summary: Delete user from a Planning Meeting by GUID
+      operationId: DeleteUserFromPlanningMeeting
+      parameters:
+        - name: planningmeetingID
+          in: path
+          required: true
+          description: Идентификатор запланированного мероприятия 
+          schema:
+            type: string
+            example: 1232-2222-1111-2222
+        - name: userGUID
+          in: path
+          required: true
+          description: Идентификатор пользователя
+          schema:
+            type: string
+            example: 3333-4444-2222-1111
+      responses:
+        '200':
+          description: Успешный ответ "User deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+  
+  /planning-meetings/{planningmeetingID}/other-users: 
+     post:
+      tags:
+        - Meeting
+      summary: Add new users a Planning Meeting by emails
+      operationId: AddOtherUsersToPlanningMeeting
+      parameters:
+        - name: planningmeetingID
+          in: path
+          required: true
+          description: Идентификатор запланированного мероприятия 
+          schema:
+            type: string
+            example: 1111-2222-3333-2222
+        - name: emails
+          in: query
+          required: true
+          description: Массив emails внешних пользователей
+          schema:
+                    type: array
+                    items:
+                         type: string
+                         format: email 
+                         example: ["vneshi@gmail.com", "vneshi2@gmail.com"]
+      responses:
+        '200':
+          description: Успешный ответ "Other users added"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /planning-meetings/{planningmeetingID}/other-users/{otheruserGUID}:      
+     delete:
+      tags:
+        - Meeting
+      summary: Delete user from a Planning Meeting by GUID
+      operationId: DeleteOtherUserFromPlanningMeeting
+      parameters:
+        - name: planningmeetingID
+          in: path
+          required: true
+          description: Идентификатор запланированного мероприятия 
+          schema:
+            type: string
+            example: 1223-444-3333-4444
+        - name: otheruserGUID
+          in: path
+          required: true
+          description: Идентификатор внешнего пользователя
+          schema:
+            type: string
+            example: 1111-1111-3333-2222
+      responses:
+        '200':
+          description: Успешный ответ "User deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /events:
+    get:
+      tags:
+        - Calendar
+      summary: Get all events
+      operationId: GetEvents
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Страница
+          schema:
+            type: integer
+            default: 1
+        - name: count
+          in: query
+          required: false
+          description: Количество объектов на странице 
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Успешный ответ "Events found" 
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                 events:
+                    type: array
+                    items:
+                     $ref: '#/components/schemas/Event'
+                 pagination:
+                      $ref: '#/components/schemas/Pagination'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /users/{userGUID}/events:
+    get:
+      tags:
+        - Calendar  
+      summary: Get user's events by user GUID
+      operationId: GetUserEventsByUserGUID
+      parameters:
+        - name: userGUID
+          in: path
+          required: true
+          description: Идентификатор пользователя 
+          schema:
+            type: string
+            example: 1222-3333-2222-444
+        - name: date
+          in: query
+          required: true
+          description: Запрашиваемые события на дату 
+          schema:
+            type: string
+            format: date-time
+            example: 2025-11-05T10:04:00Z
+      responses:
+        '200':
+          description: Успешный ответ "Events found"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Event' 
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /users/{userGUID}/events/{eventID}:
+    get:
+      tags:
+        - Calendar  
+      summary: Get user's event by user GUID
+      operationId: GetUserEventByID
+      parameters:
+        - name: userGUID
+          in: path
+          required: true
+          description: Идентификатор пользователя 
+          schema:
+            type: string
+            example: 1234-555-6666-7777
+        - name: eventID
+          in: path
+          required: true
+          description: Идентификатор события
+          schema:
+            type: integer
+            example: 1234-444-5555-4444
+      responses:
+        '200':
+          description: Успешный ответ  "User's event found"
+          content:
+            application/json:
+              schema:
+                  $ref: '#/components/schemas/Event'
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+  /event:        
+    post:
+       tags:
+        - Calendar
+       summary: Create a new event
+       operationId: CreateEvent
+       parameters:
+        - name: Event
+          in: query
+          required: true
+          description: Объект события
+          schema:
+              $ref: '#/components/schemas/EventEdit'
+               
+       responses:
+        '200':
+          description: Успешный ответ "Event created" 
+          content:
+            application/json:
+             schema:
+                properties:
+                 mainEventId:
+                    type: string
+                    example: 123abc-456efd-dsd123
+                required: ["ID"]
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+    
+  /events/{eventID}:
+    put:
+       tags:
+        - Calendar
+       summary: Change a event
+       operationId: ChangeEvent
+       parameters:
+        - name: eventID
+          in: path
+          required: true
+          description: Идентификатор события
+          schema:
+            type: string
+            example: 11222-3333-4444-1111
+        - name: eventEdit
+          in: query
+          required: true
+          description: Объект события
+          schema:
+              $ref: '#/components/schemas/EventEdit'
+       responses:
+        '200':
+          description:  Успешный ответ "Event changed"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+    
+  /events/{maineventID}:  
+    delete:
+       tags:
+        - Calendar
+       summary: Delete a event
+       operationId: DeleteEvent
+       parameters:
+        - name: maineventID
+          in: path
+          required: true
+          description: Идентификатор события
+          schema:
+            type: string
+            example: 111-1111-2222-3333
+       responses:
+        '200':
+          description: Успешный ответ "Event deleted"
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INVALID_PARAMETER"
+                message: "{Параметр} имеет недопустимое значение"
+                timestamp: "2025-10-31T12:00:00Z"
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Требуется авторизация"
+                timestamp: "2025-10-31T12:00:00Z"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Доступ к ресурсу запрещен"
+                timestamp: "2025-10-31T12:00:00Z"
+        '404':
+          description: Не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "FORBIDDEN"
+                message: "Не найдено"
+                timestamp: "2025-10-31T12:00:00Z"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "Произошла внутренняя ошибка сервера"
+                timestamp: "2025-10-31T12:00:00Z"
+          
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        GUID:
+          type: string
+          description: Идентификатор пользователя
+          example: 1e0-98gd-o5ооо-212ddd
+        userName:
+          type: string
+          description: Фамилия и Имя пользователя 
+          example: Ivanov_Ivan
+        userAvatar:
+          type: string
+          description: Аватар пользователя
+          example: test.jpg
+        userStatus:
+          type: string
+          description: Статус пользователя
+          example: busy
+        department: 
+          type: string
+          description: Департамент 
+          example: analystsDepartment 
+        position: 
+          type: string
+          description: Должность 
+          example: analyst
+        company:
+          type: string
+          description: Компания
+          example: satel
+        login:
+          type: string
+          description: Логин 
+          example: ivanov
+        email:
+          type: string
+          description: Электронный адрес 
+          example: ivanov@satel.org
+        phone:
+          type: integer
+          description: Номер телефона 
+          example: 4533
+        isBlocked:
+          type: boolean
+          description: Статус пользователя (заблокирован, активен)
+          example: no 
+        currentUserSetting:
+            $ref: '#/components/schemas/UserSettings'
+      required:
+        - GUID
+        - userName
+        - userAvatar
+        - userStatus
+        
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Идентификатор группы
+          example: 1e0-98gd-o599-09he
+        groupName:
+          type: string
+          description: Название группы 
+          example: Analysts
+        users:
+          type: array
+          description: Массив участников группы 
+          items:
+                  $ref: '#/components/schemas/User'
+      required:
+        - id
+        - groupName
+        - users
+                  
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Идентификатор сообщения 
+          example: 1e0-98gd-o599-09he
+        type:
+          type: string
+          description: Тип сообщения (системное, пользовательское)
+          example: пользовательское
+        content:
+          type: string
+          description: Файлы,медиа, переселаемые сообщения 
+          example: hello
+        author: 
+           type: string
+           description: Автора сообщения  
+           example: 1e0-98gd-o599-09hett 
+        createdAt: 
+          type: string
+          description: Дата отправки 
+          format: date-time
+          example: 2025-11-05T10:04:00Z
+        editAt: 
+           type: string
+           description: Дата изменения сообщения 
+           format: date-time
+           example: 2025-11-05T10:04:00Z
+        dateOfRead: 
+           type: string
+           description: Дата прочтения сообщения пользователем
+           format: date-time
+           example: 2025-11-05T10:04:00Z
+        isDeleted: 
+           type: boolean
+           description: Статус удаления сообщения  
+           example: yep 
+        deletedBy: 
+           type: string
+           description: Идентификатор сообщения   
+           example: 1e0-98gd-o599-09he 
+        messageStatus: 
+          type: string
+          description: Статус отправки сообщения (доставлено, прочтено и отправка)
+          example: sent
+        reactions: 
+           type: array
+           description: Реакции на сообщение 
+           items:
+                  $ref: '#/components/schemas/MessageReaction'
+        filesLink:
+             type: array
+             description: Ссылки на медиа 
+             items:
+                type: string
+                example: ["https://example.com/link1", "https://example.com/link2"]
+      required:
+        - id
+        - type
+        - content 
+        - author
+        - messageStatus
+              
+    CreateMessage:
+      type: object
+      properties:
+        content:
+          type: string
+          description: Файлы,медиа, переселаемые сообщения 
+          example: hello
+        author: 
+           type: string
+           description: Автор сообщения 
+           example: 1e0-98gd-o599-09hett 
+        createdAt: 
+          type: string
+          description: Дата отправки 
+          format: date-time
+          example: 2025-11-05T10:04:00Z
+        isDeleted: 
+           type: boolean
+           description: Статус удаления сообщения  
+           example: true
+        filesLink:
+             type: array
+             description: Ссылки на медиа 
+             items:
+                type: string
+                example: ["https://example.com/link1", "https://example.com/link2"]
+      required:
+        - content 
+        - author
+    
+    MessageReaction:
+      type: object
+      properties:
+        reaction:
+          type: string
+          description: Ключ реакции 
+          example: 1 
+        users: 
+           type: array
+           description: GUID пользователей поставивших реакцию (не передаем при добавлении и удалении реакции)
+           items:
+                type: string
+                format: GUID 
+                example: ["1112-abdc-dsds-1121", "22bavc-fd121-sasda112"]
+      required:
+        - reaction
+
+        
+    WhoRead:
+      type: object
+      properties:
+        users: 
+           type: array
+           description: Индентификатор пользователя, прочитавшего сообщения 
+           items:
+                type: string
+                format: GUID 
+                example: ["1112-abdc-dsds-1121", "22bavc-fd121-sasda112"]
+      required:
+      - users
+          
+    Chat:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Идентификатор чата (при создании не предаем)
+          example: 123-bsds-112-gaf 
+        chatName: 
+          type: string
+          description: Название чата
+          example: kotik
+        avatar:
+          type: string
+          description: Аватар чата 
+          example: test.jpg
+        users: 
+           type: array
+           description: Участники мероприятия 
+           items:
+              $ref: '#/components/schemas/User'  
+        latestMessage:
+              $ref: '#/components/schemas/Message'
+        unreadMessagesCount:
+          type: integer
+          description: Количество непрочитанных сообщений 
+          example: 3
+        chatConfig: 
+              $ref: '#/components/schemas/ChatSettings'
+      required:
+      - chatName
+      - avatar
+      - users
+      - unreadMessagesCount
+                  
+    ChatSettings:
+      type: object
+      properties:
+        sendMessage:
+          type: boolean
+          description: Возможность отправки сообщения 
+          example: true
+          default: true
+        sendFile:
+          type: boolean
+          description: Возможность отправки файлов 
+          example: true
+          default: true
+        createPoll:
+          type: boolean
+          description: Возможность создания опроса
+          example: true
+          default: true
+        createMeeting:
+          type: boolean
+          description: Возможность позвонить в чате 
+          example: true
+          default: true
+        chatHistory:
+          type: boolean
+          description: Возможность просмотра истории чата
+          example: true
+          default: true
+        callRecord:
+          type: boolean
+          description: Возможность начать запись 
+          example: false
+          default: true
+        
+    UserSettings:
+      type: object
+      properties:
+        sendMessage:
+          type: boolean
+          description: Возможность отправки сообщения 
+          example: false
+          default: true
+        sendFile:
+          type: boolean
+          description: Возможность отправки файлов 
+          example: true
+          default: true
+        createPoll:
+          type: boolean
+          description: Возможность создания опроса
+          example: false
+          default: true
+        callRecord:
+          type: boolean
+          description: Возможность начать запись
+          example: false
+          default: true
+          
+    Poll:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Идентификатор опроса (при создании null, не передаем)
+          example: 123abc-rgt567
+        pollTopic:
+          type: string
+          description: Название опроса 
+          example: go to Bali
+        answersOptions:
+          type: array
+          description: Варианты ответов 
+          items:
+                type: string
+                example: ["yes", "no"]
+        showResultsOption:
+          type: boolean
+          description: Возможность просмотреть результат 
+          example: yep
+        multipleChoices:
+          type: boolean
+          description: Возможность множественного выбора ответов
+          example: yep
+          default: false
+        vote:
+          type: array
+          description: Проголосовавшие (при создании null, не передаем) 
+          items:
+                  $ref: '#/components/schemas/VoteResult'
+      required:
+      - pollTopic
+      - answersOptions
+      - showResultsOption
+    
+    VoteResult:
+      type: object
+      properties:
+        option:
+          type: string
+          description: Вариант ответа 
+          example: yes 
+        voteQuantity:
+          type: integer
+          description: Количество проголосовавших
+          example: 1
+        users: 
+           type: array
+           description: GUID проголосовавших пользователей 
+           items:
+                type: string
+                format: GUID 
+                example: ["1112-abdc-dsds-1121", "22bavc-fd121-sasda112"]
+      required:
+      - option
+      - voteQuantity
+      - users
+    
+    VotingPoll:
+      type: object
+      properties:
+        options:
+          type: array
+          description: Выбранные варианты 
+          items:
+                type: string
+                example: ["yes", "no"]
+      required:
+      - options
+                
+    Meeting:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Идентификатор мероприятия 
+          example: 1e0-98gd-o599-09he
+        uri:
+          type: string
+          description: URI мероприятия (УТОЧНИТЬ ПРИМЕР!)
+          example: 6767@ROOT 
+        meetingName:
+          type: string
+          description: Название мерпориятия
+          example: adhoc 
+        description:
+          type: string
+          description: Описание мероприятия 
+          example: meeting 
+        startAt: 
+          type: string
+          description: Дата начала мероприятия 
+          format: date-time
+          example: 2025-11-05T10:04:00Z
+        endAt: 
+           type: string
+           description: Дата окончания мероприятия (для старта быстрого не будет )
+           format: date-time
+           example: 2025-11-05T10:04:00Z
+        users: 
+           type: array
+           description: Участники мероприятия 
+           items:
+                  $ref: '#/components/schemas/User'
+        chatId: 
+           type: string
+           description: Индентификатор чата
+           example: 1e0-98gd-o599-09heff
+      required:
+        - id
+        - uri
+        - meetingName
+        - startAt
+        - startTime
+        - endAt
+        - endTime
+        - users
+        - chatId
+        
+    PlanningMeeting: 
+      type: object
+      properties:
+        meetingsName:
+          type: string
+          description: Название мероприятия 
+          example: daily
+        description:
+          type: string
+          description: Описание мероприятия
+          example: meeting 
+        startAt: 
+          type: integer
+          description: Дата начала мероприятия 
+          example: 23-09-2025
+        startTime: 
+          type: integer
+          description: Время начала мероприятия 
+          example: 11-00
+        endAt: 
+           type: integer
+           description: Дата окончания мероприятия
+           example: 29-09-2025
+        endTime: 
+           type: integer
+           description: Время окончания мероприятия
+           example: 13-00 
+        during:
+          type: integer
+          description: Продолжительность мероприятяи 
+          example: 120 
+        link:
+          type: string
+          description: Ссылка на мероприятие (при создании не будет, только при просмотре)
+          example: www.meetinglink.org 
+        repeatMode: 
+              $ref: '#/components/schemas/Repeat'
+        users: 
+           type: array
+           description: Участники мероприятия 
+           items:
+                type: string
+                format: GUID 
+                example: ["1112-abdc-dsds-1121", "22bavc-fd121-sasda112"]
+        otherUsers: 
+           type: array
+           description: Внешние участники мероприятия 
+           items:
+              $ref: '#/components/schemas/OtherUser'
+        settings: 
+              $ref: '#/components/schemas/MeetingSettings'
+        chatId: 
+          type: string
+          description: Идентификатор чата
+          example: 123hh-77yyy-098jj
+      required:
+        - meetingsName
+        - startAt
+        - startTime
+        - endAt
+        - endTime
+        - users
+        - repeatMode
+        - during
+        - settings
+        - chatId
+          
+    CreatePlanningMeeting: 
+      type: object
+      properties:
+        meetingsName:
+          type: string
+          description: Название мероприятия 
+          example: daily
+        description:
+          type: string
+          description: Описание мероприятия
+          example: meeting 
+        startAt: 
+          type: integer
+          description: Дата начала мероприятия 
+          example: 23-09-2025
+        startTime: 
+          type: integer
+          description: Время начала мероприятия 
+          example: 11-00
+        endAt: 
+           type: integer
+           description: Дата окончания мероприятия
+           example: 29-09-2025
+        endTime: 
+           type: integer
+           description: Время окончания мероприятия
+           example: 13-00 
+        during:
+          type: integer
+          description: Продолжительность мероприятяи 
+          example: 120 
+        repeatMode: 
+            $ref: '#/components/schemas/Repeat'
+        users: 
+           type: array
+           description: Участники мероприятия 
+           items:
+                type: string
+                format: GUID 
+                example: ["1112-abdc-dsds-1121", "22bavc-fd121-sasda112"]
+        otherUsers: 
+           type: array
+           description: Внешние участники мероприятия 
+           items:
+                type: string
+                format: email
+                example: ["perov@mail.ru", "sidorov@mai.ru"]
+        settings: 
+               $ref: '#/components/schemas/MeetingSettings'
+      required:
+        - meetingsName
+        - startAt
+        - startTime
+        - endAt
+        - endTime
+        - users
+        - repeatMode
+        - during 
+        - settings
+          
+    EditPlanningMeeting: 
+      type: object
+      properties:
+        meetingsName:
+          type: string
+          description: Название мероприятия 
+          example: daily
+        description:
+          type: string
+          description: Описание мероприятия
+          example: meeting 
+        startAt: 
+          type: integer
+          description: Дата начала мероприятия 
+          example: 23-09-2025
+        startTime: 
+          type: integer
+          description: Время начала мероприятия 
+          example: 11-00
+        endAt: 
+           type: integer
+           description: Дата окончания мероприятия
+           example: 29-09-2025
+        endTime: 
+           type: integer
+           description: Время окончания мероприятия
+           example: 13-00 
+        during:
+          type: integer
+          description: Продолжительность мероприятяи 
+          example: 120 
+        repeatMode: 
+              $ref: '#/components/schemas/Repeat'
+        otherUsers: 
+           type: array
+           description: Внешние участники мероприятия 
+           items:
+                type: string
+                format: email
+                example: ["perov@mail.ru", "sidorov@mai.ru"]
+        settings: 
+              $ref: '#/components/schemas/MeetingSettings'
+      required:
+        - meetingsName
+        - startAt
+        - startTime
+        - endAt
+        - endTime
+        - repeatMode
+        - during 
+        - settings
+          
+    Repeat:
+      type: object
+      properties:
+        repeat:
+          type: boolean
+          description: Повторяемость
+          example: not 
+        everyday:
+          type: integer
+          description: Ежедневно
+          example: 23-09-2025
+        weekly:
+          type: array
+          description: Еженедельно
+          items:
+            properties:
+              Monday:
+                type: boolean
+                example:  yes 
+              Tuesday:
+                type: boolean
+                example:  yes 
+              Wednesday:
+                type: boolean
+                example:  yes 
+              Thursday:
+                type: boolean
+                example:  yes
+              Friday:
+                type: boolean
+                example:  yes
+              Saturday:
+                type: boolean
+                example:  yes
+              Sunday:
+                type: boolean
+                example:  yes
+      required:
+        - repeat         
+                
+    OtherUser:
+      type: object
+      properties:
+        GUID:
+          type: string
+          description: Идентификатор пользователя 
+          example: 1e0-98gd-o5ооо-212ddd
+        peerID:
+          type: string
+          description: Идентификатор устройства пользователя (только в мероприятии)
+          example: 1e0-98gd-o5ооо-212
+        userName:
+          type: string
+          description: Имя внешнего пользователя 
+          example: Petrov_Petya
+      required:
+        - GUID
+        - peerId
+        - userName
+       
+    MeetingSettings: 
+      type: object
+      properties:
+        closeMood:
+          type: boolean
+          description: Вид мероприятия (закрытое/открытое)
+          example: true
+          default: false # закрытое  = true
+        auditoriumMode:
+          type: boolean
+          description: Зрительный зал 
+          example: false
+          default: false 
+        waitingRoomMode:
+          type: boolean
+          description: Комната ожидания 
+          example: false
+          default: false 
+        withPasswordMode:
+          type: boolean
+          description: Пароль мероприятия 
+          example: false
+          default: false 
+        mcuMode:
+          type: boolean
+          description: режим MCU 
+          example: false
+          default: false 
+        callRecord: 
+          type: boolean
+          description: Запись мероприятия 
+          example: true
+          default: false 
+        layoutId: 
+          type: string
+          description: Идентификатор раскладки мероприятия 
+          example: 123fff-333ggg-nnn000
+      required:
+        - closeMood
+        - auditoriumMode
+        - waitingRoomMode
+        - withPasswordMode
+        - mcuMode
+        - callRecord
+        - layoutId
+          
+    Layout:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Идентификатор раскладки мероприятия
+          example: 1e0-98gd-o599-09he
+        layoutName:
+          type: string
+          description: Название мероприятия 
+          example: gallery 
+      required:
+        - id
+        - layoutName
+     
+    MeetingUser:
+      type: object
+      properties:
+        GUID:
+          type: string
+          description: Идентификатор пользователя 
+          example: 1e0-98gd-o5ооо-212ddd
+        URI:
+          type: string
+          description: Идентификатор пользователя 
+          example: 4545@ROOT
+        peerId:
+          type: string
+          description: Идентификатор устройства пользователя 
+          example: 1e0-98gd-o5ооо-212
+        userName:
+          type: string
+          description: Фамилия и Имя пользователя 
+          example: Ivanov_Ivan
+        userAvatar:
+          type: string
+          description: Аватар пользователя
+          example: test.jpg
+        role:
+          type: string
+          description: Роль пользователя 
+          example: moderator
+        participation: 
+          type: boolean
+          description: Статус нахождения пользователя в мероприятии (Вошел,Не вошел)
+          example: true
+      required:
+        - GUID
+        - URI
+        - peerId
+        - userName
+        - userAvatar
+        - role
+        - participation 
+          
+    Event: 
+      type: object
+      properties:
+        mainId:
+          type: string
+          description: Идентификатор  всех вложенных событий
+          example: 1e0-98gd-o599-09he
+        id:
+          type: string
+          description: Идентификатор события  
+          example: 1e0-98gd-o599-09he
+        calendarId:
+          type: string
+          description: Идентификатор  календаря 
+          example: 1e0-98gd-o599-09he 
+        summary:
+          type: string
+          description: краткое описание (необязательно поле)
+          example: adhoc 
+        description:
+          type: string
+          description: Описание (необязательно поле)
+          example: встреча по задаче 
+        location:
+          type: string
+          description: место проведения мероприятия (переговорная комната, ВКС, по умолчанию ВКС)
+          example: Office meeting room 5
+        startTime: 
+          type: string
+          description: Дата начала события 
+          format: date-time
+          example: 2025-11-05T10:04:00Z
+        endTime: 
+          type: string
+          description: Дата окончания события 
+          format: date-time
+          example: 2025-11-05T10:04:00Z
+        timeZone: 
+          type: string 
+          description: Таймзона сервера
+          example: +3
+        allDay: 
+          type: boolean 
+          description: Длительность события 
+          example: false 
+        recurring: 
+          type: boolean 
+          description: Повторяемость события  
+          example: false
+        recurrenceRule: 
+             $ref: '#/components/schemas/Repeat'
+        status: 
+          type: string
+          description: Статус события (прошедшее, текущее, будущее)   
+          example: текущее
+        participants: 
+          type: array
+          description: Email участников события 
+          items:
+              type: string
+              example: ["user1@gmail.com", "user2@satel.org"]
+        attachments: 
+          type: array
+          description: Ссылки на медиа 
+          items:
+              type: string
+              example: ["https://example.com/link1", "https://example.com/link2"]
+        reminders: 
+              $ref: '#/components/schemas/Reminders'
+        createdAt:
+          type: string
+          description: дата создания события 
+          format: date-time
+          example: 2025-11-05T10:04:00Z
+        updatedAt: 
+           type: string
+           description: Дата изменения события  
+           format: date-time
+           example: 2025-11-05T10:04:00Z
+      required:
+        - mainId
+        - id
+        - calendarId
+        - summary
+        - location
+        - startTime
+        - endTime
+           
+    Reminders:
+      type: object
+      properties:
+        time:
+          type: array
+          description: Выбор повторяемости 
+          items:
+            properties:
+              no:
+                type: boolean
+                example: true 
+              0min:
+                type: boolean
+                example:  false 
+              5min:
+                type: boolean
+                example: false  
+              10min:
+                type: boolean
+                example:  false 
+              15min:
+                type: boolean
+                example:  false 
+              30min:
+                type: boolean
+                example:  false 
+              1hour:
+                type: boolean
+                example: false 
+              2hours:
+                type: boolean
+                example: false 
+              3hours:
+                type: boolean
+                example: false 
+              4hours:
+                type: boolean
+                example: false 
+              8hours:
+                type: boolean
+                example: false 
+              12hours:
+                type: boolean
+                example: false 
+              1day:
+                type: boolean
+                example: false 
+              2days:
+                type: boolean
+                example: false 
+              3days:
+                type: boolean
+                example: false 
+              1week:
+                type: boolean
+                example: false 
+              2weeks:
+                type: boolean
+                example: false 
+  
+    EventEdit: 
+      type: object
+      properties:
+        summary:
+          type: string
+          description: краткое описание (необязательно поле)
+          example: adhoc 
+        description:
+          type: string
+          description: Описание (необязательно поле)
+          example: встреча по задаче 
+        location:
+          type: string
+          description: место проведения мероприятия (переговорная комната, ВКС, по умолчанию ВКС)
+          example: Office meeting room 5
+        startTime: 
+          type: string
+          description: Дата начала события 
+          format: date-time
+          example: 2025-11-05T10:04:00Z
+        endTime: 
+          type: string
+          description: Дата окончания события 
+          format: date-time
+          example: 2025-11-05T10:04:00Z
+        allDay: 
+          type: boolean 
+          description: Длительность события 
+          example: false 
+        recurring: 
+          type: boolean 
+          description: Повторяемость события  
+          example: false
+        recurrenceRule: 
+             $ref: '#/components/schemas/Repeat'
+        participants: 
+          type: array
+          description: Email участников события 
+          items:
+              type: string
+              example: ["user1@gmail.com", "user2@satel.org"]
+        attachments: 
+          type: array
+          description: Ссылки на медиа 
+          items:
+              type: string
+              example: ["https://example.com/link1", "https://example.com/link2"]
+        reminders: 
+              $ref: '#/components/schemas/Reminders'
+      required:
+        - summary
+        - location
+        - startTime
+        - endTime
+    
+    Call:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [p2p, meeting]
+          description: Тип звонка (P2P или мероприятие)
+          example: "p2p"
+        status:
+          type: string
+          enum: [ringing, active, completed, declined, missed, cancelled, failed] 
+          description: |
+            Статус звонка:
+            - ringing: звонок идёт, ожидается ответ
+            - active: звонок принят и идёт
+            - completed: звонок завершён успешно
+            - declined: звонок отклонён получателем
+            - missed: звонок не был принят (таймаут)
+            - cancelled: звонок отменён инициатором до ответа
+            - failed: технический сбой при установлении связи
+          example: "completed"
+        direction:
+          type: string
+          enum: [inbound, outbound]
+          nullable: true
+          description: |
+            Направление звонка относительно текущего пользователя (только для P2P):
+            - inbound: входящий звонок
+            - outbound: исходящий звонок
+            - null: для ВКС-мероприятий не применимо
+          example: "outbound"
+        from:
+          type: string
+          format: uri
+          nullable: true
+          description: |
+            URI инициатора звонка. Поддерживаемые схемы:
+            - user: внутренний пользователь (user:123@domain.com) 
+            - tel: телефонный номер (tel:+79991234567)
+            - sip: SIP-адрес (sip:user@domain.com)
+            null для мероприятия
+          example: "user:123@domain.com"
+        to:
+          type: string
+          format: uri
+          nullable: true
+          description: |
+            URI получателя звонка. Поддерживаемые схемы:
+            - user: внутренний пользователь (user:456@domain.com) 
+            - tel: телефонный номер (tel:+79991234567)
+            - sip: SIP-адрес (sip:user@domain.com)
+            null для мероприятия
+          example: "user:456@domain.com"
+        displayName:
+          type: string
+          description: |
+            Отображаемое имя собеседника:
+            - для P2P: имя того, кто на другом конце (кому звоню или кто звонит)
+            - для мероприятия: название мероприятия
+          example: "Пётр Петров"
+        createdAt:
+          type: string
+          format: date-time
+          description: Время создания/инициации звонка
+          example: "2025-10-31T10:00:00Z"
+        answeredAt: 
+          type: string
+          format: date-time
+          nullable: true
+          description: Время ответа на звонок (null если не был принят)
+          example: "2025-10-31T10:00:15Z"
+        endedAt: 
+          type: string
+          format: date-time
+          nullable: true
+          description: Время окончания звонка (null для активных)
+          example: "2025-10-31T10:30:00Z"
+        duration: 
+          type: integer
+          nullable: true
+          description: Длительность разговора в секундах (null для не принятых или активных)
+          example: 1785
+        declineReason:
+          type: string
+          nullable: true
+          enum: [user_declined, busy, unavailable, timeout, technical_error]
+          description: |
+            Причина отклонения/пропуска звонка:
+            - user_declined: пользователь отклонил звонок
+            - busy: пользователь занят другим звонком
+            - unavailable: пользователь недоступен (оффлайн)
+            - timeout: превышено время ожидания ответа
+            - technical_error: техническая ошибка
+          example: "user_declined"
+        callMediaType: 
+          type: string
+          enum: [audio, video]
+          nullable: true
+          description: Тип медиа в звонке
+          example: "video"
+      required:
+        - type
+        - status
+        - answeredAt
+        - direction
+        - displayName
+        - duration
+        - endedAt
+    
+    Pagination:
+      type: object
+      properties:
+        currentPage:
+          type: integer
+          description: Текущая страница
+          example: 4
+        total:
+          type: integer
+          description: Общее количество объектов
+          example: 150
+        count:
+          type: integer
+          description: Количество объектов на странице
+          example: 20
+        offset:
+          type: integer
+          description: Текущее смещение
+          example: 0
+        hasMore:
+          type: boolean
+          description: Есть ли ещё объекты
+          example: true
+      required:
+        - currentPage
+        - total
+        - count
+        - offset
+        - hasMore
+      
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Код ошибки
+          example: "INVALID_PARAMETER"
+        message:
+          type: string
+          description: Описание ошибки
+          example: "Параметр 'status' имеет недопустимое значение"
+        timestamp:
+          type: string
+          format: date-time
+          description: Время возникновения ошибки
+          example: "2025-10-31T12:00:00Z"
+      required:
+        - error
+        - message
+        - timestamp
+              
