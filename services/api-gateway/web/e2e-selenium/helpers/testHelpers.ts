@@ -71,3 +71,52 @@ export async function clearBrowserState(driver: WebDriver): Promise<void> {
 export function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
+
+// Generate test user with specific index for multi-user tests
+export function generateTestUserWithIndex(index: number): RegisterData {
+  const timestamp = Date.now()
+  return {
+    email: `test_user_${index}_${timestamp}@example.com`,
+    username: `testuser${index}_${timestamp}`,
+    password: 'TestPassword123!',
+    displayName: `Test User ${index}`,
+  }
+}
+
+// Get user ID by calling the API from browser context
+export async function getUserIdFromApi(driver: WebDriver): Promise<string> {
+  // Wait a bit for auth to complete
+  await wait(1000)
+
+  // Execute fetch in browser context to get current user
+  const result = await driver.executeScript(`
+    return new Promise(async (resolve, reject) => {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+          reject('No access token');
+          return;
+        }
+        const response = await fetch('/api/auth/me', {
+          headers: {
+            'Authorization': 'Bearer ' + token
+          }
+        });
+        if (!response.ok) {
+          reject('API error: ' + response.status);
+          return;
+        }
+        const user = await response.json();
+        resolve(user.id);
+      } catch (e) {
+        reject(e.message);
+      }
+    });
+  `) as string
+
+  if (!result) {
+    throw new Error('Failed to get user ID from API')
+  }
+
+  return result
+}

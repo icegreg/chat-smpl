@@ -16,8 +16,10 @@ const props = defineProps<{
 const chatStore = useChatStore()
 const messageInput = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
-const typingTimeout = ref<number | null>(null)
+const lastTypingSentAt = ref<number>(0)
 const showParticipants = ref(false)
+
+const TYPING_SEND_INTERVAL = 5000 // Send typing indicator every 5 seconds
 
 const sortedMessages = computed(() => {
   return [...props.messages].sort(
@@ -59,12 +61,8 @@ async function sendMessage() {
 
   try {
     await chatStore.sendMessage({ content })
-    // Clear typing indicator
-    if (typingTimeout.value) {
-      clearTimeout(typingTimeout.value)
-      typingTimeout.value = null
-    }
-    chatStore.sendTyping(false)
+    // Reset typing timestamp so next input will send typing immediately
+    lastTypingSentAt.value = 0
   } catch {
     // Restore message on error
     messageInput.value = content
@@ -72,19 +70,13 @@ async function sendMessage() {
 }
 
 function handleInput() {
-  // Send typing indicator
-  chatStore.sendTyping(true)
+  const now = Date.now()
 
-  // Clear previous timeout
-  if (typingTimeout.value) {
-    clearTimeout(typingTimeout.value)
+  // Send typing indicator only if 5 seconds have passed since last send
+  if (now - lastTypingSentAt.value >= TYPING_SEND_INTERVAL) {
+    chatStore.sendTyping(true)
+    lastTypingSentAt.value = now
   }
-
-  // Set new timeout to stop typing indicator
-  typingTimeout.value = window.setTimeout(() => {
-    chatStore.sendTyping(false)
-    typingTimeout.value = null
-  }, 2000)
 }
 
 function handleKeyDown(event: KeyboardEvent) {

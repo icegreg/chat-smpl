@@ -5,10 +5,11 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -170,7 +171,13 @@ func (c *Client) sendCommandWithResponse(ctx context.Context, method string, par
 }
 
 func base64URLEncode(data []byte) string {
-	return hex.EncodeToString(data) // Simplified for this implementation
+	// JWT requires Base64URL encoding (no padding, URL-safe characters)
+	encoded := base64.StdEncoding.EncodeToString(data)
+	// Convert to URL-safe base64: replace + with -, / with _, and remove padding
+	encoded = strings.ReplaceAll(encoded, "+", "-")
+	encoded = strings.ReplaceAll(encoded, "/", "_")
+	encoded = strings.TrimRight(encoded, "=")
+	return encoded
 }
 
 // Event types for real-time updates

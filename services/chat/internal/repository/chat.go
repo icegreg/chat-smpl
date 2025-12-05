@@ -34,6 +34,7 @@ type ChatRepository interface {
 	AddParticipant(ctx context.Context, participant *model.ChatParticipant) error
 	GetParticipant(ctx context.Context, chatID, userID uuid.UUID) (*model.ChatParticipant, error)
 	ListParticipants(ctx context.Context, chatID uuid.UUID, page, count int) ([]model.ChatParticipant, int, error)
+	GetParticipantIDs(ctx context.Context, chatID uuid.UUID) ([]uuid.UUID, error)
 	UpdateParticipantRole(ctx context.Context, chatID, userID uuid.UUID, role model.ParticipantRole) error
 	RemoveParticipant(ctx context.Context, chatID, userID uuid.UUID) error
 	IsParticipant(ctx context.Context, chatID, userID uuid.UUID) (bool, error)
@@ -321,6 +322,25 @@ func (r *chatRepository) ListParticipants(ctx context.Context, chatID uuid.UUID,
 	}
 
 	return participants, total, nil
+}
+
+func (r *chatRepository) GetParticipantIDs(ctx context.Context, chatID uuid.UUID) ([]uuid.UUID, error) {
+	query := `SELECT user_id FROM con_test.chat_participants WHERE chat_id = $1`
+	rows, err := r.pool.Query(ctx, query, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get participant IDs: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan participant ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func (r *chatRepository) UpdateParticipantRole(ctx context.Context, chatID, userID uuid.UUID, role model.ParticipantRole) error {

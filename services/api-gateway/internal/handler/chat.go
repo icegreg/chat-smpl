@@ -9,22 +9,19 @@ import (
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	pb "github.com/icegreg/chat-smpl/proto/chat"
-	"github.com/icegreg/chat-smpl/services/api-gateway/internal/centrifugo"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/middleware"
 )
 
 type ChatHandler struct {
-	chatClient      *grpc.ChatClient
-	centrifugoClient *centrifugo.Client
-	log             logger.Logger
+	chatClient *grpc.ChatClient
+	log        logger.Logger
 }
 
-func NewChatHandler(chatClient *grpc.ChatClient, centrifugoClient *centrifugo.Client, log logger.Logger) *ChatHandler {
+func NewChatHandler(chatClient *grpc.ChatClient, log logger.Logger) *ChatHandler {
 	return &ChatHandler{
-		chatClient:      chatClient,
-		centrifugoClient: centrifugoClient,
-		log:             log,
+		chatClient: chatClient,
+		log:        log,
 	}
 }
 
@@ -107,11 +104,7 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Notify participants via Centrifugo
-	event := centrifugo.NewEvent(centrifugo.EventNewChat, chat.Id, userID.String(), chat)
-	if err := h.centrifugoClient.PublishToUsers(ctx, req.ParticipantIDs, event); err != nil {
-		h.log.Error("failed to publish chat event", "error", err)
-	}
+	// Events are now published via RabbitMQ -> websocket-service -> Centrifugo
 
 	h.respondJSON(w, http.StatusCreated, chat)
 }
@@ -195,10 +188,6 @@ func (h *ChatHandler) UpdateChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Notify via Centrifugo
-	event := centrifugo.NewEvent(centrifugo.EventUpdateChat, chatID, userID.String(), chat)
-	h.centrifugoClient.PublishEvent(ctx, event)
-
 	h.respondJSON(w, http.StatusOK, chat)
 }
 
@@ -218,10 +207,6 @@ func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 		h.handleGRPCError(w, err)
 		return
 	}
-
-	// Notify via Centrifugo
-	event := centrifugo.NewEvent(centrifugo.EventDeleteChat, chatID, userID.String(), nil)
-	h.centrifugoClient.PublishEvent(ctx, event)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -395,10 +380,6 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Notify via Centrifugo
-	event := centrifugo.NewEvent(centrifugo.EventNewMessage, chatID, userID.String(), message)
-	h.centrifugoClient.PublishEvent(ctx, event)
-
 	h.respondJSON(w, http.StatusCreated, message)
 }
 
@@ -461,10 +442,6 @@ func (h *ChatHandler) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Notify via Centrifugo
-	event := centrifugo.NewEvent(centrifugo.EventUpdateMessage, message.ChatId, userID.String(), message)
-	h.centrifugoClient.PublishEvent(ctx, event)
-
 	h.respondJSON(w, http.StatusOK, message)
 }
 
@@ -484,10 +461,6 @@ func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		h.handleGRPCError(w, err)
 		return
 	}
-
-	// Notify via Centrifugo
-	event := centrifugo.NewEvent(centrifugo.EventDeleteMessage, "", userID.String(), map[string]string{"message_id": messageID})
-	h.centrifugoClient.PublishEvent(ctx, event)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -518,13 +491,6 @@ func (h *ChatHandler) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Notify via Centrifugo
-	event := centrifugo.NewEvent(centrifugo.EventReactionAdd, "", userID.String(), map[string]string{
-		"message_id": messageID,
-		"emoji":      req.Emoji,
-	})
-	h.centrifugoClient.PublishEvent(ctx, event)
-
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -545,13 +511,6 @@ func (h *ChatHandler) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		h.handleGRPCError(w, err)
 		return
 	}
-
-	// Notify via Centrifugo
-	event := centrifugo.NewEvent(centrifugo.EventReactionRemove, "", userID.String(), map[string]string{
-		"message_id": messageID,
-		"emoji":      emoji,
-	})
-	h.centrifugoClient.PublishEvent(ctx, event)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -696,11 +655,11 @@ func (h *ChatHandler) SendTypingIndicator(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Notify via Centrifugo only (no gRPC call needed for typing indicator)
-	event := centrifugo.NewEvent(centrifugo.EventTyping, chatID, userID.String(), map[string]bool{
-		"is_typing": req.IsTyping,
-	})
-	h.centrifugoClient.PublishEvent(ctx, event)
+	// Send typing via gRPC - chat-service will publish to RabbitMQ
+	if err := h.chatClient.SendTyping(ctx, chatID, userID.String(), req.IsTyping); err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
 }

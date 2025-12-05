@@ -59,7 +59,7 @@ func main() {
 	// Initialize handlers
 	usersServiceURL := getEnv("USERS_SERVICE_URL", "http://localhost:8081")
 	authHandler := handler.NewAuthHandler(usersServiceURL, centrifugoClient, log)
-	chatHandler := handler.NewChatHandler(chatClient, centrifugoClient, log)
+	chatHandler := handler.NewChatHandler(chatClient, log)
 	centrifugoHandler := handler.NewCentrifugoHandler(centrifugoClient, log)
 
 	// Create router

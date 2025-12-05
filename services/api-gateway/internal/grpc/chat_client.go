@@ -305,3 +305,14 @@ func (c *ChatClient) DeletePoll(ctx context.Context, pollID, userID string) erro
 	})
 	return err
 }
+
+// Typing indicator
+
+func (c *ChatClient) SendTyping(ctx context.Context, chatID, userID string, isTyping bool) error {
+	_, err := c.client.SendTyping(ctx, &pb.SendTypingRequest{
+		ChatId:   chatID,
+		UserId:   userID,
+		IsTyping: isTyping,
+	})
+	return err
+}

@@ -297,3 +297,133 @@ describe('Chat List', function () {
     expect(count).to.be.at.least(1)
   })
 })
+
+describe('Messaging', function () {
+  let driver: WebDriver
+  let chatPage: ChatPage
+
+  before(async function () {
+    driver = await createDriver()
+    chatPage = new ChatPage(driver)
+  })
+
+  after(async function () {
+    await quitDriver(driver)
+  })
+
+  beforeEach(async function () {
+    await clearBrowserState(driver)
+  })
+
+  it('should show empty messages state in new chat', async function () {
+    await createTestUser(driver)
+    await chatPage.waitForChatPage()
+
+    // Create a chat
+    const chatName = `Empty Messages Test ${Date.now()}`
+    await chatPage.createChat(chatName, 'group')
+    await chatPage.waitForModalToClose()
+    await chatPage.sleep(500)
+
+    // Select the chat
+    await chatPage.selectFirstChat()
+    await chatPage.sleep(500)
+
+    // Verify empty state is shown
+    expect(await chatPage.isEmptyMessagesStateVisible()).to.be.true
+  })
+
+  it('should send a message and see it rendered', async function () {
+    await createTestUser(driver)
+    await chatPage.waitForChatPage()
+
+    // Create a chat
+    const chatName = `Messaging Test ${Date.now()}`
+    await chatPage.createChat(chatName, 'group')
+    await chatPage.waitForModalToClose()
+    await chatPage.sleep(500)
+
+    // Select the chat
+    await chatPage.selectFirstChat()
+    await chatPage.sleep(500)
+
+    // Send a message
+    const messageText = `Hello, this is a test message ${Date.now()}`
+    await chatPage.sendMessage(messageText)
+
+    // Wait for message to appear
+    await chatPage.waitForMessageContaining(messageText, 10000)
+
+    // Verify message is displayed
+    const messages = await chatPage.getMessageTexts()
+    expect(messages).to.include(messageText)
+  })
+
+  it('should send multiple messages and display them in order', async function () {
+    await createTestUser(driver)
+    await chatPage.waitForChatPage()
+
+    // Create a chat
+    const chatName = `Multiple Messages Test ${Date.now()}`
+    await chatPage.createChat(chatName, 'group')
+    await chatPage.waitForModalToClose()
+    await chatPage.sleep(500)
+
+    // Select the chat
+    await chatPage.selectFirstChat()
+    await chatPage.sleep(500)
+
+    // Send multiple messages
+    const timestamp = Date.now()
+    const message1 = `First message ${timestamp}`
+    const message2 = `Second message ${timestamp}`
+    const message3 = `Third message ${timestamp}`
+
+    await chatPage.sendMessage(message1)
+    await chatPage.waitForMessageContaining(message1)
+
+    await chatPage.sendMessage(message2)
+    await chatPage.waitForMessageContaining(message2)
+
+    await chatPage.sendMessage(message3)
+    await chatPage.waitForMessageContaining(message3)
+
+    // Verify all messages are present
+    const messages = await chatPage.getMessageTexts()
+    expect(messages).to.include(message1)
+    expect(messages).to.include(message2)
+    expect(messages).to.include(message3)
+
+    // Verify count
+    expect(await chatPage.getMessageCount()).to.be.at.least(3)
+  })
+
+  it('should receive message via real-time update (self-send test)', async function () {
+    await createTestUser(driver)
+    await chatPage.waitForChatPage()
+
+    // Create a chat
+    const chatName = `Real-time Test ${Date.now()}`
+    await chatPage.createChat(chatName, 'group')
+    await chatPage.waitForModalToClose()
+    await chatPage.sleep(1000) // Wait for websocket connection
+
+    // Select the chat
+    await chatPage.selectFirstChat()
+    await chatPage.sleep(1000)
+
+    // Check initial message count
+    const initialCount = await chatPage.getMessageCount()
+
+    // Send a message
+    const messageText = `Real-time message ${Date.now()}`
+    await chatPage.sendMessage(messageText)
+
+    // Wait for message count to increase (message arrives via WebSocket)
+    await chatPage.waitForMessageCount(initialCount + 1, 10000)
+
+    // Verify the message appeared
+    const lastMessage = await chatPage.getLastMessageText()
+    expect(lastMessage).to.equal(messageText)
+  })
+})

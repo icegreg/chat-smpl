@@ -189,7 +189,7 @@ type Event struct {
 	Payload   interface{} `json:"payload"`
 }
 
-func (p *Publisher) Publish(ctx context.Context, routingKey string, event Event) error {
+func (p *Publisher) Publish(ctx context.Context, routingKey string, event interface{}) error {
 	body, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal event: %w", err)
