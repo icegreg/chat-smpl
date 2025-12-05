@@ -113,6 +113,9 @@ func main() {
 	// Mount file routes
 	r.Mount("/files", h.Routes())
 
+	// Public avatars endpoint (no auth required)
+	r.Get("/avatars/{userId}", h.ServeAvatar)
+
 	// Start server
 	addr := getEnv("HTTP_ADDR", ":8082")
 	server := &http.Server{

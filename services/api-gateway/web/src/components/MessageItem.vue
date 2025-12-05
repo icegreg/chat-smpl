@@ -16,8 +16,43 @@ const editContent = ref('')
 
 const commonEmojis = ['👍', '❤️', '😂', '😮', '😢', '🎉']
 
-function formatTime(dateString: string): string {
-  return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+function formatTime(dateString: string | undefined): string {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function getSenderName(): string {
+  // Priority: sender_display_name > sender.display_name > sender_username > sender.username
+  if (props.message.sender_display_name) {
+    return props.message.sender_display_name
+  }
+  if (props.message.sender?.display_name) {
+    return props.message.sender.display_name
+  }
+  if (props.message.sender_username) {
+    return props.message.sender_username
+  }
+  if (props.message.sender?.username) {
+    return props.message.sender.username
+  }
+  return 'Unknown'
+}
+
+function getSenderAvatar(): string | null {
+  if (props.message.sender_avatar_url) {
+    return props.message.sender_avatar_url
+  }
+  if (props.message.sender?.avatar_url) {
+    return props.message.sender.avatar_url
+  }
+  return null
+}
+
+function getMessageTime(): string {
+  // Try sent_at first, then created_at
+  return formatTime(props.message.sent_at) || formatTime(props.message.created_at)
 }
 
 function startEdit() {
@@ -57,19 +92,26 @@ async function addReaction(emoji: string) {
     @mouseleave="showActions = false"
   >
     <!-- Avatar -->
+    <img
+      v-if="getSenderAvatar()"
+      :src="getSenderAvatar()!"
+      :alt="getSenderName()"
+      class="w-8 h-8 rounded-full object-cover flex-shrink-0"
+    />
     <div
+      v-else
       class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white text-sm font-medium"
       :class="isOwn ? 'bg-indigo-500' : 'bg-gray-500'"
     >
-      {{ (message.sender?.display_name || message.sender?.username || '?')[0].toUpperCase() }}
+      {{ getSenderName()[0].toUpperCase() }}
     </div>
 
     <!-- Content -->
     <div class="max-w-[70%]" :class="{ 'text-right': isOwn }">
       <!-- Sender name -->
       <div class="text-xs text-gray-500 mb-1">
-        {{ message.sender?.display_name || message.sender?.username || 'Unknown' }}
-        <span class="ml-2">{{ formatTime(message.created_at) }}</span>
+        {{ getSenderName() }}
+        <span class="ml-2">{{ getMessageTime() }}</span>
         <span v-if="message.is_edited" class="ml-1 italic">(edited)</span>
       </div>
 

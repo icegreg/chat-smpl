@@ -295,10 +295,12 @@ func (r *chatRepository) ListParticipants(ctx context.Context, chatID uuid.UUID,
 	}
 
 	query := `
-		SELECT id, chat_id, user_id, role, joined_at
-		FROM con_test.chat_participants
-		WHERE chat_id = $1
-		ORDER BY joined_at
+		SELECT cp.id, cp.chat_id, cp.user_id, cp.role, cp.joined_at,
+		       u.username, u.email, u.display_name, u.avatar_url
+		FROM con_test.chat_participants cp
+		LEFT JOIN con_test.users u ON cp.user_id = u.id
+		WHERE cp.chat_id = $1
+		ORDER BY cp.joined_at
 		LIMIT $2 OFFSET $3
 	`
 
@@ -311,7 +313,8 @@ func (r *chatRepository) ListParticipants(ctx context.Context, chatID uuid.UUID,
 	var participants []model.ChatParticipant
 	for rows.Next() {
 		var p model.ChatParticipant
-		if err := rows.Scan(&p.ID, &p.ChatID, &p.UserID, &p.Role, &p.JoinedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.ChatID, &p.UserID, &p.Role, &p.JoinedAt,
+			&p.Username, &p.Email, &p.DisplayName, &p.AvatarURL); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan participant: %w", err)
 		}
 		participants = append(participants, p)
@@ -409,10 +412,12 @@ func (r *chatRepository) ListMessages(ctx context.Context, chatID uuid.UUID, pag
 	}
 
 	query := `
-		SELECT id, chat_id, parent_id, sender_id, content, sent_at, updated_at, is_deleted
-		FROM con_test.messages
-		WHERE chat_id = $1 AND parent_id IS NULL
-		ORDER BY sent_at DESC
+		SELECT m.id, m.chat_id, m.parent_id, m.sender_id, m.content, m.sent_at, m.updated_at, m.is_deleted,
+		       u.username, u.display_name, u.avatar_url
+		FROM con_test.messages m
+		LEFT JOIN con_test.users u ON m.sender_id = u.id
+		WHERE m.chat_id = $1 AND m.parent_id IS NULL
+		ORDER BY m.sent_at DESC
 		LIMIT $2 OFFSET $3
 	`
 
@@ -425,7 +430,8 @@ func (r *chatRepository) ListMessages(ctx context.Context, chatID uuid.UUID, pag
 	var messages []model.Message
 	for rows.Next() {
 		var msg model.Message
-		if err := rows.Scan(&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted,
+			&msg.SenderUsername, &msg.SenderDisplayName, &msg.SenderAvatarURL); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan message: %w", err)
 		}
 		messages = append(messages, msg)

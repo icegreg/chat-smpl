@@ -152,6 +152,15 @@ func messageToProto(m *model.Message) *pb.Message {
 	if m.UpdatedAt != nil {
 		msg.UpdatedAt = timestamppb.New(*m.UpdatedAt)
 	}
+	if m.SenderUsername != nil {
+		msg.SenderUsername = *m.SenderUsername
+	}
+	if m.SenderDisplayName != nil {
+		msg.SenderDisplayName = *m.SenderDisplayName
+	}
+	if m.SenderAvatarURL != nil {
+		msg.SenderAvatarUrl = *m.SenderAvatarURL
+	}
 	return msg
 }
 
@@ -159,13 +168,26 @@ func participantToProto(p *model.ChatParticipant) *pb.ChatParticipant {
 	if p == nil {
 		return nil
 	}
-	return &pb.ChatParticipant{
+	result := &pb.ChatParticipant{
 		Id:       p.ID.String(),
 		ChatId:   p.ChatID.String(),
 		UserId:   p.UserID.String(),
 		Role:     toProtoParticipantRole(p.Role),
 		JoinedAt: timestamppb.New(p.JoinedAt),
 	}
+	if p.Username != nil {
+		result.Username = *p.Username
+	}
+	if p.Email != nil {
+		result.Email = *p.Email
+	}
+	if p.DisplayName != nil {
+		result.DisplayName = *p.DisplayName
+	}
+	if p.AvatarURL != nil {
+		result.AvatarUrl = *p.AvatarURL
+	}
+	return result
 }
 
 // Chat operations

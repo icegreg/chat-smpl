@@ -21,6 +21,7 @@ type FileService interface {
 	Delete(ctx context.Context, fileLinkID, userID uuid.UUID) error
 	CreateShareLink(ctx context.Context, fileID, userID uuid.UUID, req model.CreateShareLinkRequest) (*model.ShareLinkDTO, error)
 	GetFileInfo(ctx context.Context, fileLinkID, userID uuid.UUID) (*model.FileDTO, error)
+	GetAvatar(ctx context.Context, userID string) (io.ReadCloser, string, error)
 }
 
 type fileService struct {
@@ -257,4 +258,20 @@ func (s *fileService) GetFileInfo(ctx context.Context, fileLinkID, userID uuid.U
 
 	dto := file.ToDTO()
 	return &dto, nil
+}
+
+func (s *fileService) GetAvatar(ctx context.Context, userID string) (io.ReadCloser, string, error) {
+	// Avatars are stored in avatars/{userID}.jpg
+	avatarPath := filepath.Join("avatars", userID+".jpg")
+
+	if !s.storage.Exists(avatarPath) {
+		return nil, "", fmt.Errorf("avatar not found")
+	}
+
+	reader, err := s.storage.Get(avatarPath)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return reader, "image/jpeg", nil
 }

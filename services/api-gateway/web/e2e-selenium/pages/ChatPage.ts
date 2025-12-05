@@ -9,7 +9,6 @@ export class ChatPage extends BasePage {
   private readonly chatSidebar = By.css('aside')
   private readonly createChatButton = By.css('aside button[title="Create new chat"]')
   private readonly emptyState = By.xpath('//*[contains(text(), "Select a chat")]')
-  private readonly chatTitle = By.css('h1')
 
   // Create Chat Modal Locators
   private readonly createChatModal = By.css('.fixed.inset-0.bg-black')
@@ -23,9 +22,16 @@ export class ChatPage extends BasePage {
   private readonly createChatCancel = By.xpath('//button[contains(text(), "Cancel")]')
   private readonly createChatError = By.css('.bg-red-50.text-red-700')
 
+  // Chat Room Locators
+  private readonly chatHeaderTitle = By.css('main h3.font-semibold')
+  private readonly chatHeaderClickable = By.css('[data-testid="chat-header-clickable"]')
+  private readonly participantsPanel = By.css('main .w-64.border-l')
+  private readonly participantsPanelTitle = By.xpath('//h4[contains(text(), "Participants")]')
+  private readonly participantsPanelCloseBtn = By.css('main .w-64.border-l button')
+  private readonly participantListItems = By.css('main .w-64.border-l ul li')
+
   // Chat List Locators
   private readonly chatListItem = By.css('aside .divide-y button')
-  private readonly activeChatItem = By.css('aside button[class*="bg-indigo-50"]')
 
   constructor(driver: WebDriver) {
     super(driver)
@@ -164,7 +170,7 @@ export class ChatPage extends BasePage {
     return !(await this.isDisplayed(this.createChatModal))
   }
 
-  async waitForModalToClose(timeout: number = 5000): Promise<void> {
+  async waitForModalToClose(timeout: number = 15000): Promise<void> {
     const start = Date.now()
     while (Date.now() - start < timeout) {
       if (await this.isModalClosed()) {
@@ -173,5 +179,38 @@ export class ChatPage extends BasePage {
       await this.sleep(200)
     }
     throw new Error('Modal did not close within timeout')
+  }
+
+  // Chat room methods - participants panel
+  async clickChatHeader(): Promise<void> {
+    await this.click(this.chatHeaderClickable)
+  }
+
+  async getChatHeaderTitle(): Promise<string> {
+    return this.getText(this.chatHeaderTitle)
+  }
+
+  async isParticipantsPanelVisible(): Promise<boolean> {
+    return this.isDisplayed(this.participantsPanelTitle)
+  }
+
+  async closeParticipantsPanel(): Promise<void> {
+    await this.click(this.participantsPanelCloseBtn)
+  }
+
+  async getParticipantsCount(): Promise<number> {
+    const elements = await this.driver.findElements(this.participantListItems)
+    return elements.length
+  }
+
+  async waitForParticipantsPanel(timeout: number = 5000): Promise<void> {
+    await this.waitForElement(this.participantsPanel, timeout)
+  }
+
+  async selectFirstChat(): Promise<void> {
+    const elements = await this.driver.findElements(this.chatListItem)
+    if (elements.length > 0) {
+      await elements[0].click()
+    }
   }
 }

@@ -178,8 +178,34 @@ web-build: ## Build Vue SPA for production
 web-lint: ## Lint Vue SPA code
 	cd $(SERVICES_DIR)/api-gateway/web && npm run lint
 
+# ==================== Generators ====================
+
+build-generators: build-usergen build-chatgen build-loadgen ## Build all generator tools
+
+build-usergen: ## Build user generator
+	$(GOBUILD) -o bin/usergen ./tools/generator/cmd/usergen
+
+build-chatgen: ## Build chat generator
+	$(GOBUILD) -o bin/chatgen ./tools/generator/cmd/chatgen
+
+build-loadgen: ## Build load generator
+	$(GOBUILD) -o bin/loadgen ./tools/generator/cmd/loadgen
+
+gen-users: build-usergen ## Generate test users (usage: make gen-users count=1000)
+	./bin/usergen -count $(or $(count),1000) -url $(or $(url),http://localhost:3001)
+
+gen-chats: build-chatgen ## Generate test chats (usage: make gen-chats count=100 users=users.json)
+	./bin/chatgen -count $(or $(count),100) -users $(or $(users),users.json) -url $(or $(url),http://localhost:3001)
+
+load-test: build-loadgen ## Run load test (usage: make load-test duration=100m users=1000)
+	./bin/loadgen -duration $(or $(duration),100m) -user-count $(or $(users),1000) -auto-gen -url $(or $(url),http://localhost:3001)
+
+load-test-file: build-loadgen ## Run load test with users file (usage: make load-test-file users=users.json)
+	./bin/loadgen -duration $(or $(duration),100m) -users $(or $(users),users.json) -url $(or $(url),http://localhost:3001)
+
 # ==================== Cleanup ====================
 
 clean: ## Remove build artifacts
 	rm -rf bin/
 	rm -f coverage.out coverage.html
+	rm -f users.json chats.json

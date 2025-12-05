@@ -53,6 +53,7 @@ type UserDTO struct {
 	Username    string    `json:"username"`
 	Email       string    `json:"email"`
 	DisplayName *string   `json:"display_name,omitempty"`
+	AvatarURL   *string   `json:"avatar_url,omitempty"`
 	Role        Role      `json:"role"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -64,6 +65,7 @@ func (u *User) ToDTO() UserDTO {
 		Username:    u.Username,
 		Email:       u.Email,
 		DisplayName: u.DisplayName,
+		AvatarURL:   u.AvatarURL,
 		Role:        u.Role,
 		CreatedAt:   u.CreatedAt,
 		UpdatedAt:   u.UpdatedAt,

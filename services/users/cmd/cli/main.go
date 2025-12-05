@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	"github.com/icegreg/chat-smpl/pkg/jwt"
@@ -77,6 +79,7 @@ func userCmd() *cobra.Command {
 	cmd.AddCommand(listUsersCmd())
 	cmd.AddCommand(setRoleCmd())
 	cmd.AddCommand(getUserCmd())
+	cmd.AddCommand(generateAvatarsCmd())
 
 	return cmd
 }
@@ -302,4 +305,88 @@ func getUserCmd() *cobra.Command {
 	cmd.MarkFlagRequired("id")
 
 	return cmd
+}
+
+// generateCatAvatarURL generates a random cat avatar URL based on user ID
+func generateCatAvatarURL(userID uuid.UUID) string {
+	seed := strings.ReplaceAll(userID.String(), "-", "")[:8]
+	return fmt.Sprintf("https://cataas.com/cat?width=128&height=128&%s", seed)
+}
+
+func generateAvatarsCmd() *cobra.Command {
+	var overwrite bool
+
+	cmd := &cobra.Command{
+		Use:   "generate-avatars",
+		Short: "Generate cat avatars for all users without avatar",
+		Long:  "Generate random cat avatar URLs for all users. Use --overwrite to regenerate for users who already have avatars.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			pool, err := postgres.NewPool(ctx, postgres.DefaultConfig(databaseURL))
+			if err != nil {
+				return fmt.Errorf("failed to connect to database: %w", err)
+			}
+			defer postgres.Close(pool)
+
+			return generateAvatars(ctx, pool, overwrite)
+		},
+	}
+
+	cmd.Flags().BoolVar(&overwrite, "overwrite", false, "Overwrite existing avatars")
+
+	return cmd
+}
+
+func generateAvatars(ctx context.Context, pool *pgxpool.Pool, overwrite bool) error {
+	// Select users that need avatar update
+	var query string
+	if overwrite {
+		query = `SELECT id, username FROM con_test.users`
+	} else {
+		query = `SELECT id, username FROM con_test.users WHERE avatar_url IS NULL OR avatar_url = ''`
+	}
+
+	rows, err := pool.Query(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to query users: %w", err)
+	}
+	defer rows.Close()
+
+	type userInfo struct {
+		ID       uuid.UUID
+		Username string
+	}
+
+	var users []userInfo
+	for rows.Next() {
+		var u userInfo
+		if err := rows.Scan(&u.ID, &u.Username); err != nil {
+			return fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+
+	if len(users) == 0 {
+		fmt.Println("No users to update")
+		return nil
+	}
+
+	fmt.Printf("Updating avatars for %d users...\n", len(users))
+
+	updateQuery := `UPDATE con_test.users SET avatar_url = $2, updated_at = NOW() WHERE id = $1`
+	updated := 0
+
+	for _, u := range users {
+		avatarURL := generateCatAvatarURL(u.ID)
+		_, err := pool.Exec(ctx, updateQuery, u.ID, avatarURL)
+		if err != nil {
+			fmt.Printf("  Failed to update %s: %v\n", u.Username, err)
+			continue
+		}
+		updated++
+		fmt.Printf("  Updated %s: %s\n", u.Username, avatarURL)
+	}
+
+	fmt.Printf("\nDone! Updated %d/%d users\n", updated, len(users))
+	return nil
 }

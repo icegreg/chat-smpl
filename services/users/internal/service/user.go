@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -18,6 +19,13 @@ var (
 	ErrInvalidToken       = errors.New("invalid token")
 	ErrAccessDenied       = errors.New("access denied")
 )
+
+// generateCatAvatarURL generates a random cat avatar URL based on user ID
+func generateCatAvatarURL(userID uuid.UUID) string {
+	// Use user ID as seed for consistent avatar per user
+	seed := strings.ReplaceAll(userID.String(), "-", "")[:8]
+	return fmt.Sprintf("https://cataas.com/cat?width=128&height=128&%s", seed)
+}
 
 type UserService interface {
 	// Auth
@@ -186,16 +194,30 @@ func (s *userService) Create(ctx context.Context, req model.CreateUserRequest) (
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
+	// Generate a temporary UUID to create avatar URL
+	// The actual ID will be set by repository.Create
+	tempID := uuid.New()
+	avatarURL := generateCatAvatarURL(tempID)
+
 	user := &model.User{
 		Username:     req.Username,
 		Email:        req.Email,
 		DisplayName:  req.DisplayName,
+		AvatarURL:    &avatarURL,
 		PasswordHash: string(hashedPassword),
 		Role:         req.Role,
 	}
 
 	if err := s.repo.Create(ctx, user); err != nil {
 		return nil, err
+	}
+
+	// Update avatar URL with actual user ID
+	actualAvatarURL := generateCatAvatarURL(user.ID)
+	user.AvatarURL = &actualAvatarURL
+	if err := s.repo.Update(ctx, user); err != nil {
+		// Not critical, user already created
+		fmt.Printf("warning: failed to update avatar URL: %v\n", err)
 	}
 
 	dto := user.ToDTO()
