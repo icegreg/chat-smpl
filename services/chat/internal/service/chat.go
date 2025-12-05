@@ -58,6 +58,9 @@ type ChatService interface {
 	ArchiveChat(ctx context.Context, chatID, userID uuid.UUID) error
 	UnarchiveChat(ctx context.Context, chatID, userID uuid.UUID) error
 	ListArchivedChats(ctx context.Context, userID uuid.UUID, page, count int) ([]model.Chat, int, error)
+
+	// Typing indicator
+	SendTyping(ctx context.Context, chatID, userID uuid.UUID, isTyping bool) error
 }
 
 type chatService struct {
@@ -108,8 +111,11 @@ func (s *chatService) CreateChat(ctx context.Context, name string, chatType mode
 		}
 	}
 
+	// Get all participants for event
+	participants, _ := s.repo.GetParticipantIDs(ctx, chat.ID)
+
 	// Publish event
-	_ = s.publisher.PublishChatCreated(ctx, chat)
+	_ = s.publisher.PublishChatCreated(ctx, chat, participants)
 
 	return chat, nil
 }
@@ -153,6 +159,10 @@ func (s *chatService) UpdateChat(ctx context.Context, chatID uuid.UUID, name str
 		return nil, err
 	}
 
+	// Publish event to all participants
+	participants, _ := s.repo.GetParticipantIDs(ctx, chatID)
+	_ = s.publisher.PublishChatUpdated(ctx, chat, userID, participants)
+
 	return chat, nil
 }
 
@@ -169,11 +179,14 @@ func (s *chatService) DeleteChat(ctx context.Context, chatID, userID uuid.UUID) 
 		return ErrAccessDenied
 	}
 
+	// Get participants BEFORE deleting
+	participants, _ := s.repo.GetParticipantIDs(ctx, chatID)
+
 	if err := s.repo.DeleteChat(ctx, chatID); err != nil {
 		return err
 	}
 
-	_ = s.publisher.PublishChatDeleted(ctx, chatID, userID)
+	_ = s.publisher.PublishChatDeleted(ctx, chatID, userID, participants)
 
 	return nil
 }
@@ -278,7 +291,14 @@ func (s *chatService) SendMessage(ctx context.Context, chatID, senderID uuid.UUI
 		return nil, err
 	}
 
-	_ = s.publisher.PublishMessageCreated(ctx, message)
+	// Add sender info to message for event
+	message.SenderUsername = participant.Username
+	message.SenderDisplayName = participant.DisplayName
+	message.SenderAvatarURL = participant.AvatarURL
+
+	// Get participants for event
+	participants, _ := s.repo.GetParticipantIDs(ctx, chatID)
+	_ = s.publisher.PublishMessageCreated(ctx, message, participants)
 
 	return message, nil
 }
@@ -327,7 +347,9 @@ func (s *chatService) UpdateMessage(ctx context.Context, messageID, userID uuid.
 		return nil, err
 	}
 
-	_ = s.publisher.PublishMessageUpdated(ctx, message)
+	// Get participants for event
+	participants, _ := s.repo.GetParticipantIDs(ctx, message.ChatID)
+	_ = s.publisher.PublishMessageUpdated(ctx, message, participants)
 
 	return message, nil
 }
@@ -352,7 +374,9 @@ func (s *chatService) DeleteMessage(ctx context.Context, messageID, userID uuid.
 		return err
 	}
 
-	_ = s.publisher.PublishMessageDeleted(ctx, messageID, message.ChatID, userID)
+	// Get participants for event
+	participants, _ := s.repo.GetParticipantIDs(ctx, message.ChatID)
+	_ = s.publisher.PublishMessageDeleted(ctx, messageID, message.ChatID, userID, participants)
 
 	return nil
 }
@@ -390,15 +414,36 @@ func (s *chatService) AddReaction(ctx context.Context, messageID, userID uuid.UU
 		return ErrNotParticipant
 	}
 
-	return s.repo.AddReaction(ctx, &model.Reaction{
+	if err := s.repo.AddReaction(ctx, &model.Reaction{
 		MessageID: messageID,
 		UserID:    userID,
 		Reaction:  reaction,
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Publish reaction event
+	participants, _ := s.repo.GetParticipantIDs(ctx, message.ChatID)
+	_ = s.publisher.PublishReactionAdded(ctx, messageID, message.ChatID, userID, reaction, participants)
+
+	return nil
 }
 
 func (s *chatService) RemoveReaction(ctx context.Context, messageID, userID uuid.UUID, reaction string) error {
-	return s.repo.RemoveReaction(ctx, messageID, userID, reaction)
+	message, err := s.repo.GetMessage(ctx, messageID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.RemoveReaction(ctx, messageID, userID, reaction); err != nil {
+		return err
+	}
+
+	// Publish reaction event
+	participants, _ := s.repo.GetParticipantIDs(ctx, message.ChatID)
+	_ = s.publisher.PublishReactionRemoved(ctx, messageID, message.ChatID, userID, reaction, participants)
+
+	return nil
 }
 
 func (s *chatService) ListReactions(ctx context.Context, messageID uuid.UUID) ([]model.Reaction, error) {
@@ -465,4 +510,26 @@ func (s *chatService) UnarchiveChat(ctx context.Context, chatID, userID uuid.UUI
 
 func (s *chatService) ListArchivedChats(ctx context.Context, userID uuid.UUID, page, count int) ([]model.Chat, int, error) {
 	return s.repo.ListArchivedChats(ctx, userID, page, count)
+}
+
+// Typing indicator
+
+func (s *chatService) SendTyping(ctx context.Context, chatID, userID uuid.UUID, isTyping bool) error {
+	// Validate user is participant
+	isParticipant, err := s.repo.IsParticipant(ctx, chatID, userID)
+	if err != nil {
+		return err
+	}
+	if !isParticipant {
+		return ErrNotParticipant
+	}
+
+	// Get participants for event
+	participants, err := s.repo.GetParticipantIDs(ctx, chatID)
+	if err != nil {
+		return fmt.Errorf("failed to get participants: %w", err)
+	}
+
+	// Publish typing event
+	return s.publisher.PublishTyping(ctx, chatID, userID, isTyping, participants)
 }

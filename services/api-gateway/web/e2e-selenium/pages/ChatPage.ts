@@ -30,6 +30,13 @@ export class ChatPage extends BasePage {
   private readonly participantsPanelCloseBtn = By.css('main .w-64.border-l button')
   private readonly participantListItems = By.css('main .w-64.border-l ul li')
 
+  // Message Input Locators
+  private readonly messageInput = By.css('textarea[placeholder="Type a message..."]')
+  private readonly sendMessageButton = By.css('main button.bg-indigo-600')
+  private readonly messageContents = By.css('main .overflow-y-auto p.whitespace-pre-wrap')
+  private readonly emptyMessagesState = By.xpath('//*[contains(text(), "No messages yet")]')
+  private readonly typingIndicator = By.css('main .italic')
+
   // Chat List Locators
   private readonly chatListItem = By.css('aside .divide-y button')
 
@@ -212,5 +219,149 @@ export class ChatPage extends BasePage {
     if (elements.length > 0) {
       await elements[0].click()
     }
+  }
+
+  // Message methods
+  async typeMessage(message: string): Promise<void> {
+    await this.type(this.messageInput, message)
+  }
+
+  async clickSendMessage(): Promise<void> {
+    await this.click(this.sendMessageButton)
+  }
+
+  async sendMessage(message: string): Promise<void> {
+    await this.typeMessage(message)
+    await this.clickSendMessage()
+  }
+
+  async getMessageCount(): Promise<number> {
+    const elements = await this.driver.findElements(this.messageContents)
+    return elements.length
+  }
+
+  async getMessageTexts(): Promise<string[]> {
+    const elements = await this.driver.findElements(this.messageContents)
+    const texts: string[] = []
+    for (const el of elements) {
+      const text = await el.getText()
+      texts.push(text.trim())
+    }
+    return texts
+  }
+
+  async getLastMessageText(): Promise<string> {
+    const texts = await this.getMessageTexts()
+    return texts.length > 0 ? texts[texts.length - 1] : ''
+  }
+
+  async isEmptyMessagesStateVisible(): Promise<boolean> {
+    return this.isDisplayed(this.emptyMessagesState)
+  }
+
+  async waitForMessageCount(expectedCount: number, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const count = await this.getMessageCount()
+      if (count >= expectedCount) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error(`Expected at least ${expectedCount} messages, but found ${await this.getMessageCount()}`)
+  }
+
+  async waitForMessageContaining(text: string, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const messages = await this.getMessageTexts()
+      if (messages.some(m => m.includes(text))) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error(`Message containing "${text}" not found within timeout`)
+  }
+
+  async isTypingIndicatorVisible(): Promise<boolean> {
+    return this.isDisplayed(this.typingIndicator)
+  }
+
+  // Multi-user test helpers
+  async createChatWithParticipants(
+    name: string,
+    participantIds: string[],
+    type: 'group' | 'channel' = 'group',
+    description?: string
+  ): Promise<void> {
+    await this.openCreateChatModal()
+    await this.enterChatName(name)
+    if (type === 'channel') {
+      await this.selectChatTypeChannel()
+    }
+    if (description) {
+      await this.enterChatDescription(description)
+    }
+    if (participantIds.length > 0) {
+      await this.enterParticipantIds(participantIds.join(','))
+    }
+    await this.submitCreateChat()
+    await this.sleep(1000)
+  }
+
+  async waitForChatInList(chatName: string, timeout: number = 30000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const names = await this.getChatNames()
+      if (names.some(n => n.includes(chatName))) {
+        return
+      }
+      await this.sleep(500)
+    }
+    throw new Error(`Chat "${chatName}" not found in list within timeout`)
+  }
+
+  async waitForChatCount(expectedCount: number, timeout: number = 30000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const count = await this.getChatCount()
+      if (count >= expectedCount) {
+        return
+      }
+      await this.sleep(500)
+    }
+    throw new Error(`Expected at least ${expectedCount} chats, but found ${await this.getChatCount()}`)
+  }
+
+  async clickChatByNameInList(name: string): Promise<void> {
+    const chatItems = await this.driver.findElements(this.chatListItem)
+    for (const item of chatItems) {
+      try {
+        const nameSpan = await item.findElement(By.css('span.font-medium'))
+        const text = await nameSpan.getText()
+        if (text.includes(name)) {
+          await item.click()
+          return
+        }
+      } catch {
+        continue
+      }
+    }
+    throw new Error(`Chat "${name}" not found in list`)
+  }
+
+  async waitForChatRoom(timeout: number = 10000): Promise<void> {
+    await this.waitForElement(this.chatHeaderTitle, timeout)
+  }
+
+  async getTypingIndicatorText(): Promise<string | null> {
+    try {
+      if (await this.isTypingIndicatorVisible()) {
+        return await this.getText(this.typingIndicator)
+      }
+    } catch {
+      // ignore
+    }
+    return null
   }
 }

@@ -90,6 +90,24 @@ services:
     networks:
       - chatapp-network
 
+  websocket-service:
+    build:
+      context: .
+      dockerfile: services/websocket/Dockerfile
+    container_name: chatapp-websocket
+    environment:
+      - RABBITMQ_URL=amqp://chatapp:secret@rabbitmq:5672/
+      - CENTRIFUGO_API_URL=http://centrifugo:8000/api
+      - CENTRIFUGO_API_KEY=centrifugo-api-key
+      - CENTRIFUGO_SECRET=your-centrifugo-secret-key-change-in-production
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      centrifugo:
+        condition: service_healthy
+    networks:
+      - chatapp-network
+
   files-service:
     build:
       context: .
@@ -121,6 +139,7 @@ services:
       - FILES_SERVICE_URL=http://files-service:8082
       - CENTRIFUGO_API_URL=http://centrifugo:8000/api
       - CENTRIFUGO_API_KEY=centrifugo-api-key
+      - CENTRIFUGO_SECRET=your-centrifugo-secret-key-change-in-production
       - RABBITMQ_URL=amqp://chatapp:secret@rabbitmq:5672/
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
     ports:

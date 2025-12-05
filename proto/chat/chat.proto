@@ -54,6 +54,9 @@ service ChatService {
     rpc VotePoll(VotePollRequest) returns (google.protobuf.Empty);
     rpc FinishPoll(FinishPollRequest) returns (Poll);
     rpc DeletePoll(DeletePollRequest) returns (google.protobuf.Empty);
+
+    // Typing indicator
+    rpc SendTyping(SendTypingRequest) returns (google.protobuf.Empty);
 }
 
 // Enums
@@ -361,4 +364,11 @@ message FinishPollRequest {
 message DeletePollRequest {
     string poll_id = 1;
     string user_id = 2;
+}
+
+// Typing indicator
+message SendTypingRequest {
+    string chat_id = 1;
+    string user_id = 2;
+    bool is_typing = 3;
 }

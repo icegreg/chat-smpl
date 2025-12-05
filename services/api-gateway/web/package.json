@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "test:e2e": "node node_modules/mocha/bin/mocha.js",
-    "test:e2e:headed": "HEADLESS=false npm run test:e2e"
+    "test:e2e:headed": "HEADLESS=false npm run test:e2e",
+    "test:e2e:multiuser": "node node_modules/mocha/bin/mocha.js --grep \"Multi-User\""
   },
   "dependencies": {
     "centrifuge": "^5.0.1",

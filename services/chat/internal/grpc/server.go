@@ -842,4 +842,23 @@ func (s *ChatServer) ListArchivedChats(ctx context.Context, req *pb.ListArchived
 	}, nil
 }
 
+// Typing indicator
+
+func (s *ChatServer) SendTyping(ctx context.Context, req *pb.SendTypingRequest) (*emptypb.Empty, error) {
+	chatID, err := parseUUID(req.ChatId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid chat_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	if err := s.chatService.SendTyping(ctx, chatID, userID, req.IsTyping); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
 // Poll operations - not implemented yet, using UnimplementedChatServiceServer
