@@ -131,6 +131,135 @@ describe('Chat Creation', function () {
   })
 })
 
+describe('Participants Panel', function () {
+  let driver: WebDriver
+  let chatPage: ChatPage
+
+  before(async function () {
+    driver = await createDriver()
+    chatPage = new ChatPage(driver)
+  })
+
+  after(async function () {
+    await quitDriver(driver)
+  })
+
+  beforeEach(async function () {
+    await clearBrowserState(driver)
+  })
+
+  it('should open participants panel when clicking chat header', async function () {
+    await createTestUser(driver)
+    await chatPage.waitForChatPage()
+
+    // Create a chat first
+    const chatName = `Panel Test ${Date.now()}`
+    await chatPage.createChat(chatName, 'group')
+    await chatPage.waitForModalToClose()
+    await chatPage.sleep(1000)
+
+    // Check if chat was created
+    const chatCount = await chatPage.getChatCount()
+    console.log(`Chat count after creation: ${chatCount}`)
+
+    // Select the chat
+    await chatPage.selectFirstChat()
+    await chatPage.sleep(2000) // Wait for chat to load
+
+    // Debug: check current URL
+    const url = await driver.getCurrentUrl()
+    console.log(`Current URL after selecting chat: ${url}`)
+
+    // Click on chat header to open participants panel
+    await chatPage.clickChatHeader()
+    await chatPage.sleep(500)
+
+    // Verify participants panel is visible
+    expect(await chatPage.isParticipantsPanelVisible()).to.be.true
+  })
+
+  it('should close participants panel when clicking close button', async function () {
+    await createTestUser(driver)
+    await chatPage.waitForChatPage()
+
+    // Create a chat first
+    const chatName = `Close Panel Test ${Date.now()}`
+    await chatPage.createChat(chatName, 'group')
+    await chatPage.waitForModalToClose()
+    await chatPage.sleep(500)
+
+    // Select the chat
+    await chatPage.selectFirstChat()
+    await chatPage.sleep(500)
+
+    // Open participants panel
+    await chatPage.clickChatHeader()
+    await chatPage.sleep(300)
+    expect(await chatPage.isParticipantsPanelVisible()).to.be.true
+
+    // Close participants panel
+    await chatPage.closeParticipantsPanel()
+    await chatPage.sleep(300)
+
+    // Verify panel is closed
+    expect(await chatPage.isParticipantsPanelVisible()).to.be.false
+  })
+
+  it('should toggle participants panel on repeated clicks', async function () {
+    await createTestUser(driver)
+    await chatPage.waitForChatPage()
+
+    // Create a chat first
+    const chatName = `Toggle Panel Test ${Date.now()}`
+    await chatPage.createChat(chatName, 'group')
+    await chatPage.waitForModalToClose()
+    await chatPage.sleep(500)
+
+    // Select the chat
+    await chatPage.selectFirstChat()
+    await chatPage.sleep(500)
+
+    // Open panel
+    await chatPage.clickChatHeader()
+    await chatPage.sleep(300)
+    expect(await chatPage.isParticipantsPanelVisible()).to.be.true
+
+    // Close by clicking header again
+    await chatPage.clickChatHeader()
+    await chatPage.sleep(300)
+    expect(await chatPage.isParticipantsPanelVisible()).to.be.false
+
+    // Open again
+    await chatPage.clickChatHeader()
+    await chatPage.sleep(300)
+    expect(await chatPage.isParticipantsPanelVisible()).to.be.true
+  })
+
+  it('should show at least one participant (creator)', async function () {
+    await createTestUser(driver)
+    await chatPage.waitForChatPage()
+
+    // Create a chat
+    const chatName = `Participants Count Test ${Date.now()}`
+    await chatPage.createChat(chatName, 'group')
+    await chatPage.waitForModalToClose()
+    await chatPage.sleep(500)
+
+    // Select the chat
+    await chatPage.selectFirstChat()
+    await chatPage.sleep(500)
+
+    // Open participants panel
+    await chatPage.clickChatHeader()
+    await chatPage.waitForParticipantsPanel()
+    await chatPage.sleep(300)
+
+    // Should have at least one participant (the creator)
+    const count = await chatPage.getParticipantsCount()
+    expect(count).to.be.at.least(1)
+  })
+})
+
 describe('Chat List', function () {
   let driver: WebDriver
   let chatPage: ChatPage

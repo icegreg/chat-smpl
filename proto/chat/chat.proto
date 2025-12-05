@@ -92,6 +92,8 @@ message ChatParticipant {
     google.protobuf.Timestamp joined_at = 5;
     string username = 6;
     string email = 7;
+    string display_name = 8;
+    string avatar_url = 9;
 }
 
 message Message {
@@ -107,6 +109,8 @@ message Message {
     repeated string file_link_ids = 10;
     int32 thread_count = 11;
     string sender_username = 12;
+    string sender_display_name = 13;
+    string sender_avatar_url = 14;
 }
 
 message Reaction {

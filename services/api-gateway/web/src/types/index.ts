@@ -47,6 +47,10 @@ export interface Participant {
   chat_id: string
   role: 'owner' | 'admin' | 'member' | 'guest'
   joined_at: string
+  username?: string
+  email?: string
+  display_name?: string
+  avatar_url?: string
   user?: User
 }
 
@@ -61,7 +65,11 @@ export interface Message {
   is_edited: boolean
   created_at: string
   updated_at: string
+  sent_at?: string
   sender?: User
+  sender_username?: string
+  sender_display_name?: string
+  sender_avatar_url?: string
   reactions?: Reaction[]
   reply_to?: Message
   file_attachments?: FileAttachment[]

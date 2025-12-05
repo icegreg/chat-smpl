@@ -252,6 +252,35 @@ func (h *Handler) DownloadByShareToken(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ServeAvatar serves public avatar files
+// GET /avatars/{userId}
+func (h *Handler) ServeAvatar(w http.ResponseWriter, r *http.Request) {
+	userIDStr := chi.URLParam(r, "userId")
+	if userIDStr == "" {
+		h.respondError(w, http.StatusBadRequest, "user ID required")
+		return
+	}
+
+	// Validate it's a valid UUID format to prevent path traversal
+	if _, err := uuid.Parse(userIDStr); err != nil {
+		h.respondError(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
+
+	// Try to serve from avatars directory via fileService
+	reader, contentType, err := h.fileService.GetAvatar(r.Context(), userIDStr)
+	if err != nil {
+		// Return 404 if avatar not found
+		h.respondError(w, http.StatusNotFound, "avatar not found")
+		return
+	}
+	defer reader.Close()
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24 hours
+	io.Copy(w, reader)
+}
+
 // Helper functions
 
 func getUserIDFromContext(r *http.Request) (uuid.UUID, error) {

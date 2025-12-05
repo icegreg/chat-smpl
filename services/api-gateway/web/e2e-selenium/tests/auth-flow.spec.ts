@@ -2,13 +2,11 @@ import { WebDriver } from 'selenium-webdriver'
 import { expect } from 'chai'
 import { createDriver, quitDriver } from '../config/webdriver.js'
 import { LoginPage } from '../pages/LoginPage.js'
-import { RegisterPage } from '../pages/RegisterPage.js'
 import { ChatPage } from '../pages/ChatPage.js'
 import {
   createTestUser,
   createUserAndLogout,
   clearBrowserState,
-  loginUser,
 } from '../helpers/testHelpers.js'
 
 describe('Logout', function () {
@@ -214,13 +212,11 @@ describe('Authentication State UI', function () {
 describe('Full Authentication Flow', function () {
   let driver: WebDriver
   let loginPage: LoginPage
-  let registerPage: RegisterPage
   let chatPage: ChatPage
 
   before(async function () {
     driver = await createDriver()
     loginPage = new LoginPage(driver)
-    registerPage = new RegisterPage(driver)
     chatPage = new ChatPage(driver)
   })
 

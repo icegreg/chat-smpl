@@ -56,22 +56,29 @@ type Chat struct {
 }
 
 type ChatParticipant struct {
-	ID       uuid.UUID       `json:"id" db:"id"`
-	ChatID   uuid.UUID       `json:"chat_id" db:"chat_id"`
-	UserID   uuid.UUID       `json:"user_id" db:"user_id"`
-	Role     ParticipantRole `json:"role" db:"role"`
-	JoinedAt time.Time       `json:"joined_at" db:"joined_at"`
+	ID          uuid.UUID       `json:"id" db:"id"`
+	ChatID      uuid.UUID       `json:"chat_id" db:"chat_id"`
+	UserID      uuid.UUID       `json:"user_id" db:"user_id"`
+	Role        ParticipantRole `json:"role" db:"role"`
+	JoinedAt    time.Time       `json:"joined_at" db:"joined_at"`
+	Username    *string         `json:"username,omitempty" db:"username"`
+	Email       *string         `json:"email,omitempty" db:"email"`
+	DisplayName *string         `json:"display_name,omitempty" db:"display_name"`
+	AvatarURL   *string         `json:"avatar_url,omitempty" db:"avatar_url"`
 }
 
 type Message struct {
-	ID        uuid.UUID  `json:"id" db:"id"`
-	ChatID    uuid.UUID  `json:"chat_id" db:"chat_id"`
-	ParentID  *uuid.UUID `json:"parent_id,omitempty" db:"parent_id"`
-	SenderID  uuid.UUID  `json:"sender_id" db:"sender_id"`
-	Content   string     `json:"content" db:"content"`
-	SentAt    time.Time  `json:"sent_at" db:"sent_at"`
-	UpdatedAt *time.Time `json:"updated_at,omitempty" db:"updated_at"`
-	IsDeleted bool       `json:"is_deleted" db:"is_deleted"`
+	ID                uuid.UUID  `json:"id" db:"id"`
+	ChatID            uuid.UUID  `json:"chat_id" db:"chat_id"`
+	ParentID          *uuid.UUID `json:"parent_id,omitempty" db:"parent_id"`
+	SenderID          uuid.UUID  `json:"sender_id" db:"sender_id"`
+	Content           string     `json:"content" db:"content"`
+	SentAt            time.Time  `json:"sent_at" db:"sent_at"`
+	UpdatedAt         *time.Time `json:"updated_at,omitempty" db:"updated_at"`
+	IsDeleted         bool       `json:"is_deleted" db:"is_deleted"`
+	SenderUsername    *string    `json:"sender_username,omitempty" db:"sender_username"`
+	SenderDisplayName *string    `json:"sender_display_name,omitempty" db:"sender_display_name"`
+	SenderAvatarURL   *string    `json:"sender_avatar_url,omitempty" db:"sender_avatar_url"`
 }
 
 type Reaction struct {

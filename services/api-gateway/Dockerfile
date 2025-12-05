@@ -1,3 +1,13 @@
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/web
+
+COPY services/api-gateway/web/package*.json ./
+RUN npm ci
+
+COPY services/api-gateway/web/ ./
+RUN npm run build
+
 FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
@@ -20,7 +30,7 @@ WORKDIR /app
 COPY --from=builder /app/api-gateway .
 
 # Copy web static files
-COPY --from=builder /app/services/api-gateway/web/dist ./web/dist
+COPY --from=frontend-builder /app/web/dist ./web/dist
 
 RUN adduser -D -g '' appuser
 USER appuser

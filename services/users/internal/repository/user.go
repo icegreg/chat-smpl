@@ -47,8 +47,8 @@ func NewUserRepository(pool *pgxpool.Pool) UserRepository {
 
 func (r *userRepository) Create(ctx context.Context, user *model.User) error {
 	query := `
-		INSERT INTO con_test.users (id, username, email, display_name, password_hash, role, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO con_test.users (id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
 	user.ID = uuid.New()
@@ -61,6 +61,7 @@ func (r *userRepository) Create(ctx context.Context, user *model.User) error {
 		user.Username,
 		user.Email,
 		user.DisplayName,
+		user.AvatarURL,
 		user.PasswordHash,
 		user.Role,
 		user.CreatedAt,
@@ -79,7 +80,7 @@ func (r *userRepository) Create(ctx context.Context, user *model.User) error {
 
 func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
 	query := `
-		SELECT id, username, email, display_name, password_hash, role, created_at, updated_at
+		SELECT id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at
 		FROM con_test.users
 		WHERE id = $1
 	`
@@ -90,6 +91,7 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.User
 		&user.Username,
 		&user.Email,
 		&user.DisplayName,
+		&user.AvatarURL,
 		&user.PasswordHash,
 		&user.Role,
 		&user.CreatedAt,
@@ -108,7 +110,7 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.User
 
 func (r *userRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	query := `
-		SELECT id, username, email, display_name, password_hash, role, created_at, updated_at
+		SELECT id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at
 		FROM con_test.users
 		WHERE email = $1
 	`
@@ -119,6 +121,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*model.U
 		&user.Username,
 		&user.Email,
 		&user.DisplayName,
+		&user.AvatarURL,
 		&user.PasswordHash,
 		&user.Role,
 		&user.CreatedAt,
@@ -137,7 +140,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*model.U
 
 func (r *userRepository) GetByUsername(ctx context.Context, username string) (*model.User, error) {
 	query := `
-		SELECT id, username, email, display_name, password_hash, role, created_at, updated_at
+		SELECT id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at
 		FROM con_test.users
 		WHERE username = $1
 	`
@@ -148,6 +151,7 @@ func (r *userRepository) GetByUsername(ctx context.Context, username string) (*m
 		&user.Username,
 		&user.Email,
 		&user.DisplayName,
+		&user.AvatarURL,
 		&user.PasswordHash,
 		&user.Role,
 		&user.CreatedAt,
@@ -183,7 +187,7 @@ func (r *userRepository) List(ctx context.Context, page, count int) ([]model.Use
 
 	// Get users
 	query := `
-		SELECT id, username, email, display_name, password_hash, role, created_at, updated_at
+		SELECT id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at
 		FROM con_test.users
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2
@@ -203,6 +207,7 @@ func (r *userRepository) List(ctx context.Context, page, count int) ([]model.Use
 			&user.Username,
 			&user.Email,
 			&user.DisplayName,
+			&user.AvatarURL,
 			&user.PasswordHash,
 			&user.Role,
 			&user.CreatedAt,
@@ -219,7 +224,7 @@ func (r *userRepository) List(ctx context.Context, page, count int) ([]model.Use
 func (r *userRepository) Update(ctx context.Context, user *model.User) error {
 	query := `
 		UPDATE con_test.users
-		SET username = $2, email = $3, display_name = $4, password_hash = $5, role = $6, updated_at = $7
+		SET username = $2, email = $3, display_name = $4, avatar_url = $5, password_hash = $6, role = $7, updated_at = $8
 		WHERE id = $1
 	`
 
@@ -230,6 +235,7 @@ func (r *userRepository) Update(ctx context.Context, user *model.User) error {
 		user.Username,
 		user.Email,
 		user.DisplayName,
+		user.AvatarURL,
 		user.PasswordHash,
 		user.Role,
 		user.UpdatedAt,

@@ -37,6 +37,12 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Post("/login", h.Login)
 		r.Post("/refresh", h.Refresh)
 		r.Post("/logout", h.Logout)
+
+		// Protected auth routes
+		r.Group(func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Get("/me", h.GetCurrentUser)
+		})
 	})
 
 	// User routes (protected)
@@ -153,6 +159,27 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := GetUserID(r.Context())
+	if !ok || userID == uuid.Nil {
+		h.respondError(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated")
+		return
+	}
+
+	user, err := h.userService.GetByID(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			h.respondError(w, http.StatusNotFound, "NOT_FOUND", "User not found")
+			return
+		}
+		logger.Error("failed to get current user", zap.Error(err))
+		h.respondError(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Internal server error")
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, user)
 }
 
 // User handlers

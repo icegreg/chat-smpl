@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -150,6 +148,48 @@ services:
       - centrifugo
     networks:
       - chatapp-network
+
+  loadgen:
+    image: golang:1.23-alpine
+    container_name: chatapp-loadgen
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      - GENERATOR_BASE_URL=http://api-gateway:8080
+    depends_on:
+      - api-gateway
+    networks:
+      - chatapp-network
+    profiles:
+      - loadtest
+    command: >
+      sh -c "go build -o /tmp/loadgen ./tools/generator/cmd/loadgen &&
+             /tmp/loadgen -auto-gen -user-count 100 -duration 5m -url http://api-gateway:8080"
+
+  e2e-tests:
+    image: node:20-slim
+    container_name: chatapp-e2e
+    working_dir: /app
+    volumes:
+      - ./services/api-gateway/web:/app
+    environment:
+      - BASE_URL=http://nginx:80
+      - HEADLESS=true
+      - CHROME_BIN=/usr/bin/google-chrome
+    depends_on:
+      - nginx
+    networks:
+      - chatapp-network
+    profiles:
+      - e2e
+    shm_size: '2gb'
+    command: >
+      sh -c "apt-get update && apt-get install -y wget gnupg &&
+             wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - &&
+             echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list &&
+             apt-get update && apt-get install -y google-chrome-stable &&
+             npm ci && npm run test:e2e"
 
 volumes:
   postgres_data:
