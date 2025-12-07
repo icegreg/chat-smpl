@@ -46,6 +46,16 @@ func main() {
 
 	log.Info("connected to chat service", "addr", chatServiceAddr)
 
+	// Initialize gRPC presence client
+	presenceServiceAddr := getEnv("PRESENCE_SERVICE_ADDR", "localhost:50052")
+	presenceClient, err := grpc.NewPresenceClient(presenceServiceAddr)
+	if err != nil {
+		log.Fatal("failed to connect to presence service", "error", err)
+	}
+	defer presenceClient.Close()
+
+	log.Info("connected to presence service", "addr", presenceServiceAddr)
+
 	// Initialize Centrifugo client
 	centrifugoAPIURL := getEnv("CENTRIFUGO_API_URL", "http://localhost:8000/api")
 	centrifugoAPIKey := getEnv("CENTRIFUGO_API_KEY", "your-api-key")
@@ -69,6 +79,7 @@ func main() {
 	chatHandler := handler.NewChatHandler(chatClient, filesClient, log)
 	centrifugoHandler := handler.NewCentrifugoHandler(centrifugoClient, log)
 	filesHandler := handler.NewFilesHandler(filesServiceURL, log)
+	presenceHandler := handler.NewPresenceHandler(presenceClient, log)
 
 	// Create router
 	r := chi.NewRouter()
@@ -123,6 +134,12 @@ func main() {
 		r.Route("/files", func(r chi.Router) {
 			r.Use(authMiddleware.Authenticate)
 			r.Mount("/", filesHandler.Routes())
+		})
+
+		// Presence routes (protected)
+		r.Route("/presence", func(r chi.Router) {
+			r.Use(authMiddleware.Authenticate)
+			r.Mount("/", presenceHandler.Routes())
 		})
 	})
 

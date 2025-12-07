@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package presence;
+
+option go_package = "github.com/icegreg/chat-smpl/proto/presence";
+
+// UserStatus represents user's manually set status
+enum UserStatus {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_AVAILABLE = 1;    // Green - available
+  STATUS_BUSY = 2;         // Red - busy
+  STATUS_AWAY = 3;         // Yellow - away
+  STATUS_DND = 4;          // Purple - do not disturb
+}
+
+// PresenceInfo contains full presence information for a user
+message PresenceInfo {
+  string user_id = 1;
+  UserStatus status = 2;        // User's manually set status
+  bool is_online = 3;           // Whether user has active websocket connection
+  int32 connection_count = 4;   // Number of active connections
+  string last_seen_at = 5;      // ISO8601 timestamp of last activity
+}
+
+// SetStatusRequest sets user's status
+message SetStatusRequest {
+  string user_id = 1;
+  UserStatus status = 2;
+}
+
+message SetStatusResponse {
+  PresenceInfo presence = 1;
+}
+
+// GetPresenceRequest gets presence info for a single user
+message GetPresenceRequest {
+  string user_id = 1;
+}
+
+message GetPresenceResponse {
+  PresenceInfo presence = 1;
+}
+
+// GetPresencesBatchRequest gets presence info for multiple users
+message GetPresencesBatchRequest {
+  repeated string user_ids = 1;
+}
+
+message GetPresencesBatchResponse {
+  repeated PresenceInfo presences = 1;
+}
+
+// UserConnectedRequest is called when a user establishes websocket connection
+message UserConnectedRequest {
+  string user_id = 1;
+  string connection_id = 2;
+}
+
+message UserConnectedResponse {
+  PresenceInfo presence = 1;
+}
+
+// UserDisconnectedRequest is called when a user's websocket connection closes
+message UserDisconnectedRequest {
+  string user_id = 1;
+  string connection_id = 2;
+}
+
+message UserDisconnectedResponse {
+  PresenceInfo presence = 1;
+}
+
+// PresenceService handles user presence and status
+service PresenceService {
+  // SetStatus sets user's status (available, busy, away, dnd)
+  rpc SetStatus(SetStatusRequest) returns (SetStatusResponse);
+
+  // GetPresence gets presence info for a single user
+  rpc GetPresence(GetPresenceRequest) returns (GetPresenceResponse);
+
+  // GetPresencesBatch gets presence info for multiple users
+  rpc GetPresencesBatch(GetPresencesBatchRequest) returns (GetPresencesBatchResponse);
+
+  // UserConnected is called when user establishes websocket connection
+  rpc UserConnected(UserConnectedRequest) returns (UserConnectedResponse);
+
+  // UserDisconnected is called when user's websocket connection closes
+  rpc UserDisconnected(UserDisconnectedRequest) returns (UserDisconnectedResponse);
+}

@@ -121,3 +121,14 @@ export interface CentrifugoEvent {
   data: unknown
   timestamp: string
 }
+
+// Presence types
+export type UserStatus = 'available' | 'busy' | 'away' | 'dnd'
+
+export interface PresenceInfo {
+  user_id: string
+  status: UserStatus
+  is_online: boolean
+  connection_count: number
+  last_seen_at?: number
+}

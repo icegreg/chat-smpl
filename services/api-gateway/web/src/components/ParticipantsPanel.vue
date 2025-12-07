@@ -1,9 +1,33 @@
 <script setup lang="ts">
+import { onMounted, watch } from 'vue'
 import type { Participant } from '@/types'
+import { usePresenceStore } from '@/stores/presence'
+import StatusIndicator from './StatusIndicator.vue'
 
-defineProps<{
+const props = defineProps<{
   participants: Participant[]
 }>()
+
+const presenceStore = usePresenceStore()
+
+// Fetch presence for all participants when they change
+watch(
+  () => props.participants,
+  (participants) => {
+    if (participants.length > 0) {
+      const userIds = participants.map(p => p.user_id)
+      presenceStore.fetchUsersPresence(userIds)
+    }
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  if (props.participants.length > 0) {
+    const userIds = props.participants.map(p => p.user_id)
+    presenceStore.fetchUsersPresence(userIds)
+  }
+})
 
 defineEmits<{
   close: []
@@ -99,18 +123,25 @@ function getRoleLabel(role: string): string {
           class="px-4 py-3 hover:bg-gray-50"
         >
           <div class="flex items-center gap-3">
-            <img
-              v-if="getAvatarUrl(participant)"
-              :src="getAvatarUrl(participant)!"
-              :alt="getDisplayName(participant)"
-              class="w-8 h-8 rounded-full object-cover"
-            />
-            <img
-              v-else
-              :src="getRandomCatUrl(participant.user_id)"
-              :alt="getDisplayName(participant)"
-              class="w-8 h-8 rounded-full object-cover"
-            />
+            <div class="relative">
+              <img
+                v-if="getAvatarUrl(participant)"
+                :src="getAvatarUrl(participant)!"
+                :alt="getDisplayName(participant)"
+                class="w-8 h-8 rounded-full object-cover"
+              />
+              <img
+                v-else
+                :src="getRandomCatUrl(participant.user_id)"
+                :alt="getDisplayName(participant)"
+                class="w-8 h-8 rounded-full object-cover"
+              />
+              <StatusIndicator
+                :user-id="participant.user_id"
+                size="sm"
+                class="absolute -bottom-0.5 -right-0.5 border-2 border-white rounded-full"
+              />
+            </div>
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium text-gray-900 truncate">
                 {{ getDisplayName(participant) }}

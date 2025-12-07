@@ -4,6 +4,7 @@ import type { Chat, Message, Participant, CreateChatRequest, SendMessageRequest 
 import { api, ApiError } from '@/api/client'
 import { Centrifuge, Subscription } from 'centrifuge'
 import { useAuthStore } from './auth'
+import { usePresenceStore } from './presence'
 
 // Event types from websocket-service
 interface ChatEvent {
@@ -67,10 +68,16 @@ export const useChatStore = defineStore('chat', () => {
         console.log('Connected to Centrifugo')
         // Subscribe to user's personal channel
         subscribeToUserChannel(authStore.user!.id)
+        // Register presence connection
+        const presenceStore = usePresenceStore()
+        presenceStore.registerConnection()
       })
 
       centrifuge.on('disconnected', () => {
         console.log('Disconnected from Centrifugo')
+        // Unregister presence connection
+        const presenceStore = usePresenceStore()
+        presenceStore.unregisterConnection()
       })
 
       centrifuge.connect()

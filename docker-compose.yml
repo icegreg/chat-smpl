@@ -38,6 +38,21 @@ services:
     networks:
       - chatapp-network
 
+  redis:
+    image: redis:7-alpine
+    container_name: chatapp-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chatapp-network
+
   centrifugo:
     image: centrifugo/centrifugo:v5
     container_name: chatapp-centrifugo
@@ -108,6 +123,25 @@ services:
     networks:
       - chatapp-network
 
+  presence-service:
+    build:
+      context: .
+      dockerfile: services/presence/Dockerfile
+    container_name: chatapp-presence
+    environment:
+      - REDIS_ADDR=redis:6379
+      - RABBITMQ_URL=amqp://chatapp:secret@rabbitmq:5672/
+      - GRPC_ADDR=:50052
+    ports:
+      - "50052:50052"
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - chatapp-network
+
   files-service:
     build:
       context: .
@@ -136,6 +170,7 @@ services:
       - HTTP_PORT=8080
       - USERS_SERVICE_URL=http://users-service:8081
       - CHAT_SERVICE_ADDR=chat-service:50051
+      - PRESENCE_SERVICE_ADDR=presence-service:50052
       - FILES_SERVICE_URL=http://files-service:8082
       - CENTRIFUGO_API_URL=http://centrifugo:8000/api
       - CENTRIFUGO_API_KEY=centrifugo-api-key
@@ -148,6 +183,7 @@ services:
       - users-service
       - chat-service
       - files-service
+      - presence-service
       - centrifugo
       - rabbitmq
     networks:
@@ -213,6 +249,7 @@ services:
 volumes:
   postgres_data:
   rabbitmq_data:
+  redis_data:
   files_storage:
 
 networks:

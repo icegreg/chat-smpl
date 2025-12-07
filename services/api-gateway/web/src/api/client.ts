@@ -8,6 +8,7 @@ import type {
   Participant,
   CreateChatRequest,
   SendMessageRequest,
+  PresenceInfo,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -223,6 +224,28 @@ class ApiClient {
       '/centrifugo/subscription-token',
       { channel }
     )
+  }
+
+  // Presence
+  async setPresenceStatus(status: string): Promise<PresenceInfo> {
+    return this.request<PresenceInfo>('PUT', '/presence/status', { status })
+  }
+
+  async getMyPresence(): Promise<PresenceInfo> {
+    return this.request<PresenceInfo>('GET', '/presence/status')
+  }
+
+  async getUsersPresence(userIds: string[]): Promise<{ presences: PresenceInfo[] }> {
+    const ids = userIds.join(',')
+    return this.request<{ presences: PresenceInfo[] }>('GET', `/presence/users?ids=${ids}`)
+  }
+
+  async registerConnection(connectionId: string): Promise<PresenceInfo> {
+    return this.request<PresenceInfo>('POST', '/presence/connect', { connection_id: connectionId })
+  }
+
+  async unregisterConnection(connectionId: string): Promise<PresenceInfo> {
+    return this.request<PresenceInfo>('POST', '/presence/disconnect', { connection_id: connectionId })
   }
 
   // File uploads

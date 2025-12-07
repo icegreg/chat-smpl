@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import type { Chat } from '@/types'
 import CreateChatModal from './CreateChatModal.vue'
+import StatusSelector from './StatusSelector.vue'
+import { usePresenceStore } from '@/stores/presence'
 
 defineProps<{
   chats: Chat[]
   currentChatId?: string
   loading: boolean
 }>()
+
+const presenceStore = usePresenceStore()
+
+onMounted(() => {
+  presenceStore.setupVisibilityHandler()
+})
 
 const emit = defineEmits<{
   select: [chatId: string]
@@ -54,17 +62,20 @@ async function handleChatCreated(chat: Chat) {
 <template>
   <aside class="w-80 bg-white border-r flex flex-col">
     <!-- Header -->
-    <div class="p-4 border-b flex items-center justify-between">
-      <h2 class="font-semibold text-gray-700">Chats</h2>
-      <button
-        @click="showCreateModal = true"
-        class="p-2 text-gray-500 hover:text-indigo-600 hover:bg-gray-100 rounded-lg"
-        title="Create new chat"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-      </button>
+    <div class="p-4 border-b">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-gray-700">Chats</h2>
+        <button
+          @click="showCreateModal = true"
+          class="p-2 text-gray-500 hover:text-indigo-600 hover:bg-gray-100 rounded-lg"
+          title="Create new chat"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      </div>
+      <StatusSelector />
     </div>
 
     <!-- Chat list -->
