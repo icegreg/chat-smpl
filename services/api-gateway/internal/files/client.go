@@ -75,3 +75,42 @@ func (c *Client) GetFilesByLinkIDs(ctx context.Context, linkIDs []string) ([]Fil
 
 	return files, nil
 }
+
+// GrantPermissions grants file permissions to a list of users
+func (c *Client) GrantPermissions(ctx context.Context, linkIDs []string, userIDs []string, uploaderID string) error {
+	if len(linkIDs) == 0 || len(userIDs) == 0 {
+		return nil
+	}
+
+	reqBody := struct {
+		LinkIDs []string `json:"link_ids"`
+		UserIDs []string `json:"user_ids"`
+	}{
+		LinkIDs: linkIDs,
+		UserIDs: userIDs,
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/files/grant-permissions", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", uploaderID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("files service returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}

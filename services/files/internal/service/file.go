@@ -23,6 +23,7 @@ type FileService interface {
 	GetFileInfo(ctx context.Context, fileLinkID, userID uuid.UUID) (*model.FileDTO, error)
 	GetAvatar(ctx context.Context, userID string) (io.ReadCloser, string, error)
 	GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID) ([]model.FileAttachmentDTO, error)
+	GrantPermissions(ctx context.Context, linkIDs []uuid.UUID, userIDs []uuid.UUID, uploaderID uuid.UUID) error
 }
 
 type fileService struct {
@@ -296,4 +297,26 @@ func (s *fileService) GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID
 	}
 
 	return result, nil
+}
+
+func (s *fileService) GrantPermissions(ctx context.Context, linkIDs []uuid.UUID, userIDs []uuid.UUID, uploaderID uuid.UUID) error {
+	for _, linkID := range linkIDs {
+		// Verify the uploader owns this file link
+		link, err := s.repo.GetFileLink(ctx, linkID)
+		if err != nil {
+			continue // Skip if file link not found
+		}
+
+		// Only the uploader can grant permissions
+		if link.UploadedBy != uploaderID {
+			continue
+		}
+
+		// Create permissions for all users
+		if err := s.repo.CreatePermissionsForParticipants(ctx, linkID, userIDs, uploaderID); err != nil {
+			return fmt.Errorf("failed to create permissions for link %s: %w", linkID, err)
+		}
+	}
+
+	return nil
 }

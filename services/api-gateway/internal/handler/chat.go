@@ -378,6 +378,14 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If message has file attachments, grant permissions to chat participants
+	if len(req.FileLinkIDs) > 0 {
+		if err := h.grantFilePermissionsToParticipants(ctx, chatID, req.FileLinkIDs, userID.String()); err != nil {
+			h.log.Error("failed to grant file permissions", "error", err, "chatId", chatID)
+			// Continue anyway - permissions can be added later if needed
+		}
+	}
+
 	message, err := h.chatClient.SendMessage(ctx, chatID, userID.String(), req.Content, req.ParentID, req.FileLinkIDs)
 	if err != nil {
 		h.handleGRPCError(w, err)
@@ -387,6 +395,29 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	// Enrich message with file attachments
 	enrichedMessages := h.enrichMessagesWithFiles(ctx, []*pb.Message{message})
 	h.respondJSON(w, http.StatusCreated, enrichedMessages[0])
+}
+
+// grantFilePermissionsToParticipants grants file permissions to all chat participants
+func (h *ChatHandler) grantFilePermissionsToParticipants(ctx context.Context, chatID string, fileLinkIDs []string, uploaderID string) error {
+	// Get all participants of the chat
+	// We use a high count to get all participants in one request
+	participantsResp, err := h.chatClient.ListParticipants(ctx, chatID, 1, 1000)
+	if err != nil {
+		return err
+	}
+
+	if len(participantsResp.Participants) == 0 {
+		return nil
+	}
+
+	// Extract participant user IDs
+	userIDs := make([]string, 0, len(participantsResp.Participants))
+	for _, p := range participantsResp.Participants {
+		userIDs = append(userIDs, p.UserId)
+	}
+
+	// Grant permissions
+	return h.filesClient.GrantPermissions(ctx, fileLinkIDs, userIDs, uploaderID)
 }
 
 // GetMessages returns chat messages

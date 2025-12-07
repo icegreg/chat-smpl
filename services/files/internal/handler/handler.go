@@ -36,6 +36,7 @@ func (h *Handler) Routes() chi.Router {
 	// File operations (requires authentication via middleware)
 	r.Post("/upload", h.Upload)
 	r.Post("/batch", h.GetFilesByLinkIDs)
+	r.Post("/grant-permissions", h.GrantPermissions)
 	r.Get("/{linkId}", h.Download)
 	r.Get("/{linkId}/info", h.GetFileInfo)
 	r.Delete("/{linkId}", h.Delete)
@@ -280,6 +281,65 @@ func (h *Handler) ServeAvatar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24 hours
 	io.Copy(w, reader)
+}
+
+// GrantPermissions grants file permissions to a list of users
+// POST /files/grant-permissions
+func (h *Handler) GrantPermissions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get uploader ID from header (set by API gateway)
+	uploaderID, err := getUserIDFromContext(r)
+	if err != nil {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req struct {
+		LinkIDs []string `json:"link_ids"`
+		UserIDs []string `json:"user_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if len(req.LinkIDs) == 0 || len(req.UserIDs) == 0 {
+		h.respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+
+	// Parse link IDs
+	linkIDs := make([]uuid.UUID, 0, len(req.LinkIDs))
+	for _, idStr := range req.LinkIDs {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			h.respondError(w, http.StatusBadRequest, "invalid link ID: "+idStr)
+			return
+		}
+		linkIDs = append(linkIDs, id)
+	}
+
+	// Parse user IDs
+	userIDs := make([]uuid.UUID, 0, len(req.UserIDs))
+	for _, idStr := range req.UserIDs {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			h.respondError(w, http.StatusBadRequest, "invalid user ID: "+idStr)
+			return
+		}
+		userIDs = append(userIDs, id)
+	}
+
+	// Grant permissions
+	if err := h.fileService.GrantPermissions(ctx, linkIDs, userIDs, uploaderID); err != nil {
+		h.log.Error("failed to grant permissions", "error", err)
+		h.respondError(w, http.StatusInternalServerError, "failed to grant permissions")
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // GetFilesByLinkIDs returns file metadata for multiple link IDs
