@@ -224,6 +224,30 @@ class ApiClient {
       { channel }
     )
   }
+
+  // File uploads
+  async uploadFile(file: File): Promise<{ id: string; link_id: string; filename: string; original_filename: string; content_type: string; size: number }> {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const headers: Record<string, string> = {}
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`
+    }
+
+    const response = await fetch('/api/files/upload', {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Upload failed' }))
+      throw new ApiError(response.status, error.message || error.error || 'Upload failed')
+    }
+
+    return response.json()
+  }
 }
 
 export const api = new ApiClient()

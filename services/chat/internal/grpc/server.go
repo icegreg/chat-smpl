@@ -161,6 +161,10 @@ func messageToProto(m *model.Message) *pb.Message {
 	if m.SenderAvatarURL != nil {
 		msg.SenderAvatarUrl = *m.SenderAvatarURL
 	}
+	// Add file link IDs
+	for _, id := range m.FileLinkIDs {
+		msg.FileLinkIds = append(msg.FileLinkIds, id.String())
+	}
 	return msg
 }
 
@@ -470,7 +474,17 @@ func (s *ChatServer) SendMessage(ctx context.Context, req *pb.SendMessageRequest
 		return nil, status.Error(codes.InvalidArgument, "invalid sender_id")
 	}
 
-	message, err := s.chatService.SendMessage(ctx, chatID, senderID, req.Content, parseUUIDPtr(req.ParentId))
+	// Parse file link IDs
+	var fileLinkIDs []uuid.UUID
+	for _, id := range req.FileLinkIds {
+		fileLinkID, err := parseUUID(id)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid file_link_id: "+id)
+		}
+		fileLinkIDs = append(fileLinkIDs, fileLinkID)
+	}
+
+	message, err := s.chatService.SendMessage(ctx, chatID, senderID, req.Content, parseUUIDPtr(req.ParentId), fileLinkIDs)
 	if err != nil {
 		return nil, handleError(err)
 	}

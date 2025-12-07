@@ -265,13 +265,18 @@ func (r *chatRepository) AddParticipant(ctx context.Context, participant *model.
 
 func (r *chatRepository) GetParticipant(ctx context.Context, chatID, userID uuid.UUID) (*model.ChatParticipant, error) {
 	query := `
-		SELECT id, chat_id, user_id, role, joined_at
-		FROM con_test.chat_participants
-		WHERE chat_id = $1 AND user_id = $2
+		SELECT cp.id, cp.chat_id, cp.user_id, cp.role, cp.joined_at,
+		       u.username, u.email, u.display_name, u.avatar_url
+		FROM con_test.chat_participants cp
+		LEFT JOIN con_test.users u ON cp.user_id = u.id
+		WHERE cp.chat_id = $1 AND cp.user_id = $2
 	`
 
 	var p model.ChatParticipant
-	err := r.pool.QueryRow(ctx, query, chatID, userID).Scan(&p.ID, &p.ChatID, &p.UserID, &p.Role, &p.JoinedAt)
+	err := r.pool.QueryRow(ctx, query, chatID, userID).Scan(
+		&p.ID, &p.ChatID, &p.UserID, &p.Role, &p.JoinedAt,
+		&p.Username, &p.Email, &p.DisplayName, &p.AvatarURL,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrParticipantNotFound

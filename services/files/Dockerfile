@@ -19,10 +19,10 @@ WORKDIR /app
 
 COPY --from=builder /app/files-server .
 
-# Create uploads directory
-RUN mkdir -p /app/uploads
-
-RUN adduser -D -g '' appuser && chown -R appuser:appuser /app
+# Create user and storage directory with correct permissions
+RUN adduser -D -g '' appuser && \
+    mkdir -p /app/storage && \
+    chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8082

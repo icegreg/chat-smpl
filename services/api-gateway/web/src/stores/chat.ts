@@ -141,7 +141,11 @@ export const useChatStore = defineStore('chat', () => {
 
   function handleNewMessage(message: Message) {
     if (currentChat.value?.id === message.chat_id) {
-      messages.value.push(message)
+      // Avoid duplicates (message may already exist from REST response)
+      const existing = messages.value.find((m) => m.id === message.id)
+      if (!existing) {
+        messages.value.push(message)
+      }
     }
     // Update last message in chat list
     const chat = chats.value.find((c) => c.id === message.chat_id)
@@ -326,7 +330,16 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
     try {
       const message = await api.sendMessage(currentChat.value.id, data)
-      // Message will be added via Centrifugo event
+      // Add message immediately using REST response (includes file_attachments)
+      // The Centrifugo event may have already added this message WITHOUT file_attachments
+      // so we need to update/replace it with the enriched version
+      const existingIndex = messages.value.findIndex(m => m.id === message.id)
+      if (existingIndex !== -1) {
+        // Replace existing message with enriched one (has file_attachments)
+        messages.value[existingIndex] = message
+      } else {
+        messages.value.push(message)
+      }
       return message
     } catch (e) {
       error.value = e instanceof ApiError ? e.message : 'Failed to send message'

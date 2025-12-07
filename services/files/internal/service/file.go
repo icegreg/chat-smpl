@@ -22,6 +22,7 @@ type FileService interface {
 	CreateShareLink(ctx context.Context, fileID, userID uuid.UUID, req model.CreateShareLinkRequest) (*model.ShareLinkDTO, error)
 	GetFileInfo(ctx context.Context, fileLinkID, userID uuid.UUID) (*model.FileDTO, error)
 	GetAvatar(ctx context.Context, userID string) (io.ReadCloser, string, error)
+	GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID) ([]model.FileAttachmentDTO, error)
 }
 
 type fileService struct {
@@ -274,4 +275,25 @@ func (s *fileService) GetAvatar(ctx context.Context, userID string) (io.ReadClos
 	}
 
 	return reader, "image/jpeg", nil
+}
+
+func (s *fileService) GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID) ([]model.FileAttachmentDTO, error) {
+	files, err := s.repo.GetFilesByLinkIDs(ctx, linkIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.FileAttachmentDTO, 0, len(files))
+	for linkID, file := range files {
+		result = append(result, model.FileAttachmentDTO{
+			LinkID:           linkID,
+			ID:               file.ID,
+			Filename:         file.Filename,
+			OriginalFilename: file.OriginalFilename,
+			ContentType:      file.ContentType,
+			Size:             file.Size,
+		})
+	}
+
+	return result, nil
 }

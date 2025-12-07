@@ -35,6 +35,7 @@ func (h *Handler) Routes() chi.Router {
 
 	// File operations (requires authentication via middleware)
 	r.Post("/upload", h.Upload)
+	r.Post("/batch", h.GetFilesByLinkIDs)
 	r.Get("/{linkId}", h.Download)
 	r.Get("/{linkId}/info", h.GetFileInfo)
 	r.Delete("/{linkId}", h.Delete)
@@ -279,6 +280,46 @@ func (h *Handler) ServeAvatar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24 hours
 	io.Copy(w, reader)
+}
+
+// GetFilesByLinkIDs returns file metadata for multiple link IDs
+// POST /files/batch
+func (h *Handler) GetFilesByLinkIDs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req struct {
+		LinkIDs []string `json:"link_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if len(req.LinkIDs) == 0 {
+		h.respondJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+
+	// Parse UUIDs
+	linkIDs := make([]uuid.UUID, 0, len(req.LinkIDs))
+	for _, idStr := range req.LinkIDs {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			h.respondError(w, http.StatusBadRequest, "invalid link ID: "+idStr)
+			return
+		}
+		linkIDs = append(linkIDs, id)
+	}
+
+	files, err := h.fileService.GetFilesByLinkIDs(ctx, linkIDs)
+	if err != nil {
+		h.log.Error("failed to get files by link IDs", "error", err)
+		h.respondError(w, http.StatusInternalServerError, "failed to get files")
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, files)
 }
 
 // Helper functions

@@ -34,7 +34,7 @@ type ChatService interface {
 	ListParticipants(ctx context.Context, chatID uuid.UUID, page, count int) ([]model.ChatParticipant, int, error)
 
 	// Message operations
-	SendMessage(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID *uuid.UUID) (*model.Message, error)
+	SendMessage(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID *uuid.UUID, fileLinkIDs []uuid.UUID) (*model.Message, error)
 	GetMessage(ctx context.Context, messageID, userID uuid.UUID) (*model.Message, error)
 	ListMessages(ctx context.Context, chatID, userID uuid.UUID, page, count int) ([]model.Message, int, error)
 	UpdateMessage(ctx context.Context, messageID, userID uuid.UUID, content string) (*model.Message, error)
@@ -267,7 +267,7 @@ func (s *chatService) ListParticipants(ctx context.Context, chatID uuid.UUID, pa
 
 // Message operations
 
-func (s *chatService) SendMessage(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID *uuid.UUID) (*model.Message, error) {
+func (s *chatService) SendMessage(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID *uuid.UUID, fileLinkIDs []uuid.UUID) (*model.Message, error) {
 	participant, err := s.repo.GetParticipant(ctx, chatID, senderID)
 	if err != nil {
 		if errors.Is(err, repository.ErrParticipantNotFound) {
@@ -281,10 +281,11 @@ func (s *chatService) SendMessage(ctx context.Context, chatID, senderID uuid.UUI
 	}
 
 	message := &model.Message{
-		ChatID:   chatID,
-		SenderID: senderID,
-		Content:  content,
-		ParentID: parentID,
+		ChatID:      chatID,
+		SenderID:    senderID,
+		Content:     content,
+		ParentID:    parentID,
+		FileLinkIDs: fileLinkIDs,
 	}
 
 	if err := s.repo.CreateMessage(ctx, message); err != nil {

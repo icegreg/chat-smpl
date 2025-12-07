@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -9,19 +10,22 @@ import (
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	pb "github.com/icegreg/chat-smpl/proto/chat"
+	"github.com/icegreg/chat-smpl/services/api-gateway/internal/files"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/middleware"
 )
 
 type ChatHandler struct {
-	chatClient *grpc.ChatClient
-	log        logger.Logger
+	chatClient  *grpc.ChatClient
+	filesClient *files.Client
+	log         logger.Logger
 }
 
-func NewChatHandler(chatClient *grpc.ChatClient, log logger.Logger) *ChatHandler {
+func NewChatHandler(chatClient *grpc.ChatClient, filesClient *files.Client, log logger.Logger) *ChatHandler {
 	return &ChatHandler{
-		chatClient: chatClient,
-		log:        log,
+		chatClient:  chatClient,
+		filesClient: filesClient,
+		log:         log,
 	}
 }
 
@@ -380,7 +384,9 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.respondJSON(w, http.StatusCreated, message)
+	// Enrich message with file attachments
+	enrichedMessages := h.enrichMessagesWithFiles(ctx, []*pb.Message{message})
+	h.respondJSON(w, http.StatusCreated, enrichedMessages[0])
 }
 
 // GetMessages returns chat messages
@@ -409,8 +415,11 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enrich messages with file attachments
+	messages := h.enrichMessagesWithFiles(ctx, resp.Messages)
+
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"messages":   resp.Messages,
+		"messages":   messages,
 		"pagination": resp.Pagination,
 	})
 }
@@ -705,4 +714,82 @@ func containsImpl(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// MessageWithAttachments extends pb.Message with file attachments
+type MessageWithAttachments struct {
+	*pb.Message
+	FileAttachments []files.FileAttachment `json:"file_attachments,omitempty"`
+}
+
+// MarshalJSON implements custom JSON marshaling to merge protobuf fields with file_attachments
+func (m MessageWithAttachments) MarshalJSON() ([]byte, error) {
+	// First marshal the embedded protobuf message
+	pbJSON, err := json.Marshal(m.Message)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no file attachments, return the protobuf JSON as-is
+	if len(m.FileAttachments) == 0 {
+		return pbJSON, nil
+	}
+
+	// Unmarshal into a map to add file_attachments
+	var result map[string]interface{}
+	if err := json.Unmarshal(pbJSON, &result); err != nil {
+		return nil, err
+	}
+
+	// Add file attachments
+	result["file_attachments"] = m.FileAttachments
+
+	return json.Marshal(result)
+}
+
+// enrichMessagesWithFiles fetches file metadata and adds it to messages
+func (h *ChatHandler) enrichMessagesWithFiles(ctx context.Context, messages []*pb.Message) []MessageWithAttachments {
+	result := make([]MessageWithAttachments, len(messages))
+
+	// Collect all file link IDs
+	allLinkIDs := make([]string, 0)
+	for _, msg := range messages {
+		allLinkIDs = append(allLinkIDs, msg.FileLinkIds...)
+	}
+
+	h.log.Info("enrichMessagesWithFiles", "messages_count", len(messages), "file_link_ids_count", len(allLinkIDs), "link_ids", allLinkIDs)
+
+	// Fetch file metadata in batch
+	var fileMap map[string]files.FileAttachment
+	if len(allLinkIDs) > 0 {
+		fileAttachments, err := h.filesClient.GetFilesByLinkIDs(ctx, allLinkIDs)
+		if err != nil {
+			h.log.Error("failed to fetch file attachments", "error", err)
+		} else {
+			h.log.Info("fetched file attachments", "count", len(fileAttachments))
+			fileMap = make(map[string]files.FileAttachment)
+			for _, f := range fileAttachments {
+				fileMap[f.LinkID] = f
+			}
+		}
+	}
+
+	// Enrich messages
+	for i, msg := range messages {
+		result[i] = MessageWithAttachments{
+			Message: msg,
+		}
+
+		if len(msg.FileLinkIds) > 0 && fileMap != nil {
+			attachments := make([]files.FileAttachment, 0, len(msg.FileLinkIds))
+			for _, linkID := range msg.FileLinkIds {
+				if attachment, ok := fileMap[linkID]; ok {
+					attachments = append(attachments, attachment)
+				}
+			}
+			result[i].FileAttachments = attachments
+		}
+	}
+
+	return result
 }

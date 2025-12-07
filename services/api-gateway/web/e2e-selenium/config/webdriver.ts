@@ -1,4 +1,4 @@
-import { Builder, WebDriver, Browser } from 'selenium-webdriver'
+import { Builder, WebDriver, Browser, logging } from 'selenium-webdriver'
 import chrome from 'selenium-webdriver/chrome.js'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
@@ -21,6 +21,11 @@ export async function createDriver(): Promise<WebDriver> {
     '--disable-extensions',
     '--disable-infobars'
   )
+
+  // Enable browser logging
+  const prefs = new logging.Preferences()
+  prefs.setLevel(logging.Type.BROWSER, logging.Level.ALL)
+  options.setLoggingPrefs(prefs)
 
   const driver = await new Builder()
     .forBrowser(Browser.CHROME)
