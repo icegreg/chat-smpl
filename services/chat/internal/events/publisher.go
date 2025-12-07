@@ -46,16 +46,17 @@ type ChatData struct {
 }
 
 type MessageData struct {
-	ID                string  `json:"id"`
-	ChatID            string  `json:"chat_id"`
-	SenderID          string  `json:"sender_id"`
-	Content           string  `json:"content"`
-	SentAt            string  `json:"sent_at"`
-	UpdatedAt         *string `json:"updated_at,omitempty"`
-	ParentID          *string `json:"parent_id,omitempty"`
-	SenderUsername    *string `json:"sender_username,omitempty"`
-	SenderDisplayName *string `json:"sender_display_name,omitempty"`
-	SenderAvatarURL   *string `json:"sender_avatar_url,omitempty"`
+	ID                string   `json:"id"`
+	ChatID            string   `json:"chat_id"`
+	SenderID          string   `json:"sender_id"`
+	Content           string   `json:"content"`
+	SentAt            string   `json:"sent_at"`
+	UpdatedAt         *string  `json:"updated_at,omitempty"`
+	ParentID          *string  `json:"parent_id,omitempty"`
+	SenderUsername    *string  `json:"sender_username,omitempty"`
+	SenderDisplayName *string  `json:"sender_display_name,omitempty"`
+	SenderAvatarURL   *string  `json:"sender_avatar_url,omitempty"`
+	FileLinkIDs       []string `json:"file_link_ids,omitempty"`
 }
 
 type MessageDeletedData struct {
@@ -206,6 +207,10 @@ func (p *publisher) PublishMessageCreated(ctx context.Context, message *model.Me
 	}
 	if message.SenderAvatarURL != nil {
 		msgData.SenderAvatarURL = message.SenderAvatarURL
+	}
+	// Add file link IDs
+	for _, id := range message.FileLinkIDs {
+		msgData.FileLinkIDs = append(msgData.FileLinkIDs, id.String())
 	}
 
 	event := ChatEvent{

@@ -15,12 +15,29 @@ export function generateTestUser(): RegisterData {
   }
 }
 
+// Options for creating test user
+export interface CreateTestUserOptions {
+  username?: string
+  displayName?: string
+  email?: string
+  password?: string
+}
+
 // Create and register a test user
 export async function createTestUser(
-  driver: WebDriver
+  driver: WebDriver,
+  options?: CreateTestUserOptions
 ): Promise<RegisterData> {
   const registerPage = new RegisterPage(driver)
-  const user = generateTestUser()
+  const baseUser = generateTestUser()
+
+  // Override with provided options
+  const user: RegisterData = {
+    email: options?.email || baseUser.email,
+    username: options?.username || baseUser.username,
+    password: options?.password || baseUser.password,
+    displayName: options?.displayName || baseUser.displayName,
+  }
 
   await registerPage.goto()
   await registerPage.register(user)

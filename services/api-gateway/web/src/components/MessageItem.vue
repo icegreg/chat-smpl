@@ -16,10 +16,28 @@ const editContent = ref('')
 
 const commonEmojis = ['👍', '❤️', '😂', '😮', '😢', '🎉']
 
-function formatTime(dateString: string | undefined): string {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  if (isNaN(date.getTime())) return ''
+function parseMessageDate(value: string | { seconds: number; nanos?: number } | undefined): Date | null {
+  if (!value) return null
+
+  // Handle protobuf timestamp format { seconds: number, nanos: number }
+  if (typeof value === 'object' && 'seconds' in value) {
+    return new Date(value.seconds * 1000)
+  }
+
+  // Handle ISO string format
+  if (typeof value === 'string') {
+    const date = new Date(value)
+    if (!isNaN(date.getTime())) {
+      return date
+    }
+  }
+
+  return null
+}
+
+function formatTime(value: string | { seconds: number; nanos?: number } | undefined): string {
+  const date = parseMessageDate(value)
+  if (!date) return ''
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
@@ -82,10 +100,25 @@ async function addReaction(emoji: string) {
   await chatStore.addReaction(props.message.id, emoji)
   showActions.value = false
 }
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+function isImage(contentType: string): boolean {
+  return contentType.startsWith('image/')
+}
+
+function getFileDownloadUrl(linkId: string): string {
+  return `/api/files/${linkId}`
+}
 </script>
 
 <template>
   <div
+    data-testid="message-item"
     class="flex gap-3"
     :class="{ 'flex-row-reverse': isOwn }"
     @mouseenter="showActions = true"
@@ -94,12 +127,14 @@ async function addReaction(emoji: string) {
     <!-- Avatar -->
     <img
       v-if="getSenderAvatar()"
+      data-testid="message-avatar"
       :src="getSenderAvatar()!"
       :alt="getSenderName()"
       class="w-8 h-8 rounded-full object-cover flex-shrink-0"
     />
     <div
       v-else
+      data-testid="message-avatar-placeholder"
       class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white text-sm font-medium"
       :class="isOwn ? 'bg-indigo-500' : 'bg-gray-500'"
     >
@@ -110,8 +145,8 @@ async function addReaction(emoji: string) {
     <div class="max-w-[70%]" :class="{ 'text-right': isOwn }">
       <!-- Sender name -->
       <div class="text-xs text-gray-500 mb-1">
-        {{ getSenderName() }}
-        <span class="ml-2">{{ getMessageTime() }}</span>
+        <span data-testid="message-sender-name">{{ getSenderName() }}</span>
+        <span data-testid="message-time" class="ml-2">{{ getMessageTime() }}</span>
         <span v-if="message.is_edited" class="ml-1 italic">(edited)</span>
       </div>
 
@@ -136,9 +171,51 @@ async function addReaction(emoji: string) {
         </div>
 
         <!-- Normal display -->
-        <p v-else class="whitespace-pre-wrap break-words" :class="{ 'text-left': !isOwn }">
+        <p v-else-if="message.content" class="whitespace-pre-wrap break-words" :class="{ 'text-left': !isOwn }">
           {{ message.content }}
         </p>
+
+        <!-- File attachments -->
+        <div v-if="message.file_attachments?.length" class="mt-2 space-y-2">
+          <template v-for="attachment in message.file_attachments" :key="attachment.link_id">
+            <!-- Image preview -->
+            <a
+              v-if="isImage(attachment.content_type)"
+              :href="getFileDownloadUrl(attachment.link_id)"
+              target="_blank"
+              class="block"
+            >
+              <img
+                :src="getFileDownloadUrl(attachment.link_id)"
+                :alt="attachment.original_filename"
+                class="max-w-full max-h-64 rounded cursor-pointer hover:opacity-90 transition-opacity"
+              />
+            </a>
+            <!-- Other file types -->
+            <a
+              v-else
+              :href="getFileDownloadUrl(attachment.link_id)"
+              target="_blank"
+              class="flex items-center gap-2 p-2 rounded hover:bg-gray-100 transition-colors"
+              :class="isOwn ? 'bg-indigo-400/30 hover:bg-indigo-400/50' : 'bg-gray-50'"
+            >
+              <svg class="w-8 h-8 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium truncate" :class="isOwn ? 'text-white' : 'text-gray-900'">
+                  {{ attachment.original_filename }}
+                </div>
+                <div class="text-xs" :class="isOwn ? 'text-indigo-200' : 'text-gray-500'">
+                  {{ formatFileSize(attachment.size) }}
+                </div>
+              </div>
+              <svg class="w-5 h-5 flex-shrink-0" :class="isOwn ? 'text-indigo-200' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </a>
+          </template>
+        </div>
 
         <!-- Actions -->
         <div

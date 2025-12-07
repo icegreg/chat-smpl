@@ -54,6 +54,12 @@ export interface Participant {
   user?: User
 }
 
+// Protobuf timestamp format
+export interface ProtobufTimestamp {
+  seconds: number
+  nanos?: number
+}
+
 export interface Message {
   id: string
   chat_id: string
@@ -65,7 +71,7 @@ export interface Message {
   is_edited: boolean
   created_at: string
   updated_at: string
-  sent_at?: string
+  sent_at?: string | ProtobufTimestamp
   sender?: User
   sender_username?: string
   sender_display_name?: string

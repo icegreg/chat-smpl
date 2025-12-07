@@ -103,6 +103,16 @@ type CreateShareLinkRequest struct {
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 }
 
+// FileAttachmentDTO is used for returning file metadata for message attachments
+type FileAttachmentDTO struct {
+	LinkID           uuid.UUID `json:"link_id"`
+	ID               uuid.UUID `json:"id"`
+	Filename         string    `json:"filename"`
+	OriginalFilename string    `json:"original_filename"`
+	ContentType      string    `json:"content_type"`
+	Size             int64     `json:"size"`
+}
+
 type ShareLinkDTO struct {
 	ID            uuid.UUID  `json:"id"`
 	Token         string     `json:"token"`

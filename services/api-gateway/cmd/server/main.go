@@ -14,6 +14,7 @@ import (
 	"github.com/icegreg/chat-smpl/pkg/jwt"
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/centrifugo"
+	"github.com/icegreg/chat-smpl/services/api-gateway/internal/files"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/handler"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/middleware"
@@ -53,14 +54,21 @@ func main() {
 
 	log.Info("centrifugo client initialized", "api_url", centrifugoAPIURL)
 
+	// Initialize files service client
+	filesServiceURL := getEnv("FILES_SERVICE_URL", "http://localhost:8082")
+	filesClient := files.NewClient(filesServiceURL)
+
+	log.Info("files client initialized", "url", filesServiceURL)
+
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
 
 	// Initialize handlers
 	usersServiceURL := getEnv("USERS_SERVICE_URL", "http://localhost:8081")
 	authHandler := handler.NewAuthHandler(usersServiceURL, centrifugoClient, log)
-	chatHandler := handler.NewChatHandler(chatClient, log)
+	chatHandler := handler.NewChatHandler(chatClient, filesClient, log)
 	centrifugoHandler := handler.NewCentrifugoHandler(centrifugoClient, log)
+	filesHandler := handler.NewFilesHandler(filesServiceURL, log)
 
 	// Create router
 	r := chi.NewRouter()
@@ -109,6 +117,12 @@ func main() {
 		r.Route("/centrifugo", func(r chi.Router) {
 			r.Use(authMiddleware.Authenticate)
 			r.Mount("/", centrifugoHandler.Routes())
+		})
+
+		// Files routes (protected)
+		r.Route("/files", func(r chi.Router) {
+			r.Use(authMiddleware.Authenticate)
+			r.Mount("/", filesHandler.Routes())
 		})
 	})
 

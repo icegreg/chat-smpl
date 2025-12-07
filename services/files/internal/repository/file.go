@@ -53,6 +53,9 @@ type FileRepository interface {
 	// Message attachments
 	CreateMessageAttachment(ctx context.Context, attachment *model.MessageFileAttachment) error
 	GetMessageAttachments(ctx context.Context, messageID uuid.UUID) ([]model.MessageFileAttachment, error)
+
+	// Batch operations
+	GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID) (map[uuid.UUID]*model.File, error)
 }
 
 type fileRepository struct {
@@ -406,4 +409,35 @@ func (r *fileRepository) GetMessageAttachments(ctx context.Context, messageID uu
 	}
 
 	return attachments, nil
+}
+
+func (r *fileRepository) GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID) (map[uuid.UUID]*model.File, error) {
+	if len(linkIDs) == 0 {
+		return make(map[uuid.UUID]*model.File), nil
+	}
+
+	query := `
+		SELECT fl.id as link_id, f.id, f.filename, f.original_filename, f.content_type, f.size, f.uploaded_by, f.uploaded_at
+		FROM con_test.file_links fl
+		JOIN con_test.files f ON fl.file_id = f.id
+		WHERE fl.id = ANY($1) AND fl.is_deleted = false AND f.status = 'active'
+	`
+
+	rows, err := r.pool.Query(ctx, query, linkIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get files by link IDs: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID]*model.File)
+	for rows.Next() {
+		var linkID uuid.UUID
+		var f model.File
+		if err := rows.Scan(&linkID, &f.ID, &f.Filename, &f.OriginalFilename, &f.ContentType, &f.Size, &f.UploadedBy, &f.UploadedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan file: %w", err)
+		}
+		result[linkID] = &f
+	}
+
+	return result, nil
 }
