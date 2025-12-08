@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package files;
+
+option go_package = "github.com/icegreg/chat-smpl/proto/files";
+
+import "google/protobuf/empty.proto";
+
+service FilesService {
+    // Add a local file from server filesystem
+    rpc AddLocalFile(AddLocalFileRequest) returns (AddLocalFileResponse);
+
+    // Create a new FileLink for an existing file (for message forwarding)
+    rpc CreateFileLink(CreateFileLinkRequest) returns (CreateFileLinkResponse);
+
+    // Grant permissions to users for file links
+    rpc GrantPermissions(GrantPermissionsRequest) returns (google.protobuf.Empty);
+
+    // Revoke permissions from a user for file links
+    rpc RevokePermissions(RevokePermissionsRequest) returns (google.protobuf.Empty);
+
+    // Get file_id by link_id (for forward operation)
+    rpc GetFileIDByLinkID(GetFileIDByLinkIDRequest) returns (GetFileIDByLinkIDResponse);
+
+    // Get file metadata by link IDs (batch)
+    rpc GetFilesByLinkIDs(GetFilesByLinkIDsRequest) returns (GetFilesByLinkIDsResponse);
+}
+
+// AddLocalFile - add a file from server's local filesystem
+message AddLocalFileRequest {
+    string server_file_path = 1;   // Path to file on server
+    string original_filename = 2;   // Original filename to store
+    string content_type = 3;        // MIME type (optional, will be detected if empty)
+    string uploaded_by = 4;         // UUID of the user who owns the file
+}
+
+message AddLocalFileResponse {
+    string file_id = 1;
+    string link_id = 2;
+    string filename = 3;
+    string original_filename = 4;
+    string content_type = 5;
+    int64 size = 6;
+}
+
+// CreateFileLink - create a new link for an existing file
+message CreateFileLinkRequest {
+    string file_id = 1;             // ID of existing file
+    string created_by = 2;          // UUID of user creating the link
+}
+
+message CreateFileLinkResponse {
+    string link_id = 1;
+    string file_id = 2;
+}
+
+// GrantPermissions - grant view/download permissions to users
+message GrantPermissionsRequest {
+    repeated string link_ids = 1;   // File link IDs
+    repeated string user_ids = 2;   // User IDs to grant access
+    string granter_id = 3;          // User who grants permissions
+}
+
+// RevokePermissions - revoke permissions from a user
+message RevokePermissionsRequest {
+    repeated string link_ids = 1;   // File link IDs
+    string user_id = 2;             // User ID to revoke from
+}
+
+// GetFileIDByLinkID - get file ID from link ID
+message GetFileIDByLinkIDRequest {
+    string link_id = 1;
+}
+
+message GetFileIDByLinkIDResponse {
+    string file_id = 1;
+}
+
+// GetFilesByLinkIDs - batch get file metadata
+message GetFilesByLinkIDsRequest {
+    repeated string link_ids = 1;
+}
+
+message FileAttachment {
+    string link_id = 1;
+    string file_id = 2;
+    string filename = 3;
+    string original_filename = 4;
+    string content_type = 5;
+    int64 size = 6;
+}
+
+message GetFilesByLinkIDsResponse {
+    repeated FileAttachment files = 1;
+}

@@ -117,6 +117,9 @@ proto: ## Generate protobuf code
 	$(PROTOC) --go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		$(PROTO_DIR)/presence/*.proto
+	$(PROTOC) --go_out=. --go_opt=paths=source_relative \
+		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+		$(PROTO_DIR)/files/*.proto
 
 proto-install: ## Install protoc plugins
 	$(GOGET) google.golang.org/protobuf/cmd/protoc-gen-go@latest

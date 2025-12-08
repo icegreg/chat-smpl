@@ -326,3 +326,12 @@ func (c *ChatClient) SyncMessages(ctx context.Context, chatID, userID string, af
 		Limit:       limit,
 	})
 }
+
+// ForwardMessage forwards a message to another chat
+func (c *ChatClient) ForwardMessage(ctx context.Context, messageID, targetChatID, senderID string) (*pb.Message, error) {
+	return c.client.ForwardMessage(ctx, &pb.ForwardMessageRequest{
+		MessageId:    messageID,
+		TargetChatId: targetChatID,
+		SenderId:     senderID,
+	})
+}

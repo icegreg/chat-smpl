@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
@@ -12,6 +15,11 @@ import (
 	"github.com/icegreg/chat-smpl/services/files/internal/model"
 	"github.com/icegreg/chat-smpl/services/files/internal/repository"
 	"github.com/icegreg/chat-smpl/services/files/internal/storage"
+)
+
+var (
+	ErrFileNotReadable = errors.New("file not readable")
+	ErrFileIsDirectory = errors.New("path is a directory")
 )
 
 type FileService interface {
@@ -24,6 +32,12 @@ type FileService interface {
 	GetAvatar(ctx context.Context, userID string) (io.ReadCloser, string, error)
 	GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID) ([]model.FileAttachmentDTO, error)
 	GrantPermissions(ctx context.Context, linkIDs []uuid.UUID, userIDs []uuid.UUID, uploaderID uuid.UUID) error
+
+	// gRPC methods for inter-service communication
+	AddLocalFile(ctx context.Context, serverPath, originalFilename, contentType string, uploadedBy uuid.UUID) (*model.UploadFileResponse, error)
+	CreateFileLink(ctx context.Context, fileID, createdBy uuid.UUID) (uuid.UUID, error)
+	RevokePermissions(ctx context.Context, linkIDs []uuid.UUID, userID uuid.UUID) error
+	GetFileIDByLinkID(ctx context.Context, linkID uuid.UUID) (uuid.UUID, error)
 }
 
 type fileService struct {
@@ -319,4 +333,91 @@ func (s *fileService) GrantPermissions(ctx context.Context, linkIDs []uuid.UUID,
 	}
 
 	return nil
+}
+
+// AddLocalFile adds a file from the server's local filesystem
+func (s *fileService) AddLocalFile(ctx context.Context, serverPath, originalFilename, contentType string, uploadedBy uuid.UUID) (*model.UploadFileResponse, error) {
+	// Check if file exists and is readable
+	fileInfo, err := os.Stat(serverPath)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("%w: %s", ErrFileNotReadable, serverPath)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat file: %w", err)
+	}
+	if fileInfo.IsDir() {
+		return nil, ErrFileIsDirectory
+	}
+
+	// Open the file
+	file, err := os.Open(serverPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrFileNotReadable, err.Error())
+	}
+	defer file.Close()
+
+	// Detect content type if not provided
+	if contentType == "" {
+		ext := filepath.Ext(serverPath)
+		contentType = mime.TypeByExtension(ext)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+	}
+
+	// Use original filename if not provided
+	if originalFilename == "" {
+		originalFilename = filepath.Base(serverPath)
+	}
+
+	// Use existing Upload method
+	return s.Upload(ctx, originalFilename, contentType, fileInfo.Size(), file, uploadedBy)
+}
+
+// CreateFileLink creates a new link for an existing file (used for message forwarding)
+func (s *fileService) CreateFileLink(ctx context.Context, fileID, createdBy uuid.UUID) (uuid.UUID, error) {
+	// Verify file exists
+	_, err := s.repo.GetFile(ctx, fileID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	// Create new file link
+	link := &model.FileLink{
+		FileID:     fileID,
+		UploadedBy: createdBy,
+	}
+
+	if err := s.repo.CreateFileLink(ctx, link); err != nil {
+		return uuid.Nil, fmt.Errorf("failed to create file link: %w", err)
+	}
+
+	// Create permission for the link creator
+	perm := &model.FileLinkPermission{
+		FileLinkID:  link.ID,
+		UserID:      createdBy,
+		CanView:     true,
+		CanDownload: true,
+		CanDelete:   true,
+	}
+
+	if err := s.repo.CreateFileLinkPermission(ctx, perm); err != nil {
+		return uuid.Nil, fmt.Errorf("failed to create permission: %w", err)
+	}
+
+	return link.ID, nil
+}
+
+// RevokePermissions removes permissions from a user for specified file links
+func (s *fileService) RevokePermissions(ctx context.Context, linkIDs []uuid.UUID, userID uuid.UUID) error {
+	return s.repo.DeletePermissionsForUser(ctx, linkIDs, userID)
+}
+
+// GetFileIDByLinkID returns the file ID for a given link ID
+func (s *fileService) GetFileIDByLinkID(ctx context.Context, linkID uuid.UUID) (uuid.UUID, error) {
+	link, err := s.repo.GetFileLink(ctx, linkID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return link.FileID, nil
 }

@@ -49,6 +49,10 @@ type ChatRepository interface {
 	GetThreadMessages(ctx context.Context, parentID uuid.UUID, page, count int) ([]model.Message, int, error)
 	GetThreadCount(ctx context.Context, messageID uuid.UUID) (int, error)
 
+	// File attachments
+	GetAllFileLinkIDsForChat(ctx context.Context, chatID uuid.UUID) ([]uuid.UUID, error)
+	GetMessageAttachmentsBatch(ctx context.Context, messageIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
+
 	// Reaction operations
 	AddReaction(ctx context.Context, reaction *model.Reaction) error
 	RemoveReaction(ctx context.Context, messageID, userID uuid.UUID, reaction string) error
@@ -385,17 +389,24 @@ func (r *chatRepository) IsParticipant(ctx context.Context, chatID, userID uuid.
 // Message operations
 
 func (r *chatRepository) CreateMessage(ctx context.Context, message *model.Message) error {
+	// Start transaction
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	// Get next sequence number atomically
 	var seqNum int64
 	seqQuery := `SELECT con_test.get_next_seq_num($1)`
-	err := r.pool.QueryRow(ctx, seqQuery, message.ChatID).Scan(&seqNum)
+	err = tx.QueryRow(ctx, seqQuery, message.ChatID).Scan(&seqNum)
 	if err != nil {
 		return fmt.Errorf("failed to get next seq_num: %w", err)
 	}
 
 	query := `
-		INSERT INTO con_test.messages (id, chat_id, parent_id, sender_id, content, sent_at, is_deleted, seq_num)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO con_test.messages (id, chat_id, parent_id, sender_id, content, sent_at, is_deleted, seq_num, forwarded_from_message_id, forwarded_from_chat_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	message.ID = uuid.New()
@@ -403,18 +414,40 @@ func (r *chatRepository) CreateMessage(ctx context.Context, message *model.Messa
 	message.IsDeleted = false
 	message.SeqNum = seqNum
 
-	_, err = r.pool.Exec(ctx, query,
+	_, err = tx.Exec(ctx, query,
 		message.ID, message.ChatID, message.ParentID, message.SenderID, message.Content, message.SentAt, message.IsDeleted, message.SeqNum,
+		message.ForwardedFromMessageID, message.ForwardedFromChatID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create message: %w", err)
 	}
+
+	// Save file attachments if any
+	if len(message.FileLinkIDs) > 0 {
+		attachQuery := `
+			INSERT INTO con_test.message_file_attachments (id, message_id, file_link_id, sort_order)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (message_id, file_link_id) DO NOTHING
+		`
+		for i, linkID := range message.FileLinkIDs {
+			_, err = tx.Exec(ctx, attachQuery, uuid.New(), message.ID, linkID, i)
+			if err != nil {
+				return fmt.Errorf("failed to create file attachment: %w", err)
+			}
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return nil
 }
 
 func (r *chatRepository) GetMessage(ctx context.Context, id uuid.UUID) (*model.Message, error) {
 	query := `
-		SELECT id, chat_id, parent_id, sender_id, content, sent_at, updated_at, is_deleted, seq_num
+		SELECT id, chat_id, parent_id, sender_id, content, sent_at, updated_at, is_deleted, seq_num,
+		       forwarded_from_message_id, forwarded_from_chat_id
 		FROM con_test.messages
 		WHERE id = $1
 	`
@@ -422,6 +455,7 @@ func (r *chatRepository) GetMessage(ctx context.Context, id uuid.UUID) (*model.M
 	var msg model.Message
 	err := r.pool.QueryRow(ctx, query, id).Scan(
 		&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted, &msg.SeqNum,
+		&msg.ForwardedFromMessageID, &msg.ForwardedFromChatID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -429,6 +463,27 @@ func (r *chatRepository) GetMessage(ctx context.Context, id uuid.UUID) (*model.M
 		}
 		return nil, fmt.Errorf("failed to get message: %w", err)
 	}
+
+	// Load file link IDs
+	attachQuery := `
+		SELECT file_link_id FROM con_test.message_file_attachments
+		WHERE message_id = $1
+		ORDER BY sort_order
+	`
+	rows, err := r.pool.Query(ctx, attachQuery, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file attachments: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var linkID uuid.UUID
+		if err := rows.Scan(&linkID); err != nil {
+			return nil, fmt.Errorf("failed to scan file link ID: %w", err)
+		}
+		msg.FileLinkIDs = append(msg.FileLinkIDs, linkID)
+	}
+
 	return &msg, nil
 }
 
@@ -777,4 +832,62 @@ func (r *chatRepository) ListArchivedChats(ctx context.Context, userID uuid.UUID
 	}
 
 	return chats, total, nil
+}
+
+// File attachments
+
+func (r *chatRepository) GetAllFileLinkIDsForChat(ctx context.Context, chatID uuid.UUID) ([]uuid.UUID, error) {
+	query := `
+		SELECT DISTINCT mfa.file_link_id
+		FROM con_test.message_file_attachments mfa
+		JOIN con_test.messages m ON m.id = mfa.message_id
+		WHERE m.chat_id = $1 AND m.is_deleted = false
+	`
+
+	rows, err := r.pool.Query(ctx, query, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file link IDs for chat: %w", err)
+	}
+	defer rows.Close()
+
+	var linkIDs []uuid.UUID
+	for rows.Next() {
+		var linkID uuid.UUID
+		if err := rows.Scan(&linkID); err != nil {
+			return nil, fmt.Errorf("failed to scan file link ID: %w", err)
+		}
+		linkIDs = append(linkIDs, linkID)
+	}
+
+	return linkIDs, nil
+}
+
+func (r *chatRepository) GetMessageAttachmentsBatch(ctx context.Context, messageIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	if len(messageIDs) == 0 {
+		return make(map[uuid.UUID][]uuid.UUID), nil
+	}
+
+	query := `
+		SELECT message_id, file_link_id
+		FROM con_test.message_file_attachments
+		WHERE message_id = ANY($1)
+		ORDER BY message_id, sort_order
+	`
+
+	rows, err := r.pool.Query(ctx, query, messageIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get message attachments: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID][]uuid.UUID)
+	for rows.Next() {
+		var messageID, linkID uuid.UUID
+		if err := rows.Scan(&messageID, &linkID); err != nil {
+			return nil, fmt.Errorf("failed to scan attachment: %w", err)
+		}
+		result[messageID] = append(result[messageID], linkID)
+	}
+
+	return result, nil
 }

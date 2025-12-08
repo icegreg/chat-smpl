@@ -31,6 +31,7 @@ service ChatService {
     rpc UpdateMessage(UpdateMessageRequest) returns (Message);
     rpc DeleteMessage(DeleteMessageRequest) returns (google.protobuf.Empty);
     rpc GetThreadMessages(GetThreadMessagesRequest) returns (ListMessagesResponse);
+    rpc ForwardMessage(ForwardMessageRequest) returns (Message);
 
     // Reaction operations
     rpc AddReaction(AddReactionRequest) returns (google.protobuf.Empty);
@@ -116,6 +117,8 @@ message Message {
     string sender_display_name = 13;
     string sender_avatar_url = 14;
     int64 seq_num = 15;  // Sequence number for reliable sync
+    string forwarded_from_message_id = 16;  // Original message ID if forwarded
+    string forwarded_from_chat_id = 17;     // Original chat ID if forwarded
 }
 
 message Reaction {
@@ -386,4 +389,11 @@ message SendTypingRequest {
     string chat_id = 1;
     string user_id = 2;
     bool is_typing = 3;
+}
+
+// Forward message
+message ForwardMessageRequest {
+    string message_id = 1;      // ID of original message to forward
+    string target_chat_id = 2;  // Chat to forward the message to
+    string sender_id = 3;       // User who is forwarding the message
 }

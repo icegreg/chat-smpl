@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,8 +13,11 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc"
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
+	pb "github.com/icegreg/chat-smpl/proto/files"
+	filesgrpc "github.com/icegreg/chat-smpl/services/files/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/files/internal/handler"
 	"github.com/icegreg/chat-smpl/services/files/internal/repository"
 	"github.com/icegreg/chat-smpl/services/files/internal/service"
@@ -116,7 +120,7 @@ func main() {
 	// Public avatars endpoint (no auth required)
 	r.Get("/avatars/{userId}", h.ServeAvatar)
 
-	// Start server
+	// Start HTTP server
 	addr := getEnv("HTTP_ADDR", ":8082")
 	server := &http.Server{
 		Addr:         addr,
@@ -126,6 +130,24 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// Start gRPC server
+	grpcAddr := getEnv("GRPC_ADDR", ":50052")
+	grpcServer := grpc.NewServer()
+	filesServer := filesgrpc.NewFilesServer(fileService)
+	pb.RegisterFilesServiceServer(grpcServer, filesServer)
+
+	// Start gRPC listener
+	go func() {
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			log.Fatal("failed to listen for gRPC", "error", err)
+		}
+		log.Info("starting gRPC server", "addr", grpcAddr)
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Error("gRPC server error", "error", err)
+		}
+	}()
+
 	// Graceful shutdown
 	done := make(chan bool, 1)
 	quit := make(chan os.Signal, 1)
@@ -134,6 +156,9 @@ func main() {
 	go func() {
 		<-quit
 		log.Info("server is shutting down...")
+
+		// Shutdown gRPC server
+		grpcServer.GracefulStop()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()

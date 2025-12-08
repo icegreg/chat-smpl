@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	filesPb "github.com/icegreg/chat-smpl/proto/files"
 	"github.com/icegreg/chat-smpl/services/chat/internal/events"
 	"github.com/icegreg/chat-smpl/services/chat/internal/model"
 	"github.com/icegreg/chat-smpl/services/chat/internal/repository"
@@ -62,17 +63,22 @@ type ChatService interface {
 
 	// Typing indicator
 	SendTyping(ctx context.Context, chatID, userID uuid.UUID, isTyping bool) error
+
+	// Forward message
+	ForwardMessage(ctx context.Context, messageID, targetChatID, senderID uuid.UUID) (*model.Message, error)
 }
 
 type chatService struct {
-	repo      repository.ChatRepository
-	publisher events.Publisher
+	repo        repository.ChatRepository
+	publisher   events.Publisher
+	filesClient filesPb.FilesServiceClient
 }
 
-func NewChatService(repo repository.ChatRepository, publisher events.Publisher) ChatService {
+func NewChatService(repo repository.ChatRepository, publisher events.Publisher, filesClient filesPb.FilesServiceClient) ChatService {
 	return &chatService{
-		repo:      repo,
-		publisher: publisher,
+		repo:        repo,
+		publisher:   publisher,
+		filesClient: filesClient,
 	}
 }
 
@@ -221,6 +227,22 @@ func (s *chatService) AddParticipant(ctx context.Context, chatID, userID, addedB
 		return nil, err
 	}
 
+	// Grant permissions to all file links in the chat
+	if s.filesClient != nil {
+		linkIDs, err := s.repo.GetAllFileLinkIDsForChat(ctx, chatID)
+		if err == nil && len(linkIDs) > 0 {
+			linkIDStrs := make([]string, len(linkIDs))
+			for i, id := range linkIDs {
+				linkIDStrs[i] = id.String()
+			}
+			_, _ = s.filesClient.GrantPermissions(ctx, &filesPb.GrantPermissionsRequest{
+				LinkIds:   linkIDStrs,
+				UserIds:   []string{userID.String()},
+				GranterId: addedBy.String(),
+			})
+		}
+	}
+
 	return newParticipant, nil
 }
 
@@ -236,6 +258,21 @@ func (s *chatService) RemoveParticipant(ctx context.Context, chatID, userID, rem
 
 		if !participant.Role.CanModerate() {
 			return ErrAccessDenied
+		}
+	}
+
+	// Revoke permissions to all file links in the chat BEFORE removing participant
+	if s.filesClient != nil {
+		linkIDs, err := s.repo.GetAllFileLinkIDsForChat(ctx, chatID)
+		if err == nil && len(linkIDs) > 0 {
+			linkIDStrs := make([]string, len(linkIDs))
+			for i, id := range linkIDs {
+				linkIDStrs[i] = id.String()
+			}
+			_, _ = s.filesClient.RevokePermissions(ctx, &filesPb.RevokePermissionsRequest{
+				LinkIds: linkIDStrs,
+				UserId:  userID.String(),
+			})
 		}
 	}
 
@@ -546,4 +583,109 @@ func (s *chatService) SendTyping(ctx context.Context, chatID, userID uuid.UUID, 
 
 	// Publish typing event
 	return s.publisher.PublishTyping(ctx, chatID, userID, isTyping, participants)
+}
+
+// ForwardMessage forwards a message to another chat, creating new file links if needed
+func (s *chatService) ForwardMessage(ctx context.Context, messageID, targetChatID, senderID uuid.UUID) (*model.Message, error) {
+	// 1. Check sender has write access to target chat
+	participant, err := s.repo.GetParticipant(ctx, targetChatID, senderID)
+	if err != nil {
+		if errors.Is(err, repository.ErrParticipantNotFound) {
+			return nil, ErrNotParticipant
+		}
+		return nil, err
+	}
+	if !participant.Role.CanWrite() {
+		return nil, ErrCannotWriteChat
+	}
+
+	// 2. Get original message
+	original, err := s.repo.GetMessage(ctx, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get original message: %w", err)
+	}
+
+	// 3. Check sender has access to original chat
+	isParticipant, err := s.repo.IsParticipant(ctx, original.ChatID, senderID)
+	if err != nil {
+		return nil, err
+	}
+	if !isParticipant {
+		return nil, ErrNotParticipant
+	}
+
+	// 4. Create new file links for attached files
+	var newFileLinkIDs []uuid.UUID
+	if len(original.FileLinkIDs) > 0 && s.filesClient != nil {
+		for _, linkID := range original.FileLinkIDs {
+			// Get file_id by link_id
+			fileIDResp, err := s.filesClient.GetFileIDByLinkID(ctx, &filesPb.GetFileIDByLinkIDRequest{
+				LinkId: linkID.String(),
+			})
+			if err != nil {
+				// Skip if we can't get file ID - file may have been deleted
+				continue
+			}
+
+			// Create new link for the file
+			newLinkResp, err := s.filesClient.CreateFileLink(ctx, &filesPb.CreateFileLinkRequest{
+				FileId:    fileIDResp.FileId,
+				CreatedBy: senderID.String(),
+			})
+			if err != nil {
+				continue
+			}
+
+			newLinkID, err := uuid.Parse(newLinkResp.LinkId)
+			if err != nil {
+				continue
+			}
+			newFileLinkIDs = append(newFileLinkIDs, newLinkID)
+		}
+	}
+
+	// 5. Create forwarded message
+	newMessage := &model.Message{
+		ChatID:                 targetChatID,
+		SenderID:               senderID,
+		Content:                original.Content,
+		ForwardedFromMessageID: &messageID,
+		ForwardedFromChatID:    &original.ChatID,
+		FileLinkIDs:            newFileLinkIDs,
+	}
+
+	if err := s.repo.CreateMessage(ctx, newMessage); err != nil {
+		return nil, fmt.Errorf("failed to create forwarded message: %w", err)
+	}
+
+	// 6. Grant permissions to target chat participants for new file links
+	if len(newFileLinkIDs) > 0 && s.filesClient != nil {
+		targetParticipants, err := s.repo.GetParticipantIDs(ctx, targetChatID)
+		if err == nil && len(targetParticipants) > 0 {
+			linkIDStrs := make([]string, len(newFileLinkIDs))
+			for i, id := range newFileLinkIDs {
+				linkIDStrs[i] = id.String()
+			}
+			userIDStrs := make([]string, len(targetParticipants))
+			for i, id := range targetParticipants {
+				userIDStrs[i] = id.String()
+			}
+			_, _ = s.filesClient.GrantPermissions(ctx, &filesPb.GrantPermissionsRequest{
+				LinkIds:   linkIDStrs,
+				UserIds:   userIDStrs,
+				GranterId: senderID.String(),
+			})
+		}
+	}
+
+	// 7. Add sender info
+	newMessage.SenderUsername = participant.Username
+	newMessage.SenderDisplayName = participant.DisplayName
+	newMessage.SenderAvatarURL = participant.AvatarURL
+
+	// 8. Publish event
+	participants, _ := s.repo.GetParticipantIDs(ctx, targetChatID)
+	_ = s.publisher.PublishMessageCreated(ctx, newMessage, participants)
+
+	return newMessage, nil
 }

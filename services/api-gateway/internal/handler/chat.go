@@ -69,6 +69,9 @@ func (h *ChatHandler) Routes() chi.Router {
 	// Typing indicator
 	r.Post("/{chatId}/typing", h.SendTypingIndicator)
 
+	// Forward message
+	r.Post("/messages/{messageId}/forward", h.ForwardMessage)
+
 	return r
 }
 
@@ -738,6 +741,50 @@ func (h *ChatHandler) SendTypingIndicator(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// ForwardMessage forwards a message to another chat
+// POST /api/chats/messages/{messageId}/forward
+func (h *ChatHandler) ForwardMessage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	// Check role - guest cannot forward messages
+	role, _ := middleware.GetUserRole(ctx)
+	if role == "guest" {
+		h.respondError(w, http.StatusForbidden, "guests cannot forward messages")
+		return
+	}
+
+	messageID := chi.URLParam(r, "messageId")
+
+	var req struct {
+		TargetChatID string `json:"target_chat_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.TargetChatID == "" {
+		h.respondError(w, http.StatusBadRequest, "target_chat_id is required")
+		return
+	}
+
+	message, err := h.chatClient.ForwardMessage(ctx, messageID, req.TargetChatID, userID.String())
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	// Enrich message with file attachments
+	enrichedMessages := h.enrichMessagesWithFiles(ctx, []*pb.Message{message})
+	h.respondJSON(w, http.StatusCreated, enrichedMessages[0])
 }
 
 // Helper methods

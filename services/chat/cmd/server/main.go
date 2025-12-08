@@ -9,12 +9,14 @@ import (
 	"syscall"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	"github.com/icegreg/chat-smpl/pkg/postgres"
 	"github.com/icegreg/chat-smpl/pkg/rabbitmq"
 	pb "github.com/icegreg/chat-smpl/proto/chat"
+	filesPb "github.com/icegreg/chat-smpl/proto/files"
 	"github.com/icegreg/chat-smpl/services/chat/internal/events"
 	chatgrpc "github.com/icegreg/chat-smpl/services/chat/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/chat/internal/repository"
@@ -23,16 +25,18 @@ import (
 )
 
 type Config struct {
-	GRPCPort    string
-	DatabaseURL string
-	RabbitMQURL string
+	GRPCPort        string
+	DatabaseURL     string
+	RabbitMQURL     string
+	FilesServiceAddr string
 }
 
 func loadConfig() Config {
 	return Config{
-		GRPCPort:    getEnv("GRPC_PORT", "50051"),
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://chatapp:secret@localhost:5432/chatapp?sslmode=disable"),
-		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://chatapp:secret@localhost:5672/"),
+		GRPCPort:        getEnv("GRPC_PORT", "50051"),
+		DatabaseURL:     getEnv("DATABASE_URL", "postgres://chatapp:secret@localhost:5432/chatapp?sslmode=disable"),
+		RabbitMQURL:     getEnv("RABBITMQ_URL", "amqp://chatapp:secret@localhost:5672/"),
+		FilesServiceAddr: getEnv("FILES_SERVICE_ADDR", "localhost:50053"),
 	}
 }
 
@@ -73,9 +77,20 @@ func main() {
 		}
 	}
 
+	// Connect to files service
+	var filesClient filesPb.FilesServiceClient
+	filesConn, err := grpc.Dial(cfg.FilesServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		logger.Warn("failed to connect to files service, file operations will be limited", zap.Error(err))
+	} else {
+		defer filesConn.Close()
+		filesClient = filesPb.NewFilesServiceClient(filesConn)
+		logger.Info("connected to files service", zap.String("addr", cfg.FilesServiceAddr))
+	}
+
 	// Initialize layers
 	chatRepo := repository.NewChatRepository(pool)
-	chatService := service.NewChatService(chatRepo, publisher)
+	chatService := service.NewChatService(chatRepo, publisher, filesClient)
 	chatServer := chatgrpc.NewChatServer(chatService)
 
 	// Create gRPC server

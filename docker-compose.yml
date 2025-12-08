@@ -95,6 +95,7 @@ services:
       - DATABASE_URL=postgres://chatapp:secret@postgres:5432/chatapp?sslmode=disable
       - RABBITMQ_URL=amqp://chatapp:secret@rabbitmq:5672/
       - GRPC_PORT=50051
+      - FILES_SERVICE_ADDR=files-service:50053
     ports:
       - "50051:50051"
     depends_on:
@@ -102,6 +103,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      files-service:
+        condition: service_started
     networks:
       - chatapp-network
 
@@ -150,9 +153,11 @@ services:
     environment:
       - DATABASE_URL=postgres://chatapp:secret@postgres:5432/chatapp?sslmode=disable
       - HTTP_PORT=8082
+      - GRPC_ADDR=:50053
       - STORAGE_PATH=/app/storage
     ports:
       - "8082:8082"
+      - "50053:50053"
     volumes:
       - files_storage:/app/storage
     depends_on:

@@ -166,6 +166,13 @@ func messageToProto(m *model.Message) *pb.Message {
 	for _, id := range m.FileLinkIDs {
 		msg.FileLinkIds = append(msg.FileLinkIds, id.String())
 	}
+	// Add forwarded message fields
+	if m.ForwardedFromMessageID != nil {
+		msg.ForwardedFromMessageId = m.ForwardedFromMessageID.String()
+	}
+	if m.ForwardedFromChatID != nil {
+		msg.ForwardedFromChatId = m.ForwardedFromChatID.String()
+	}
 	return msg
 }
 
@@ -911,6 +918,30 @@ func (s *ChatServer) SendTyping(ctx context.Context, req *pb.SendTypingRequest) 
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+// Forward message
+
+func (s *ChatServer) ForwardMessage(ctx context.Context, req *pb.ForwardMessageRequest) (*pb.Message, error) {
+	messageID, err := parseUUID(req.MessageId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid message_id")
+	}
+	targetChatID, err := parseUUID(req.TargetChatId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid target_chat_id")
+	}
+	senderID, err := parseUUID(req.SenderId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid sender_id")
+	}
+
+	message, err := s.chatService.ForwardMessage(ctx, messageID, targetChatID, senderID)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return messageToProto(message), nil
 }
 
 // Poll operations - not implemented yet, using UnimplementedChatServiceServer

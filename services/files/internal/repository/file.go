@@ -43,6 +43,7 @@ type FileRepository interface {
 	CreateFileLinkPermission(ctx context.Context, perm *model.FileLinkPermission) error
 	GetFileLinkPermission(ctx context.Context, fileLinkID, userID uuid.UUID) (*model.FileLinkPermission, error)
 	CreatePermissionsForParticipants(ctx context.Context, fileLinkID uuid.UUID, participantIDs []uuid.UUID, uploaderID uuid.UUID) error
+	DeletePermissionsForUser(ctx context.Context, linkIDs []uuid.UUID, userID uuid.UUID) error
 
 	// Share links
 	CreateShareLink(ctx context.Context, link *model.FileShareLink) error
@@ -276,6 +277,23 @@ func (r *fileRepository) CreatePermissionsForParticipants(ctx context.Context, f
 		if err := r.CreateFileLinkPermission(ctx, perm); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (r *fileRepository) DeletePermissionsForUser(ctx context.Context, linkIDs []uuid.UUID, userID uuid.UUID) error {
+	if len(linkIDs) == 0 {
+		return nil
+	}
+
+	query := `
+		DELETE FROM con_test.file_link_permissions
+		WHERE file_link_id = ANY($1) AND user_id = $2
+	`
+
+	_, err := r.pool.Exec(ctx, query, linkIDs, userID)
+	if err != nil {
+		return fmt.Errorf("failed to delete permissions: %w", err)
 	}
 	return nil
 }
