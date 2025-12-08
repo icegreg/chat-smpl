@@ -145,6 +145,7 @@ func messageToProto(m *model.Message) *pb.Message {
 		Content:   m.Content,
 		SentAt:    timestamppb.New(m.SentAt),
 		IsDeleted: m.IsDeleted,
+		SeqNum:    m.SeqNum,
 	}
 	if m.ParentID != nil {
 		msg.ParentId = m.ParentID.String()
@@ -552,6 +553,43 @@ func (s *ChatServer) ListMessages(ctx context.Context, req *pb.ListMessagesReque
 			Total:      int32(total),
 			TotalPages: totalPages,
 		},
+	}, nil
+}
+
+func (s *ChatServer) SyncMessages(ctx context.Context, req *pb.SyncMessagesRequest) (*pb.SyncMessagesResponse, error) {
+	chatID, err := parseUUID(req.ChatId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid chat_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	limit := int(req.Limit)
+	if limit < 1 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	messages, err := s.chatService.SyncMessages(ctx, chatID, userID, req.AfterSeqNum, limit)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	protoMessages := make([]*pb.Message, len(messages))
+	for i, m := range messages {
+		protoMessages[i] = messageToProto(&m)
+	}
+
+	// hasMore is true if we got exactly limit messages (might be more)
+	hasMore := len(messages) == limit
+
+	return &pb.SyncMessagesResponse{
+		Messages: protoMessages,
+		HasMore:  hasMore,
 	}, nil
 }
 

@@ -37,6 +37,7 @@ type ChatService interface {
 	SendMessage(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID *uuid.UUID, fileLinkIDs []uuid.UUID) (*model.Message, error)
 	GetMessage(ctx context.Context, messageID, userID uuid.UUID) (*model.Message, error)
 	ListMessages(ctx context.Context, chatID, userID uuid.UUID, page, count int) ([]model.Message, int, error)
+	SyncMessages(ctx context.Context, chatID, userID uuid.UUID, afterSeqNum int64, limit int) ([]model.Message, error)
 	UpdateMessage(ctx context.Context, messageID, userID uuid.UUID, content string) (*model.Message, error)
 	DeleteMessage(ctx context.Context, messageID, userID uuid.UUID) error
 	GetThreadMessages(ctx context.Context, parentID, userID uuid.UUID, page, count int) ([]model.Message, int, error)
@@ -331,6 +332,18 @@ func (s *chatService) ListMessages(ctx context.Context, chatID, userID uuid.UUID
 	}
 
 	return s.repo.ListMessages(ctx, chatID, page, count, nil, nil)
+}
+
+func (s *chatService) SyncMessages(ctx context.Context, chatID, userID uuid.UUID, afterSeqNum int64, limit int) ([]model.Message, error) {
+	isParticipant, err := s.repo.IsParticipant(ctx, chatID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !isParticipant {
+		return nil, ErrNotParticipant
+	}
+
+	return s.repo.GetMessagesSince(ctx, chatID, afterSeqNum, limit)
 }
 
 func (s *chatService) UpdateMessage(ctx context.Context, messageID, userID uuid.UUID, content string) (*model.Message, error) {

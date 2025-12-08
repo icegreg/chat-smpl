@@ -15,6 +15,9 @@ interface ChatEvent {
   data: unknown
 }
 
+// Storage key for seq_num persistence
+const SEQ_NUM_STORAGE_KEY = 'chat_seq_nums'
+
 export const useChatStore = defineStore('chat', () => {
   const chats = ref<Chat[]>([])
   const currentChat = ref<Chat | null>(null)
@@ -25,10 +28,55 @@ export const useChatStore = defineStore('chat', () => {
   const typingUsers = ref<Map<string, Set<string>>>(new Map())
   const typingTimeouts = ref<Map<string, number>>(new Map()) // chatId:userId -> timeout id
 
+  // Track last known seq_num per chat for reliable sync after reconnect
+  const lastSeqNums = ref<Map<string, number>>(new Map())
+  const isSyncing = ref(false)
+
   let centrifuge: Centrifuge | null = null
   let userSubscription: Subscription | null = null
 
   const TYPING_DISPLAY_DURATION = 5000 // Hide typing indicator after 5 seconds
+
+  // Load seq_nums from localStorage on init
+  function loadSeqNumsFromStorage() {
+    try {
+      const stored = localStorage.getItem(SEQ_NUM_STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, number>
+        Object.entries(parsed).forEach(([chatId, seqNum]) => {
+          lastSeqNums.value.set(chatId, seqNum)
+        })
+      }
+    } catch (e) {
+      console.warn('Failed to load seq_nums from storage:', e)
+    }
+  }
+
+  // Save seq_nums to localStorage
+  function saveSeqNumsToStorage() {
+    try {
+      const obj: Record<string, number> = {}
+      lastSeqNums.value.forEach((seqNum, chatId) => {
+        obj[chatId] = seqNum
+      })
+      localStorage.setItem(SEQ_NUM_STORAGE_KEY, JSON.stringify(obj))
+    } catch (e) {
+      console.warn('Failed to save seq_nums to storage:', e)
+    }
+  }
+
+  // Update seq_num tracking when we receive/load messages
+  function updateLastSeqNum(chatId: string, seqNum: number | undefined) {
+    if (seqNum === undefined) return
+    const current = lastSeqNums.value.get(chatId) || 0
+    if (seqNum > current) {
+      lastSeqNums.value.set(chatId, seqNum)
+      saveSeqNumsToStorage()
+    }
+  }
+
+  // Load seq_nums on module init
+  loadSeqNumsFromStorage()
 
   const sortedChats = computed(() => {
     return [...chats.value].sort((a, b) => {
@@ -71,6 +119,10 @@ export const useChatStore = defineStore('chat', () => {
         // Register presence connection
         const presenceStore = usePresenceStore()
         presenceStore.registerConnection()
+        // Sync messages for current chat after reconnect
+        if (currentChat.value) {
+          syncMessagesAfterReconnect(currentChat.value.id)
+        }
       })
 
       centrifuge.on('disconnected', () => {
@@ -147,6 +199,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleNewMessage(message: Message) {
+    // Update seq_num tracking
+    updateLastSeqNum(message.chat_id, message.seq_num)
+
     if (currentChat.value?.id === message.chat_id) {
       // Avoid duplicates (message may already exist from REST response)
       const existing = messages.value.find((m) => m.id === message.id)
@@ -302,6 +357,15 @@ export const useChatStore = defineStore('chat', () => {
       currentChat.value = await api.getChat(chatId)
       const messagesResult = await api.getMessages(chatId)
       messages.value = messagesResult.messages || []
+
+      // Update lastSeqNum from loaded messages
+      if (messages.value.length > 0) {
+        const maxSeqNum = Math.max(...messages.value.map((m) => m.seq_num || 0))
+        if (maxSeqNum > 0) {
+          updateLastSeqNum(chatId, maxSeqNum)
+        }
+      }
+
       const participantsResult = await api.getParticipants(chatId)
       participants.value = participantsResult.participants || []
       // Clear unread count
@@ -337,6 +401,9 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
     try {
       const message = await api.sendMessage(currentChat.value.id, data)
+      // Update seq_num tracking from sent message
+      updateLastSeqNum(currentChat.value.id, message.seq_num)
+
       // Add message immediately using REST response (includes file_attachments)
       // The Centrifugo event may have already added this message WITHOUT file_attachments
       // so we need to update/replace it with the enriched version
@@ -415,6 +482,59 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // Sync messages after reconnect - fetch any messages we missed while offline
+  async function syncMessagesAfterReconnect(chatId: string) {
+    if (isSyncing.value) return
+
+    const lastSeqNum = lastSeqNums.value.get(chatId)
+    if (lastSeqNum === undefined || lastSeqNum === 0) {
+      console.log('No seq_num tracked for chat, skipping sync:', chatId)
+      return
+    }
+
+    isSyncing.value = true
+    console.log(`Syncing messages for chat ${chatId} after seq_num ${lastSeqNum}`)
+
+    try {
+      let hasMore = true
+      let afterSeq = lastSeqNum
+
+      while (hasMore) {
+        const result = await api.syncMessages(chatId, afterSeq, 100)
+        const newMessages = result.messages || []
+        hasMore = result.has_more
+
+        if (newMessages.length === 0) break
+
+        // Add new messages to the list, avoiding duplicates
+        for (const msg of newMessages) {
+          const existing = messages.value.find((m) => m.id === msg.id)
+          if (!existing) {
+            messages.value.push(msg)
+          }
+          // Update seq_num tracking
+          updateLastSeqNum(chatId, msg.seq_num)
+          afterSeq = msg.seq_num || afterSeq
+        }
+
+        console.log(`Synced ${newMessages.length} messages, has_more: ${hasMore}`)
+      }
+
+      // Sort messages by seq_num or created_at to ensure correct order
+      messages.value.sort((a, b) => {
+        if (a.seq_num && b.seq_num) return a.seq_num - b.seq_num
+        const aTime = new Date(a.created_at || 0).getTime()
+        const bTime = new Date(b.created_at || 0).getTime()
+        return aTime - bTime
+      })
+
+    } catch (e) {
+      console.error('Failed to sync messages after reconnect:', e)
+    } finally {
+      isSyncing.value = false
+    }
+  }
+
   function cleanup() {
     unsubscribeFromUserChannel()
     if (centrifuge) {
@@ -440,6 +560,7 @@ export const useChatStore = defineStore('chat', () => {
     error,
     typingUsers,
     sortedChats,
+    isSyncing,
     initCentrifuge,
     fetchChats,
     selectChat,
@@ -451,6 +572,7 @@ export const useChatStore = defineStore('chat', () => {
     removeReaction,
     toggleFavorite,
     sendTyping,
+    syncMessagesAfterReconnect,
     cleanup,
   }
 })

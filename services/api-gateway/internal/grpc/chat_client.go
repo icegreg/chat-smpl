@@ -316,3 +316,13 @@ func (c *ChatClient) SendTyping(ctx context.Context, chatID, userID string, isTy
 	})
 	return err
 }
+
+// SyncMessages returns messages after a specific sequence number for reliable sync after reconnect
+func (c *ChatClient) SyncMessages(ctx context.Context, chatID, userID string, afterSeqNum int64, limit int32) (*pb.SyncMessagesResponse, error) {
+	return c.client.SyncMessages(ctx, &pb.SyncMessagesRequest{
+		ChatId:      chatID,
+		UserId:      userID,
+		AfterSeqNum: afterSeqNum,
+		Limit:       limit,
+	})
+}

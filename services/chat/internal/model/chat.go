@@ -76,6 +76,7 @@ type Message struct {
 	SentAt            time.Time   `json:"sent_at" db:"sent_at"`
 	UpdatedAt         *time.Time  `json:"updated_at,omitempty" db:"updated_at"`
 	IsDeleted         bool        `json:"is_deleted" db:"is_deleted"`
+	SeqNum            int64       `json:"seq_num" db:"seq_num"` // Sequence number for reliable sync
 	SenderUsername    *string     `json:"sender_username,omitempty" db:"sender_username"`
 	SenderDisplayName *string     `json:"sender_display_name,omitempty" db:"sender_display_name"`
 	SenderAvatarURL   *string     `json:"sender_avatar_url,omitempty" db:"sender_avatar_url"`

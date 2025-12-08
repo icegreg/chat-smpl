@@ -79,6 +79,7 @@ export interface Message {
   reactions?: Reaction[]
   reply_to?: Message
   file_attachments?: FileAttachment[]
+  seq_num?: number // Sequence number for reliable sync
 }
 
 export interface Reaction {

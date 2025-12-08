@@ -27,6 +27,7 @@ service ChatService {
     rpc SendMessage(SendMessageRequest) returns (Message);
     rpc GetMessage(GetMessageRequest) returns (Message);
     rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+    rpc SyncMessages(SyncMessagesRequest) returns (SyncMessagesResponse);
     rpc UpdateMessage(UpdateMessageRequest) returns (Message);
     rpc DeleteMessage(DeleteMessageRequest) returns (google.protobuf.Empty);
     rpc GetThreadMessages(GetThreadMessagesRequest) returns (ListMessagesResponse);
@@ -114,6 +115,7 @@ message Message {
     string sender_username = 12;
     string sender_display_name = 13;
     string sender_avatar_url = 14;
+    int64 seq_num = 15;  // Sequence number for reliable sync
 }
 
 message Reaction {
@@ -255,6 +257,19 @@ message ListMessagesRequest {
 message ListMessagesResponse {
     repeated Message messages = 1;
     Pagination pagination = 2;
+}
+
+// SyncMessages - get messages after a specific seq_num for reliable sync after reconnect
+message SyncMessagesRequest {
+    string chat_id = 1;
+    string user_id = 2;
+    int64 after_seq_num = 3;  // Get messages with seq_num > this value
+    int32 limit = 4;          // Max messages to return (default 100, max 1000)
+}
+
+message SyncMessagesResponse {
+    repeated Message messages = 1;
+    bool has_more = 2;  // True if there are more messages to sync
 }
 
 message UpdateMessageRequest {

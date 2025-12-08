@@ -47,6 +47,7 @@ func (h *ChatHandler) Routes() chi.Router {
 
 	// Message routes
 	r.Get("/{chatId}/messages", h.GetMessages)
+	r.Get("/{chatId}/messages/sync", h.SyncMessages)
 	r.Post("/{chatId}/messages", h.SendMessage)
 	r.Put("/messages/{messageId}", h.UpdateMessage)
 	r.Delete("/messages/{messageId}", h.DeleteMessage)
@@ -452,6 +453,41 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"messages":   messages,
 		"pagination": resp.Pagination,
+	})
+}
+
+// SyncMessages returns messages after a specific seq_num for reliable sync after reconnect
+// GET /api/chats/{chatId}/messages/sync?after_seq=123&limit=100
+func (h *ChatHandler) SyncMessages(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	chatID := chi.URLParam(r, "chatId")
+	afterSeqNum, _ := strconv.ParseInt(r.URL.Query().Get("after_seq"), 10, 64)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	resp, err := h.chatClient.SyncMessages(ctx, chatID, userID.String(), afterSeqNum, int32(limit))
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	// Enrich messages with file attachments
+	messages := h.enrichMessagesWithFiles(ctx, resp.Messages)
+
+	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"messages": messages,
+		"has_more": resp.HasMore,
 	})
 }
 

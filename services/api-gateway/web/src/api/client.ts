@@ -180,6 +180,18 @@ class ApiClient {
     return this.request<void>('DELETE', `/chats/messages/${messageId}`)
   }
 
+  // Sync messages after reconnect
+  async syncMessages(
+    chatId: string,
+    afterSeqNum: number,
+    limit = 100
+  ): Promise<{ messages: Message[]; has_more: boolean }> {
+    return this.request<{ messages: Message[]; has_more: boolean }>(
+      'GET',
+      `/chats/${chatId}/messages/sync?after_seq=${afterSeqNum}&limit=${limit}`
+    )
+  }
+
   // Reactions
   async addReaction(messageId: string, emoji: string): Promise<void> {
     return this.request<void>('POST', `/chats/messages/${messageId}/reactions`, { emoji })

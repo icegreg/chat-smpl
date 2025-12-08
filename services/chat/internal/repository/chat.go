@@ -43,6 +43,7 @@ type ChatRepository interface {
 	CreateMessage(ctx context.Context, message *model.Message) error
 	GetMessage(ctx context.Context, id uuid.UUID) (*model.Message, error)
 	ListMessages(ctx context.Context, chatID uuid.UUID, page, count int, before, after *time.Time) ([]model.Message, int, error)
+	GetMessagesSince(ctx context.Context, chatID uuid.UUID, afterSeqNum int64, limit int) ([]model.Message, error)
 	UpdateMessage(ctx context.Context, message *model.Message) error
 	DeleteMessage(ctx context.Context, id uuid.UUID) error
 	GetThreadMessages(ctx context.Context, parentID uuid.UUID, page, count int) ([]model.Message, int, error)
@@ -384,17 +385,26 @@ func (r *chatRepository) IsParticipant(ctx context.Context, chatID, userID uuid.
 // Message operations
 
 func (r *chatRepository) CreateMessage(ctx context.Context, message *model.Message) error {
+	// Get next sequence number atomically
+	var seqNum int64
+	seqQuery := `SELECT con_test.get_next_seq_num($1)`
+	err := r.pool.QueryRow(ctx, seqQuery, message.ChatID).Scan(&seqNum)
+	if err != nil {
+		return fmt.Errorf("failed to get next seq_num: %w", err)
+	}
+
 	query := `
-		INSERT INTO con_test.messages (id, chat_id, parent_id, sender_id, content, sent_at, is_deleted)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO con_test.messages (id, chat_id, parent_id, sender_id, content, sent_at, is_deleted, seq_num)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	message.ID = uuid.New()
 	message.SentAt = time.Now()
 	message.IsDeleted = false
+	message.SeqNum = seqNum
 
-	_, err := r.pool.Exec(ctx, query,
-		message.ID, message.ChatID, message.ParentID, message.SenderID, message.Content, message.SentAt, message.IsDeleted,
+	_, err = r.pool.Exec(ctx, query,
+		message.ID, message.ChatID, message.ParentID, message.SenderID, message.Content, message.SentAt, message.IsDeleted, message.SeqNum,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create message: %w", err)
@@ -404,14 +414,14 @@ func (r *chatRepository) CreateMessage(ctx context.Context, message *model.Messa
 
 func (r *chatRepository) GetMessage(ctx context.Context, id uuid.UUID) (*model.Message, error) {
 	query := `
-		SELECT id, chat_id, parent_id, sender_id, content, sent_at, updated_at, is_deleted
+		SELECT id, chat_id, parent_id, sender_id, content, sent_at, updated_at, is_deleted, seq_num
 		FROM con_test.messages
 		WHERE id = $1
 	`
 
 	var msg model.Message
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted,
+		&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted, &msg.SeqNum,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -437,7 +447,7 @@ func (r *chatRepository) ListMessages(ctx context.Context, chatID uuid.UUID, pag
 	}
 
 	query := `
-		SELECT m.id, m.chat_id, m.parent_id, m.sender_id, m.content, m.sent_at, m.updated_at, m.is_deleted,
+		SELECT m.id, m.chat_id, m.parent_id, m.sender_id, m.content, m.sent_at, m.updated_at, m.is_deleted, m.seq_num,
 		       u.username, u.display_name, u.avatar_url
 		FROM con_test.messages m
 		LEFT JOIN con_test.users u ON m.sender_id = u.id
@@ -455,7 +465,7 @@ func (r *chatRepository) ListMessages(ctx context.Context, chatID uuid.UUID, pag
 	var messages []model.Message
 	for rows.Next() {
 		var msg model.Message
-		if err := rows.Scan(&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted,
+		if err := rows.Scan(&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted, &msg.SeqNum,
 			&msg.SenderUsername, &msg.SenderDisplayName, &msg.SenderAvatarURL); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan message: %w", err)
 		}
@@ -463,6 +473,42 @@ func (r *chatRepository) ListMessages(ctx context.Context, chatID uuid.UUID, pag
 	}
 
 	return messages, total, nil
+}
+
+// GetMessagesSince returns messages with seq_num > afterSeqNum, ordered by seq_num ASC
+// Used for syncing missed messages after reconnect
+func (r *chatRepository) GetMessagesSince(ctx context.Context, chatID uuid.UUID, afterSeqNum int64, limit int) ([]model.Message, error) {
+	if limit < 1 || limit > 1000 {
+		limit = 100
+	}
+
+	query := `
+		SELECT m.id, m.chat_id, m.parent_id, m.sender_id, m.content, m.sent_at, m.updated_at, m.is_deleted, m.seq_num,
+		       u.username, u.display_name, u.avatar_url
+		FROM con_test.messages m
+		LEFT JOIN con_test.users u ON m.sender_id = u.id
+		WHERE m.chat_id = $1 AND m.seq_num > $2
+		ORDER BY m.seq_num ASC
+		LIMIT $3
+	`
+
+	rows, err := r.pool.Query(ctx, query, chatID, afterSeqNum, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get messages since seq_num: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []model.Message
+	for rows.Next() {
+		var msg model.Message
+		if err := rows.Scan(&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted, &msg.SeqNum,
+			&msg.SenderUsername, &msg.SenderDisplayName, &msg.SenderAvatarURL); err != nil {
+			return nil, fmt.Errorf("failed to scan message: %w", err)
+		}
+		messages = append(messages, msg)
+	}
+
+	return messages, nil
 }
 
 func (r *chatRepository) UpdateMessage(ctx context.Context, message *model.Message) error {
@@ -507,7 +553,7 @@ func (r *chatRepository) GetThreadMessages(ctx context.Context, parentID uuid.UU
 	}
 
 	query := `
-		SELECT id, chat_id, parent_id, sender_id, content, sent_at, updated_at, is_deleted
+		SELECT id, chat_id, parent_id, sender_id, content, sent_at, updated_at, is_deleted, seq_num
 		FROM con_test.messages
 		WHERE parent_id = $1
 		ORDER BY sent_at ASC
@@ -523,7 +569,7 @@ func (r *chatRepository) GetThreadMessages(ctx context.Context, parentID uuid.UU
 	var messages []model.Message
 	for rows.Next() {
 		var msg model.Message
-		if err := rows.Scan(&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted, &msg.SeqNum); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan message: %w", err)
 		}
 		messages = append(messages, msg)
