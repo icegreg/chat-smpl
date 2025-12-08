@@ -1,0 +1,65 @@
+erDiagram
+    FILES ||--o{ FILE_LINKS : "имеет"
+    FILE_LINKS ||--o{ FILE_LINK_PERMISSIONS : "имеет"
+    FILE_LINKS ||--o{ MESSAGE_FILE_ATTACHMENTS : "используется в"
+    FILES ||--o{ FILE_SHARE_LINKS : "имеет"
+    MESSAGES ||--o{ MESSAGE_FILE_ATTACHMENTS : "содержит"
+
+    FILES {
+        uuid id PK "Уникальный ID файла"
+        string filename "Имя файла в хранилище"
+        string original_filename "Оригинальное имя файла"
+        string content_type "MIME тип"
+        bigint size "Размер в байтах"
+        string file_path "Путь к файлу на диске"
+        uuid uploaded_by FK "ID загрузившего пользователя"
+        timestamp uploaded_at "Дата загрузки"
+        enum status "active или deleted"
+        jsonb metadata "Дополнительные метаданные"
+    }
+
+    FILE_LINKS {
+        uuid id PK "ID ссылки используется в API"
+        uuid file_id FK "Ссылка на файл"
+        uuid uploaded_by FK "Создатель ссылки"
+        timestamp uploaded_at "Дата создания"
+        boolean is_deleted "Флаг удаления"
+    }
+
+    FILE_LINK_PERMISSIONS {
+        uuid id PK "ID записи"
+        uuid file_link_id FK "ID ссылки на файл"
+        uuid user_id FK "ID пользователя"
+        boolean can_view "Право просмотра"
+        boolean can_download "Право скачивания"
+        boolean can_delete "Право удаления"
+    }
+
+    FILE_SHARE_LINKS {
+        uuid id PK "ID публичной ссылки"
+        uuid file_id FK "Ссылка на файл"
+        string token UK "Уникальный токен"
+        string password "Хеш пароля опционально"
+        int max_downloads "Лимит скачиваний"
+        int download_count "Счётчик скачиваний"
+        uuid created_by FK "Создатель ссылки"
+        timestamp created_at "Дата создания"
+        timestamp expires_at "Срок действия"
+        boolean is_active "Активна ли ссылка"
+    }
+
+    MESSAGE_FILE_ATTACHMENTS {
+        uuid id PK "ID записи"
+        uuid message_id FK "ID сообщения в chat-service"
+        uuid file_link_id FK "ID ссылки на файл"
+        int sort_order "Порядок сортировки"
+    }
+
+    MESSAGES {
+        uuid id PK "ID сообщения"
+        uuid chat_id FK "ID чата"
+        uuid sender_id FK "ID отправителя"
+        text content "Текст сообщения"
+        uuid forwarded_from_message_id FK "ID оригинала при пересылке"
+        uuid forwarded_from_chat_id "ID исходного чата"
+    }

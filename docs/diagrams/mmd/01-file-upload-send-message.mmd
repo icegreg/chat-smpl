@@ -1,0 +1,72 @@
+sequenceDiagram
+    autonumber
+    participant Клиент as Клиент (Browser)
+    participant GW as API Gateway
+    participant FS as Files Service
+    participant CS as Chat Service
+    participant DB_F as БД Files
+    participant DB_C as БД Chat
+    participant Storage as Файловое хранилище
+    participant MQ as RabbitMQ
+    participant Centrifugo as Centrifugo
+
+    Note over Клиент,Centrifugo: Сценарий: Отправка сообщения с файлом
+
+    rect rgb(230, 245, 255)
+        Note right of Клиент: Этап 1: Загрузка файла
+        Клиент->>+GW: POST /api/files/upload<br/>(multipart/form-data + JWT)
+        GW->>GW: Проверка JWT токена
+        GW->>+FS: POST /files/upload<br/>(X-User-ID: user_uuid)
+        FS->>FS: Валидация размера файла
+        FS->>+Storage: Сохранить файл на диск
+        Storage-->>-FS: Путь к файлу
+        FS->>+DB_F: INSERT files (id, filename, path, ...)
+        DB_F-->>-FS: file_id
+        FS->>+DB_F: INSERT file_links (id, file_id, uploaded_by)
+        DB_F-->>-FS: link_id
+        FS->>+DB_F: INSERT file_link_permissions<br/>(link_id, user_id=uploader, can_view=true)
+        DB_F-->>-FS: OK
+        FS-->>-GW: {file_id, link_id, filename, size}
+        GW-->>-Клиент: 201 Created {link_id, ...}
+    end
+
+    rect rgb(230, 255, 230)
+        Note right of Клиент: Этап 2: Отправка сообщения с файлом
+        Клиент->>+GW: POST /api/chats/{chatId}/messages<br/>{content, file_link_ids: [link_id]}
+        GW->>GW: Проверка JWT токена
+        GW->>+CS: gRPC: SendMessage<br/>(chat_id, sender_id, content, file_link_ids)
+        CS->>+DB_C: Проверка участия в чате
+        DB_C-->>-CS: participant (role)
+        CS->>CS: Проверка роли (can_write?)
+        CS->>+DB_C: INSERT messages<br/>(id, chat_id, sender_id, content, ...)
+        DB_C-->>-CS: message_id, seq_num
+        CS->>+DB_C: INSERT message_file_attachments<br/>(message_id, file_link_id)
+        DB_C-->>-CS: OK
+        CS->>+DB_C: SELECT participant_ids FROM chat_participants
+        DB_C-->>-CS: [user1, user2, user3, ...]
+        CS-->>-GW: Message (с seq_num)
+
+        GW->>+FS: POST /files/grant-permissions<br/>{link_ids, user_ids: participants}
+        FS->>+DB_F: INSERT file_link_permissions<br/>(для каждого участника)
+        DB_F-->>-FS: OK
+        FS-->>-GW: OK
+
+        GW->>+FS: POST /files/batch<br/>{link_ids}
+        FS->>+DB_F: SELECT files JOIN file_links
+        DB_F-->>-FS: file metadata
+        FS-->>-GW: [{link_id, filename, size, content_type}]
+
+        GW-->>-Клиент: 201 Created {message + file_attachments}
+    end
+
+    rect rgb(255, 245, 230)
+        Note right of Клиент: Этап 3: Real-time уведомление
+        CS->>+MQ: Publish: message.created<br/>(exchange: chat.events)
+        MQ-->>-CS: ACK
+
+        participant WS as WebSocket Service
+        MQ->>+WS: Consume: message.created<br/>(queue: websocket.events)
+        WS->>+Centrifugo: PublishToUser<br/>(для каждого участника)
+        Centrifugo-->>-WS: OK
+        Centrifugo-->>Клиент: WebSocket: new_message
+    end

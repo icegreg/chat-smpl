@@ -1,0 +1,34 @@
+sequenceDiagram
+    autonumber
+    participant Клиент as Клиент (Browser)
+    participant GW as API Gateway
+    participant FS as Files Service
+    participant DB_F as БД Files
+    participant Storage as Файловое хранилище
+
+    Note over Клиент,Storage: Сценарий: Скачивание файла по link_id
+
+    Клиент->>+GW: GET /api/files/{link_id}<br/>(Authorization: Bearer JWT)
+    GW->>GW: Проверка JWT токена
+    GW->>+FS: GET /files/{link_id}<br/>(X-User-ID: user_uuid)
+
+    FS->>+DB_F: SELECT fl.*, f.*<br/>FROM file_links fl<br/>JOIN files f ON fl.file_id = f.id<br/>WHERE fl.id = link_id
+    DB_F-->>-FS: file_link + file metadata
+
+    alt Файл не найден
+        FS-->>GW: 404 Not Found
+        GW-->>Клиент: 404 Not Found
+    else Файл найден
+        FS->>+DB_F: SELECT * FROM file_link_permissions<br/>WHERE file_link_id = link_id<br/>AND user_id = user_uuid<br/>AND can_download = true
+        DB_F-->>-FS: permission record
+
+        alt Нет прав доступа
+            FS-->>GW: 403 Forbidden<br/>"access denied"
+            GW-->>Клиент: 403 Forbidden
+        else Есть права
+            FS->>+Storage: Открыть файл<br/>(file_path)
+            Storage-->>-FS: FileReader
+            FS-->>-GW: Stream + Headers<br/>(Content-Type, Content-Disposition)
+            GW-->>-Клиент: 200 OK + бинарные данные
+        end
+    end

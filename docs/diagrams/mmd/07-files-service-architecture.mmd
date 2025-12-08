@@ -1,0 +1,65 @@
+flowchart TB
+    subgraph External["Внешние клиенты"]
+        Browser["Browser"]
+        ChatSvc["Chat Service"]
+    end
+
+    subgraph FilesService["Files Service"]
+        subgraph Handlers["HTTP Handlers"]
+            H1["Upload"]
+            H2["Download"]
+            H3["GetFileInfo"]
+            H4["Delete"]
+            H5["GetFilesByLinkIDs"]
+            H6["GrantPermissions"]
+            H7["CreateShareLink"]
+            H8["DownloadByShareToken"]
+        end
+
+        subgraph GRPCServer["gRPC Server"]
+            G1["AddLocalFile"]
+            G2["CreateFileLink"]
+            G3["GrantPermissions"]
+            G4["RevokePermissions"]
+            G5["GetFileIDByLinkID"]
+            G6["GetFilesByLinkIDs"]
+        end
+
+        subgraph ServiceLayer["Service Layer"]
+            SVC["FileService Interface"]
+        end
+
+        subgraph Repository["Repository Layer"]
+            REPO["FileRepository"]
+        end
+
+        subgraph Storage["Storage"]
+            DISK["Local Disk Storage"]
+        end
+    end
+
+    subgraph Database["PostgreSQL"]
+        T1[("files")]
+        T2[("file_links")]
+        T3[("file_link_permissions")]
+        T4[("file_share_links")]
+    end
+
+    Browser --> Handlers
+    ChatSvc --> GRPCServer
+
+    Handlers --> SVC
+    GRPCServer --> SVC
+    SVC --> REPO
+    SVC --> DISK
+
+    REPO --> T1
+    REPO --> T2
+    REPO --> T3
+    REPO --> T4
+
+    style FilesService fill:#f5f5f5
+    style Handlers fill:#e3f2fd
+    style GRPCServer fill:#e8f5e9
+    style ServiceLayer fill:#fff3e0
+    style Repository fill:#fce4ec

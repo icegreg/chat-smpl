@@ -1,0 +1,85 @@
+sequenceDiagram
+    autonumber
+    participant Клиент as Клиент (Browser)
+    participant GW as API Gateway
+    participant CS as Chat Service
+    participant FS as Files Service (gRPC)
+    participant DB_C as БД Chat
+    participant DB_F as БД Files
+    participant MQ as RabbitMQ
+
+    Note over Клиент,MQ: Сценарий: Пересылка сообщения из Чата1 в Чат2
+
+    rect rgb(255, 240, 245)
+        Note right of Клиент: Пользователь пересылает сообщение
+        Клиент->>+GW: POST /api/chats/messages/{messageId}/forward<br/>{target_chat_id}
+        GW->>GW: Проверка JWT + роль != guest
+        GW->>+CS: gRPC: ForwardMessage<br/>(message_id, target_chat_id, sender_id)
+
+        CS->>+DB_C: GetParticipant(target_chat_id, sender_id)
+        DB_C-->>-CS: participant (role)
+        CS->>CS: Проверка role.CanWrite()
+
+        CS->>+DB_C: GetMessage(message_id)
+        DB_C-->>-CS: original_message<br/>{chat_id, content, file_link_ids}
+
+        CS->>+DB_C: IsParticipant(original.chat_id, sender_id)
+        DB_C-->>-CS: true
+    end
+
+    rect rgb(230, 255, 245)
+        Note right of CS: Создание новых FileLink для файлов
+        loop Для каждого file_link_id
+            CS->>+FS: gRPC: GetFileIDByLinkID(link_id)
+            FS->>+DB_F: SELECT file_id FROM file_links
+            DB_F-->>-FS: file_id
+            FS-->>-CS: {file_id}
+
+            CS->>+FS: gRPC: CreateFileLink<br/>(file_id, created_by=sender)
+            FS->>+DB_F: INSERT file_links<br/>(new_id, file_id, uploaded_by)
+            DB_F-->>-FS: new_link_id
+            FS->>+DB_F: INSERT file_link_permissions<br/>(new_link_id, sender_id)
+            DB_F-->>-FS: OK
+            FS-->>-CS: {new_link_id}
+        end
+    end
+
+    rect rgb(245, 245, 230)
+        Note right of CS: Создание пересланного сообщения
+        CS->>+DB_C: INSERT messages<br/>(target_chat_id, content,<br/>forwarded_from_message_id,<br/>forwarded_from_chat_id,<br/>new_file_link_ids)
+        DB_C-->>-CS: new_message_id, seq_num
+
+        CS->>+DB_C: INSERT message_file_attachments
+        DB_C-->>-CS: OK
+
+        CS->>+DB_C: GetParticipantIDs(target_chat_id)
+        DB_C-->>-CS: [user1, user2, user3]
+
+        CS->>+FS: gRPC: GrantPermissions<br/>(new_link_ids, participant_ids)
+        FS->>+DB_F: INSERT file_link_permissions<br/>(для каждого участника)
+        DB_F-->>-FS: OK
+        FS-->>-CS: OK
+    end
+
+    rect rgb(255, 245, 230)
+        Note right of CS: Уведомление и ответ
+        CS->>+MQ: Publish: message.created<br/>(exchange: chat.events)
+        MQ-->>-CS: ACK
+
+        CS-->>-GW: ForwardedMessage<br/>{id, forwarded_from_*, new_file_link_ids}
+
+        GW->>+FS: POST /files/batch {new_link_ids}
+        FS-->>-GW: file_attachments[]
+
+        GW-->>-Клиент: 201 Created<br/>{message + file_attachments}
+    end
+
+    rect rgb(240, 230, 255)
+        Note right of MQ: Асинхронная доставка уведомлений
+        participant WS as WebSocket Service
+        MQ->>+WS: Consume: message.created
+        WS->>WS: Centrifugo.PublishToUser<br/>(для каждого участника Чата2)
+        WS-->>-MQ: ACK
+    end
+
+    Note over Клиент,MQ: Результат: Новые link_id доступны только участникам Чата2<br/>Оригинальные link_id остаются доступны только участникам Чата1

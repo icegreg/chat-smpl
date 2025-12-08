@@ -1,0 +1,63 @@
+sequenceDiagram
+    autonumber
+    participant Клиент as Клиент
+    participant GW as API Gateway
+    participant CS as Chat Service
+    participant FS as Files Service gRPC
+    participant DB_C as БД Chat
+    participant DB_F as БД Files
+
+    Note over Клиент,DB_F: Сценарий A: Добавление участника в чат
+
+    rect rgb(230, 255, 230)
+        Клиент->>+GW: POST /api/chats/chatId/participants<br/>user_id
+        GW->>+CS: gRPC AddParticipant
+
+        CS->>+DB_C: Проверка прав добавляющего
+        DB_C-->>-CS: OK admin или moderator
+
+        CS->>+DB_C: INSERT chat_participants
+        DB_C-->>-CS: participant_id
+
+        CS->>+DB_C: GetAllFileLinkIDsForChat chat_id
+        Note right of DB_C: SELECT DISTINCT file_link_id<br/>FROM message_file_attachments mfa<br/>JOIN messages m ON m.id = mfa.message_id<br/>WHERE m.chat_id = chat_id
+        DB_C-->>-CS: link_id1 link_id2 ...
+
+        alt Есть файлы в чате
+            CS->>+FS: gRPC GrantPermissions<br/>link_ids new_user_id
+            FS->>+DB_F: INSERT file_link_permissions<br/>для каждого link_id
+            DB_F-->>-FS: OK
+            FS-->>-CS: OK
+        end
+
+        CS-->>-GW: Participant
+        GW-->>-Клиент: 201 Created
+    end
+
+    Note over Клиент,DB_F: Сценарий B: Удаление участника из чата
+
+    rect rgb(255, 230, 230)
+        Клиент->>+GW: DELETE /api/chats/chatId/participants/userId
+        GW->>+CS: gRPC RemoveParticipant
+
+        CS->>+DB_C: Проверка прав удаляющего
+        DB_C-->>-CS: OK
+
+        CS->>+DB_C: GetAllFileLinkIDsForChat chat_id
+        DB_C-->>-CS: link_id1 link_id2 ...
+
+        alt Есть файлы в чате
+            CS->>+FS: gRPC RevokePermissions<br/>link_ids user_id
+            FS->>+DB_F: DELETE FROM file_link_permissions<br/>WHERE file_link_id IN ...<br/>AND user_id = user_id
+            DB_F-->>-FS: OK
+            FS-->>-CS: OK
+        end
+
+        CS->>+DB_C: DELETE chat_participants<br/>WHERE chat_id AND user_id
+        DB_C-->>-CS: OK
+
+        CS-->>-GW: OK
+        GW-->>-Клиент: 204 No Content
+    end
+
+    Note over Клиент,DB_F: После удаления пользователь теряет доступ<br/>ко всем файлам этого чата
