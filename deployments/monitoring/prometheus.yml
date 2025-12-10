@@ -1,0 +1,66 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # RabbitMQ metrics
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+    metrics_path: /metrics
+
+  # Centrifugo metrics
+  - job_name: 'centrifugo'
+    static_configs:
+      - targets: ['centrifugo:8000']
+    metrics_path: /metrics
+
+  # API Gateway metrics
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:8080']
+    metrics_path: /metrics
+
+  # Users Service metrics
+  - job_name: 'users-service'
+    static_configs:
+      - targets: ['users-service:8081']
+    metrics_path: /metrics
+
+  # Files Service metrics
+  - job_name: 'files-service'
+    static_configs:
+      - targets: ['files-service:8082']
+    metrics_path: /metrics
+
+  # Chat Service gRPC metrics (if exposed)
+  - job_name: 'chat-service'
+    static_configs:
+      - targets: ['chat-service:9091']
+    metrics_path: /metrics
+
+  # Presence Service gRPC metrics
+  - job_name: 'presence-service'
+    static_configs:
+      - targets: ['presence-service:9092']
+    metrics_path: /metrics
+
+  # Redis metrics (via redis-exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # PostgreSQL metrics (via postgres-exporter)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Docker/cAdvisor metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']

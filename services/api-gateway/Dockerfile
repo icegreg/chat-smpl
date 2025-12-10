@@ -8,7 +8,7 @@ RUN npm ci
 COPY services/api-gateway/web/ ./
 RUN npm run build
 
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
@@ -18,6 +18,12 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
+# Add prometheus client for metrics and tidy
+RUN go get github.com/prometheus/client_golang/prometheus \
+    github.com/prometheus/client_golang/prometheus/promauto \
+    github.com/prometheus/client_golang/prometheus/promhttp && \
+    go mod tidy
 
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o api-gateway ./services/api-gateway/cmd/server
 

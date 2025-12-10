@@ -45,6 +45,11 @@ type publishRequest struct {
 	Data    interface{} `json:"data"`
 }
 
+type broadcastRequest struct {
+	Channels []string    `json:"channels"`
+	Data     interface{} `json:"data"`
+}
+
 type apiRequest struct {
 	Method string      `json:"method"`
 	Params interface{} `json:"params"`
@@ -68,6 +73,74 @@ func (c *Client) PublishToUser(ctx context.Context, userID string, event interfa
 // PublishToChannel publishes an event to a specific channel
 func (c *Client) PublishToChannel(ctx context.Context, channel string, event interface{}) error {
 	return c.publish(ctx, channel, event)
+}
+
+// BroadcastToUsers broadcasts an event to multiple users' personal channels in a single request
+func (c *Client) BroadcastToUsers(ctx context.Context, userIDs []string, event interface{}) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+
+	// Convert user IDs to channels
+	channels := make([]string, len(userIDs))
+	for i, userID := range userIDs {
+		channels[i] = fmt.Sprintf("user:%s", userID)
+	}
+
+	return c.broadcast(ctx, channels, event)
+}
+
+// Broadcast sends an event to multiple channels in a single request
+func (c *Client) Broadcast(ctx context.Context, channels []string, event interface{}) error {
+	return c.broadcast(ctx, channels, event)
+}
+
+func (c *Client) broadcast(ctx context.Context, channels []string, data interface{}) error {
+	req := apiRequest{
+		Method: "broadcast",
+		Params: broadcastRequest{
+			Channels: channels,
+			Data:     data,
+		},
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.apiURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "apikey "+c.apiKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var apiResp apiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if apiResp.Error != nil {
+		return fmt.Errorf("centrifugo error: %s (code: %d)", apiResp.Error.Message, apiResp.Error.Code)
+	}
+
+	logger.Debug("broadcast to centrifugo",
+		zap.Int("channels", len(channels)),
+	)
+
+	return nil
 }
 
 func (c *Client) publish(ctx context.Context, channel string, data interface{}) error {

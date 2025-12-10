@@ -28,6 +28,7 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+      - "15692:15692"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -55,12 +56,18 @@ services:
 
   centrifugo:
     image: centrifugo/centrifugo:v5
-    container_name: chatapp-centrifugo
+    # No container_name to allow scaling
     command: centrifugo -c config.json
-    ports:
-      - "8000:8000"
+    # No external ports - accessed via nginx
+    expose:
+      - "8000"
     volumes:
       - ./deployments/centrifugo/config.json:/centrifugo/config.json:ro
+    deploy:
+      replicas: 3  # Scale for horizontal WebSocket distribution
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/health"]
       interval: 10s
@@ -73,13 +80,16 @@ services:
     build:
       context: .
       dockerfile: services/users/Dockerfile
-    container_name: chatapp-users
+    # No container_name to allow scaling
     environment:
       - DATABASE_URL=postgres://chatapp:secret@postgres:5432/chatapp?sslmode=disable
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - HTTP_PORT=8081
-    ports:
-      - "8181:8081"
+    # No external ports - accessed via nginx
+    expose:
+      - "8081"
+    deploy:
+      replicas: 4  # Scale for bcrypt parallelism
     depends_on:
       postgres:
         condition: service_healthy

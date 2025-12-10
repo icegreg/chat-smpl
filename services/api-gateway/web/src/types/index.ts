@@ -65,12 +65,12 @@ export interface Message {
   chat_id: string
   sender_id: string
   content: string
-  type: 'text' | 'file' | 'system'
+  type?: 'text' | 'file' | 'system'
   reply_to_id?: string
   thread_id?: string
-  is_edited: boolean
+  is_edited?: boolean
   created_at: string
-  updated_at: string
+  updated_at?: string
   sent_at?: string | ProtobufTimestamp
   sender?: User
   sender_username?: string
@@ -80,6 +80,7 @@ export interface Message {
   reply_to?: Message
   file_attachments?: FileAttachment[]
   seq_num?: number // Sequence number for reliable sync
+  is_pending?: boolean // True if message is waiting to be sent (offline mode)
 }
 
 export interface Reaction {

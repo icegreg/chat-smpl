@@ -13,6 +13,7 @@ import (
 
 	"github.com/icegreg/chat-smpl/pkg/jwt"
 	"github.com/icegreg/chat-smpl/pkg/logger"
+	"github.com/icegreg/chat-smpl/pkg/metrics"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/centrifugo"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/files"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/grpc"
@@ -84,6 +85,9 @@ func main() {
 	// Create router
 	r := chi.NewRouter()
 
+	// Initialize metrics
+	httpMetrics := metrics.NewHTTPMetrics("api_gateway")
+
 	// Global middleware
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
@@ -91,6 +95,10 @@ func main() {
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.Timeout(60 * time.Second))
 	r.Use(middleware.CORS)
+	r.Use(metrics.HTTPMiddleware(httpMetrics))
+
+	// Prometheus metrics endpoint
+	r.Handle("/metrics", metrics.Handler())
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

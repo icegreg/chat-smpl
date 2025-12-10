@@ -13,14 +13,48 @@ import type {
 
 const API_BASE = '/api'
 
+// Retry configuration
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 10000,
+  // HTTP codes that should trigger retry
+  retryableStatusCodes: [408, 429, 500, 502, 503, 504],
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
-    message: string
+    message: string,
+    public isNetworkError: boolean = false
   ) {
     super(message)
     this.name = 'ApiError'
   }
+}
+
+// Check if error is retryable
+function isRetryableError(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    return RETRY_CONFIG.retryableStatusCodes.includes(error.status) || error.isNetworkError
+  }
+  // Network errors (fetch failed)
+  if (error instanceof TypeError && error.message.includes('fetch')) {
+    return true
+  }
+  return false
+}
+
+// Calculate delay with exponential backoff + jitter
+function getRetryDelay(attempt: number): number {
+  const exponentialDelay = RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt)
+  const jitter = Math.random() * 0.3 * exponentialDelay // 0-30% jitter
+  return Math.min(exponentialDelay + jitter, RETRY_CONFIG.maxDelayMs)
+}
+
+// Sleep helper
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 class ApiClient {
@@ -43,32 +77,72 @@ class ApiClient {
     method: string,
     path: string,
     body?: unknown,
+    requireAuth = true,
+    options: { retry?: boolean; maxRetries?: number } = {}
+  ): Promise<T> {
+    const { retry = true, maxRetries = RETRY_CONFIG.maxRetries } = options
+    let lastError: Error | null = null
+
+    for (let attempt = 0; attempt <= (retry ? maxRetries : 0); attempt++) {
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
+
+        if (requireAuth && this.accessToken) {
+          headers['Authorization'] = `Bearer ${this.accessToken}`
+        }
+
+        const response = await fetch(`${API_BASE}${path}`, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+        })
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+          throw new ApiError(response.status, error.message || error.error || 'Request failed')
+        }
+
+        if (response.status === 204) {
+          return undefined as T
+        }
+
+        return response.json()
+
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error))
+
+        // Check if it's a network error
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+          lastError = new ApiError(0, 'Network error: Unable to connect', true)
+        }
+
+        // Should we retry?
+        if (retry && attempt < maxRetries && isRetryableError(lastError)) {
+          const delay = getRetryDelay(attempt)
+          console.log(`[API] Request failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`, path)
+          await sleep(delay)
+          continue
+        }
+
+        // No more retries
+        throw lastError
+      }
+    }
+
+    // Should never reach here, but just in case
+    throw lastError || new Error('Unknown error')
+  }
+
+  // Request without retry (for fire-and-forget operations like typing indicator)
+  private async requestNoRetry<T>(
+    method: string,
+    path: string,
+    body?: unknown,
     requireAuth = true
   ): Promise<T> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-
-    if (requireAuth && this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`
-    }
-
-    const response = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    })
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new ApiError(response.status, error.message || error.error || 'Request failed')
-    }
-
-    if (response.status === 204) {
-      return undefined as T
-    }
-
-    return response.json()
+    return this.request<T>(method, path, body, requireAuth, { retry: false })
   }
 
   // Auth endpoints
@@ -218,9 +292,9 @@ class ApiClient {
     return this.request<void>('DELETE', `/chats/${chatId}/archive`)
   }
 
-  // Typing indicator
+  // Typing indicator (no retry - fire and forget)
   async sendTypingIndicator(chatId: string, isTyping: boolean): Promise<void> {
-    return this.request<void>('POST', `/chats/${chatId}/typing`, { is_typing: isTyping })
+    return this.requestNoRetry<void>('POST', `/chats/${chatId}/typing`, { is_typing: isTyping })
   }
 
   // Centrifugo

@@ -5,6 +5,7 @@ import { api, ApiError } from '@/api/client'
 import { Centrifuge, Subscription } from 'centrifuge'
 import { useAuthStore } from './auth'
 import { usePresenceStore } from './presence'
+import { useNetworkStore } from './network'
 
 // Event types from websocket-service
 interface ChatEvent {
@@ -114,6 +115,10 @@ export const useChatStore = defineStore('chat', () => {
 
       centrifuge.on('connected', () => {
         console.log('Connected to Centrifugo')
+        // Update network store
+        const networkStore = useNetworkStore()
+        networkStore.setWebSocketConnected(true)
+
         // Subscribe to user's personal channel
         subscribeToUserChannel(authStore.user!.id)
         // Register presence connection
@@ -123,10 +128,16 @@ export const useChatStore = defineStore('chat', () => {
         if (currentChat.value) {
           syncMessagesAfterReconnect(currentChat.value.id)
         }
+        // Process any pending messages
+        networkStore.processPendingMessages()
       })
 
       centrifuge.on('disconnected', () => {
         console.log('Disconnected from Centrifugo')
+        // Update network store
+        const networkStore = useNetworkStore()
+        networkStore.setWebSocketConnected(false)
+
         // Unregister presence connection
         const presenceStore = usePresenceStore()
         presenceStore.unregisterConnection()
@@ -399,10 +410,14 @@ export const useChatStore = defineStore('chat', () => {
   async function sendMessage(data: SendMessageRequest) {
     if (!currentChat.value) return
     error.value = null
+
+    const networkStore = useNetworkStore()
+    const chatId = currentChat.value.id
+
     try {
-      const message = await api.sendMessage(currentChat.value.id, data)
+      const message = await api.sendMessage(chatId, data)
       // Update seq_num tracking from sent message
-      updateLastSeqNum(currentChat.value.id, message.seq_num)
+      updateLastSeqNum(chatId, message.seq_num)
 
       // Add message immediately using REST response (includes file_attachments)
       // The Centrifugo event may have already added this message WITHOUT file_attachments
@@ -416,7 +431,33 @@ export const useChatStore = defineStore('chat', () => {
       }
       return message
     } catch (e) {
-      error.value = e instanceof ApiError ? e.message : 'Failed to send message'
+      const apiError = e instanceof ApiError ? e : null
+
+      // If it's a network error, add to pending queue
+      if (apiError?.isNetworkError || !networkStore.isOnline) {
+        console.log('[ChatStore] Network error, adding message to pending queue')
+        const pendingId = networkStore.addPendingMessage(
+          chatId,
+          data.content,
+          data.file_link_ids
+        )
+
+        // Create a temporary pending message for UI
+        const pendingMessage: Message = {
+          id: pendingId,
+          chat_id: chatId,
+          sender_id: useAuthStore().user?.id || '',
+          content: data.content,
+          created_at: new Date().toISOString(),
+          is_pending: true, // Special flag for UI
+        }
+        messages.value.push(pendingMessage)
+
+        // Don't throw - message will be sent when connection restores
+        return pendingMessage
+      }
+
+      error.value = apiError?.message || 'Failed to send message'
       throw e
     }
   }

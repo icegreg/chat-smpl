@@ -77,9 +77,22 @@ func (c *Consumer) Setup() error {
 }
 
 func (c *Consumer) Start(ctx context.Context) error {
-	consumer := rabbitmq.NewConsumer(c.rmqConn, QueueName, ConsumerName)
+	// Configure consumer with prefetch and worker pool for high throughput
+	// prefetch=100 allows RabbitMQ to deliver up to 100 unacked messages
+	// workers=10 processes messages in parallel
+	consumer := rabbitmq.NewConsumer(
+		c.rmqConn,
+		QueueName,
+		ConsumerName,
+		rabbitmq.WithPrefetch(100),
+		rabbitmq.WithWorkers(10),
+	)
 
-	logger.Info("starting to consume messages", zap.String("queue", QueueName))
+	logger.Info("starting to consume messages",
+		zap.String("queue", QueueName),
+		zap.Int("prefetch", 100),
+		zap.Int("workers", 10),
+	)
 
 	return consumer.Consume(ctx, c.handleMessage)
 }
@@ -110,19 +123,20 @@ func (c *Consumer) handleMessage(ctx context.Context, msg amqp.Delivery) error {
 		"data":      json.RawMessage(event.Data),
 	}
 
-	// Publish to each participant's personal channel
-	for _, participantID := range event.Participants {
-		if err := c.centrifugo.PublishToUser(ctx, participantID, userEvent); err != nil {
-			logger.Error("failed to publish to user",
+	// Use broadcast API to send to all participants in a single HTTP request
+	// This reduces HTTP calls from N (participants) to 1
+	if len(event.Participants) > 0 {
+		if err := c.centrifugo.BroadcastToUsers(ctx, event.Participants, userEvent); err != nil {
+			logger.Error("failed to broadcast to users",
 				zap.Error(err),
-				zap.String("user_id", participantID),
 				zap.String("event_type", event.Type),
+				zap.Int("participants", len(event.Participants)),
 			)
-			// Continue with other participants even if one fails
+			return err // Return error to trigger requeue
 		}
 	}
 
-	logger.Debug("event dispatched to participants",
+	logger.Debug("event broadcasted to participants",
 		zap.String("type", event.Type),
 		zap.Int("count", len(event.Participants)),
 	)

@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/icegreg/chat-smpl/pkg/jwt"
+	"github.com/icegreg/chat-smpl/pkg/password"
 	"github.com/icegreg/chat-smpl/services/users/internal/model"
 	"github.com/icegreg/chat-smpl/services/users/internal/repository"
 )
@@ -102,7 +102,7 @@ func (s *userService) Login(ctx context.Context, req model.LoginRequest) (*model
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+	if err := password.Verify(req.Password, user.PasswordHash); err != nil {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -189,7 +189,7 @@ func (s *userService) Logout(ctx context.Context, req model.LogoutRequest) error
 }
 
 func (s *userService) Create(ctx context.Context, req model.CreateUserRequest) (*model.UserDTO, error) {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := password.Hash(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -204,7 +204,7 @@ func (s *userService) Create(ctx context.Context, req model.CreateUserRequest) (
 		Email:        req.Email,
 		DisplayName:  req.DisplayName,
 		AvatarURL:    &avatarURL,
-		PasswordHash: string(hashedPassword),
+		PasswordHash: hashedPassword,
 		Role:         req.Role,
 	}
 
@@ -311,15 +311,15 @@ func (s *userService) ChangePassword(ctx context.Context, id uuid.UUID, req mode
 		return err
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+	if err := password.Verify(req.OldPassword, user.PasswordHash); err != nil {
 		return ErrInvalidCredentials
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	hashedPassword, err := password.Hash(req.NewPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	user.PasswordHash = string(hashedPassword)
+	user.PasswordHash = hashedPassword
 	return s.repo.Update(ctx, user)
 }

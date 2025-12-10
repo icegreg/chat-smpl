@@ -211,22 +211,56 @@ func (p *Publisher) Publish(ctx context.Context, routingKey string, event interf
 }
 
 type Consumer struct {
-	conn     *Connection
-	queue    string
-	consumer string
+	conn       *Connection
+	queue      string
+	consumer   string
+	prefetch   int
+	numWorkers int
 }
 
-func NewConsumer(conn *Connection, queue, consumer string) *Consumer {
-	return &Consumer{
-		conn:     conn,
-		queue:    queue,
-		consumer: consumer,
+type ConsumerOption func(*Consumer)
+
+// WithPrefetch sets the prefetch count (QoS) for the consumer
+func WithPrefetch(prefetch int) ConsumerOption {
+	return func(c *Consumer) {
+		c.prefetch = prefetch
 	}
+}
+
+// WithWorkers sets the number of parallel workers
+func WithWorkers(numWorkers int) ConsumerOption {
+	return func(c *Consumer) {
+		c.numWorkers = numWorkers
+	}
+}
+
+func NewConsumer(conn *Connection, queue, consumer string, opts ...ConsumerOption) *Consumer {
+	c := &Consumer{
+		conn:       conn,
+		queue:      queue,
+		consumer:   consumer,
+		prefetch:   1,  // default: 1 message at a time
+		numWorkers: 1,  // default: single worker
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 type MessageHandler func(ctx context.Context, msg amqp.Delivery) error
 
 func (c *Consumer) Consume(ctx context.Context, handler MessageHandler) error {
+	// Set QoS (prefetch)
+	if err := c.conn.Channel().Qos(c.prefetch, 0, false); err != nil {
+		return fmt.Errorf("failed to set QoS: %w", err)
+	}
+
+	logger.Info("consumer QoS configured",
+		zap.Int("prefetch", c.prefetch),
+		zap.Int("workers", c.numWorkers),
+	)
+
 	msgs, err := c.conn.Channel().Consume(
 		c.queue,
 		c.consumer,
@@ -240,24 +274,67 @@ func (c *Consumer) Consume(ctx context.Context, handler MessageHandler) error {
 		return fmt.Errorf("failed to start consuming: %w", err)
 	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case msg, ok := <-msgs:
-			if !ok {
-				return fmt.Errorf("channel closed")
-			}
-
-			if err := handler(ctx, msg); err != nil {
-				logger.Error("failed to handle message",
-					zap.Error(err),
-					zap.String("routing_key", msg.RoutingKey),
-				)
-				msg.Nack(false, true)
-			} else {
-				msg.Ack(false)
+	// Single worker mode (original behavior)
+	if c.numWorkers <= 1 {
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case msg, ok := <-msgs:
+				if !ok {
+					return fmt.Errorf("channel closed")
+				}
+				c.processMessage(ctx, msg, handler)
 			}
 		}
+	}
+
+	// Worker pool mode
+	return c.consumeWithWorkerPool(ctx, msgs, handler)
+}
+
+func (c *Consumer) consumeWithWorkerPool(ctx context.Context, msgs <-chan amqp.Delivery, handler MessageHandler) error {
+	var wg sync.WaitGroup
+
+	// Start worker pool
+	for i := 0; i < c.numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			logger.Debug("worker started", zap.Int("worker_id", workerID))
+
+			for {
+				select {
+				case <-ctx.Done():
+					logger.Debug("worker stopping", zap.Int("worker_id", workerID))
+					return
+				case msg, ok := <-msgs:
+					if !ok {
+						logger.Debug("worker channel closed", zap.Int("worker_id", workerID))
+						return
+					}
+					c.processMessage(ctx, msg, handler)
+				}
+			}
+		}(i)
+	}
+
+	// Wait for context cancellation
+	<-ctx.Done()
+
+	// Wait for all workers to finish
+	wg.Wait()
+	return ctx.Err()
+}
+
+func (c *Consumer) processMessage(ctx context.Context, msg amqp.Delivery, handler MessageHandler) {
+	if err := handler(ctx, msg); err != nil {
+		logger.Error("failed to handle message",
+			zap.Error(err),
+			zap.String("routing_key", msg.RoutingKey),
+		)
+		msg.Nack(false, true)
+	} else {
+		msg.Ack(false)
 	}
 }
