@@ -9,6 +9,9 @@ import type {
   CreateChatRequest,
   SendMessageRequest,
   PresenceInfo,
+  Thread,
+  ThreadParticipant,
+  CreateThreadRequest,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -356,6 +359,78 @@ class ApiClient {
     }
 
     return response.json()
+  }
+
+  // Thread operations
+  async listThreads(
+    chatId: string,
+    page = 1,
+    count = 20
+  ): Promise<{ threads: Thread[]; total: number }> {
+    return this.request<{ threads: Thread[]; total: number }>(
+      'GET',
+      `/chats/${chatId}/threads?page=${page}&count=${count}`
+    )
+  }
+
+  async createThread(chatId: string, data: CreateThreadRequest): Promise<Thread> {
+    return this.request<Thread>('POST', `/chats/${chatId}/threads`, data)
+  }
+
+  async getThread(threadId: string): Promise<Thread> {
+    return this.request<Thread>('GET', `/chats/threads/${threadId}`)
+  }
+
+  async archiveThread(threadId: string): Promise<Thread> {
+    return this.request<Thread>('POST', `/chats/threads/${threadId}/archive`)
+  }
+
+  async getThreadMessages(
+    threadId: string,
+    page = 1,
+    count = 50
+  ): Promise<{ messages: Message[]; total: number }> {
+    return this.request<{ messages: Message[]; total: number }>(
+      'GET',
+      `/chats/threads/${threadId}/messages?page=${page}&count=${count}`
+    )
+  }
+
+  // Create thread from message (reply thread)
+  async createThreadFromMessage(messageId: string): Promise<Thread> {
+    return this.request<Thread>('POST', `/chats/messages/${messageId}/thread`)
+  }
+
+  // Thread participant operations
+  async addThreadParticipant(threadId: string, userId: string): Promise<void> {
+    return this.request<void>('POST', `/chats/threads/${threadId}/participants`, { user_id: userId })
+  }
+
+  async removeThreadParticipant(threadId: string, userId: string): Promise<void> {
+    return this.request<void>('DELETE', `/chats/threads/${threadId}/participants/${userId}`)
+  }
+
+  async listThreadParticipants(threadId: string): Promise<{ participants: ThreadParticipant[] }> {
+    return this.request<{ participants: ThreadParticipant[] }>(
+      'GET',
+      `/chats/threads/${threadId}/participants`
+    )
+  }
+
+  // Subthread operations
+  async listSubthreads(
+    parentThreadId: string,
+    page = 1,
+    count = 20
+  ): Promise<{ threads: Thread[]; total: number }> {
+    return this.request<{ threads: Thread[]; total: number }>(
+      'GET',
+      `/chats/threads/${parentThreadId}/subthreads?page=${page}&count=${count}`
+    )
+  }
+
+  async createSubthread(parentThreadId: string, data: CreateThreadRequest): Promise<Thread> {
+    return this.request<Thread>('POST', `/chats/threads/${parentThreadId}/subthreads`, data)
   }
 }
 

@@ -17,6 +17,7 @@ var (
 	ErrChatNotFound        = errors.New("chat not found")
 	ErrMessageNotFound     = errors.New("message not found")
 	ErrParticipantNotFound = errors.New("participant not found")
+	ErrThreadNotFound      = errors.New("thread not found")
 	ErrAlreadyExists       = errors.New("already exists")
 	ErrAccessDenied        = errors.New("access denied")
 )
@@ -72,6 +73,30 @@ type ChatRepository interface {
 	ArchiveChat(ctx context.Context, chatID, userID uuid.UUID) error
 	UnarchiveChat(ctx context.Context, chatID, userID uuid.UUID) error
 	ListArchivedChats(ctx context.Context, userID uuid.UUID, page, count int) ([]model.Chat, int, error)
+
+	// Thread operations
+	CreateThread(ctx context.Context, thread *model.Thread) error
+	GetThread(ctx context.Context, id uuid.UUID) (*model.Thread, error)
+	GetThreadByParentMessage(ctx context.Context, parentMessageID uuid.UUID) (*model.Thread, error)
+	GetSystemThread(ctx context.Context, chatID uuid.UUID) (*model.Thread, error)
+	ListThreads(ctx context.Context, chatID uuid.UUID, page, count int) ([]model.Thread, int, error)
+	UpdateThread(ctx context.Context, thread *model.Thread) error
+	ArchiveThread(ctx context.Context, threadID uuid.UUID) error
+
+	// Thread participant operations
+	AddThreadParticipant(ctx context.Context, participant *model.ThreadParticipant) error
+	RemoveThreadParticipant(ctx context.Context, threadID, userID uuid.UUID) error
+	ListThreadParticipants(ctx context.Context, threadID uuid.UUID) ([]model.ThreadParticipant, error)
+	IsThreadParticipant(ctx context.Context, threadID, userID uuid.UUID) (bool, error)
+
+	// Thread messages
+	ListThreadMessages(ctx context.Context, threadID uuid.UUID, page, count int) ([]model.Message, int, error)
+
+	// Thread access (cascading permissions)
+	HasThreadAccess(ctx context.Context, threadID, userID uuid.UUID) (bool, error)
+	GetThreadPermissionSource(ctx context.Context, threadID, userID uuid.UUID) (*model.PermissionSource, error)
+	ListThreadsForUser(ctx context.Context, chatID, userID uuid.UUID, page, count int) ([]model.Thread, int, error)
+	ListSubthreads(ctx context.Context, parentThreadID uuid.UUID, userID uuid.UUID, page, count int) ([]model.Thread, int, error)
 }
 
 type chatRepository struct {
@@ -890,4 +915,422 @@ func (r *chatRepository) GetMessageAttachmentsBatch(ctx context.Context, message
 	}
 
 	return result, nil
+}
+
+// Thread operations
+
+func (r *chatRepository) CreateThread(ctx context.Context, thread *model.Thread) error {
+	query := `
+		INSERT INTO con_test.threads (id, chat_id, parent_message_id, parent_thread_id, thread_type, title, message_count, last_message_at, created_by, created_at, updated_at, is_archived, restricted_participants)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`
+
+	thread.ID = uuid.New()
+	now := time.Now()
+	thread.CreatedAt = now
+	thread.UpdatedAt = now
+	// Depth is set by database trigger based on parent_thread_id
+
+	_, err := r.pool.Exec(ctx, query,
+		thread.ID, thread.ChatID, thread.ParentMessageID, thread.ParentThreadID, thread.ThreadType, thread.Title,
+		thread.MessageCount, thread.LastMessageAt, thread.CreatedBy, thread.CreatedAt,
+		thread.UpdatedAt, thread.IsArchived, thread.RestrictedParticipants,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create thread: %w", err)
+	}
+
+	return nil
+}
+
+func (r *chatRepository) GetThread(ctx context.Context, id uuid.UUID) (*model.Thread, error) {
+	query := `
+		SELECT id, chat_id, parent_message_id, parent_thread_id, depth, thread_type, title, message_count, last_message_at,
+		       created_by, created_at, updated_at, is_archived, restricted_participants
+		FROM con_test.threads
+		WHERE id = $1
+	`
+
+	var thread model.Thread
+	err := r.pool.QueryRow(ctx, query, id).Scan(
+		&thread.ID, &thread.ChatID, &thread.ParentMessageID, &thread.ParentThreadID, &thread.Depth,
+		&thread.ThreadType, &thread.Title, &thread.MessageCount, &thread.LastMessageAt, &thread.CreatedBy,
+		&thread.CreatedAt, &thread.UpdatedAt, &thread.IsArchived, &thread.RestrictedParticipants,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrThreadNotFound
+		}
+		return nil, fmt.Errorf("failed to get thread: %w", err)
+	}
+
+	return &thread, nil
+}
+
+func (r *chatRepository) GetThreadByParentMessage(ctx context.Context, parentMessageID uuid.UUID) (*model.Thread, error) {
+	query := `
+		SELECT id, chat_id, parent_message_id, parent_thread_id, depth, thread_type, title, message_count, last_message_at,
+		       created_by, created_at, updated_at, is_archived, restricted_participants
+		FROM con_test.threads
+		WHERE parent_message_id = $1
+	`
+
+	var thread model.Thread
+	err := r.pool.QueryRow(ctx, query, parentMessageID).Scan(
+		&thread.ID, &thread.ChatID, &thread.ParentMessageID, &thread.ParentThreadID, &thread.Depth,
+		&thread.ThreadType, &thread.Title, &thread.MessageCount, &thread.LastMessageAt, &thread.CreatedBy,
+		&thread.CreatedAt, &thread.UpdatedAt, &thread.IsArchived, &thread.RestrictedParticipants,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrThreadNotFound
+		}
+		return nil, fmt.Errorf("failed to get thread by parent message: %w", err)
+	}
+
+	return &thread, nil
+}
+
+func (r *chatRepository) GetSystemThread(ctx context.Context, chatID uuid.UUID) (*model.Thread, error) {
+	query := `
+		SELECT id, chat_id, parent_message_id, parent_thread_id, depth, thread_type, title, message_count, last_message_at,
+		       created_by, created_at, updated_at, is_archived, restricted_participants
+		FROM con_test.threads
+		WHERE chat_id = $1 AND thread_type = 'system'
+		LIMIT 1
+	`
+
+	var thread model.Thread
+	err := r.pool.QueryRow(ctx, query, chatID).Scan(
+		&thread.ID, &thread.ChatID, &thread.ParentMessageID, &thread.ParentThreadID, &thread.Depth,
+		&thread.ThreadType, &thread.Title, &thread.MessageCount, &thread.LastMessageAt, &thread.CreatedBy,
+		&thread.CreatedAt, &thread.UpdatedAt, &thread.IsArchived, &thread.RestrictedParticipants,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrThreadNotFound
+		}
+		return nil, fmt.Errorf("failed to get system thread: %w", err)
+	}
+
+	return &thread, nil
+}
+
+func (r *chatRepository) ListThreads(ctx context.Context, chatID uuid.UUID, page, count int) ([]model.Thread, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if count < 1 || count > 100 {
+		count = 20
+	}
+	offset := (page - 1) * count
+
+	var total int
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM con_test.threads WHERE chat_id = $1 AND is_archived = false AND parent_thread_id IS NULL`, chatID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count threads: %w", err)
+	}
+
+	query := `
+		SELECT id, chat_id, parent_message_id, parent_thread_id, depth, thread_type, title, message_count, last_message_at,
+		       created_by, created_at, updated_at, is_archived, restricted_participants
+		FROM con_test.threads
+		WHERE chat_id = $1 AND is_archived = false AND parent_thread_id IS NULL
+		ORDER BY last_message_at DESC NULLS LAST, created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.pool.Query(ctx, query, chatID, count, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list threads: %w", err)
+	}
+	defer rows.Close()
+
+	var threads []model.Thread
+	for rows.Next() {
+		var t model.Thread
+		if err := rows.Scan(
+			&t.ID, &t.ChatID, &t.ParentMessageID, &t.ParentThreadID, &t.Depth,
+			&t.ThreadType, &t.Title, &t.MessageCount, &t.LastMessageAt, &t.CreatedBy,
+			&t.CreatedAt, &t.UpdatedAt, &t.IsArchived, &t.RestrictedParticipants,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan thread: %w", err)
+		}
+		threads = append(threads, t)
+	}
+
+	return threads, total, nil
+}
+
+func (r *chatRepository) UpdateThread(ctx context.Context, thread *model.Thread) error {
+	query := `
+		UPDATE con_test.threads
+		SET title = $2, is_archived = $3, restricted_participants = $4, updated_at = $5
+		WHERE id = $1
+	`
+	thread.UpdatedAt = time.Now()
+
+	result, err := r.pool.Exec(ctx, query, thread.ID, thread.Title, thread.IsArchived, thread.RestrictedParticipants, thread.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to update thread: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrThreadNotFound
+	}
+	return nil
+}
+
+func (r *chatRepository) ArchiveThread(ctx context.Context, threadID uuid.UUID) error {
+	query := `UPDATE con_test.threads SET is_archived = true, updated_at = $2 WHERE id = $1`
+	result, err := r.pool.Exec(ctx, query, threadID, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to archive thread: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrThreadNotFound
+	}
+	return nil
+}
+
+// Thread participant operations
+
+func (r *chatRepository) AddThreadParticipant(ctx context.Context, participant *model.ThreadParticipant) error {
+	query := `
+		INSERT INTO con_test.thread_participants (id, thread_id, user_id, added_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (thread_id, user_id) DO NOTHING
+	`
+
+	participant.ID = uuid.New()
+	participant.AddedAt = time.Now()
+
+	_, err := r.pool.Exec(ctx, query, participant.ID, participant.ThreadID, participant.UserID, participant.AddedAt)
+	if err != nil {
+		return fmt.Errorf("failed to add thread participant: %w", err)
+	}
+	return nil
+}
+
+func (r *chatRepository) RemoveThreadParticipant(ctx context.Context, threadID, userID uuid.UUID) error {
+	query := `DELETE FROM con_test.thread_participants WHERE thread_id = $1 AND user_id = $2`
+	result, err := r.pool.Exec(ctx, query, threadID, userID)
+	if err != nil {
+		return fmt.Errorf("failed to remove thread participant: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrParticipantNotFound
+	}
+	return nil
+}
+
+func (r *chatRepository) ListThreadParticipants(ctx context.Context, threadID uuid.UUID) ([]model.ThreadParticipant, error) {
+	query := `
+		SELECT id, thread_id, user_id, added_at
+		FROM con_test.thread_participants
+		WHERE thread_id = $1
+		ORDER BY added_at
+	`
+
+	rows, err := r.pool.Query(ctx, query, threadID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list thread participants: %w", err)
+	}
+	defer rows.Close()
+
+	var participants []model.ThreadParticipant
+	for rows.Next() {
+		var p model.ThreadParticipant
+		if err := rows.Scan(&p.ID, &p.ThreadID, &p.UserID, &p.AddedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan thread participant: %w", err)
+		}
+		participants = append(participants, p)
+	}
+	return participants, nil
+}
+
+func (r *chatRepository) IsThreadParticipant(ctx context.Context, threadID, userID uuid.UUID) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM con_test.thread_participants WHERE thread_id = $1 AND user_id = $2)`
+	var exists bool
+	if err := r.pool.QueryRow(ctx, query, threadID, userID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to check thread participant: %w", err)
+	}
+	return exists, nil
+}
+
+// Thread messages
+
+func (r *chatRepository) ListThreadMessages(ctx context.Context, threadID uuid.UUID, page, count int) ([]model.Message, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if count < 1 || count > 100 {
+		count = 50
+	}
+	offset := (page - 1) * count
+
+	var total int
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM con_test.messages WHERE thread_id = $1`, threadID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count thread messages: %w", err)
+	}
+
+	query := `
+		SELECT m.id, m.chat_id, m.parent_id, m.thread_id, m.sender_id, m.content, m.sent_at, m.updated_at, m.is_deleted, m.is_system, m.seq_num,
+		       u.username, u.display_name, u.avatar_url
+		FROM con_test.messages m
+		LEFT JOIN con_test.users u ON m.sender_id = u.id
+		WHERE m.thread_id = $1
+		ORDER BY m.sent_at ASC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.pool.Query(ctx, query, threadID, count, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list thread messages: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []model.Message
+	for rows.Next() {
+		var msg model.Message
+		if err := rows.Scan(
+			&msg.ID, &msg.ChatID, &msg.ParentID, &msg.ThreadID, &msg.SenderID, &msg.Content,
+			&msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted, &msg.IsSystem, &msg.SeqNum,
+			&msg.SenderUsername, &msg.SenderDisplayName, &msg.SenderAvatarURL,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan thread message: %w", err)
+		}
+		messages = append(messages, msg)
+	}
+
+	return messages, total, nil
+}
+
+// HasThreadAccess checks if user has access to a thread using cascading permission check
+// Uses PostgreSQL function check_thread_access for efficient recursive check
+func (r *chatRepository) HasThreadAccess(ctx context.Context, threadID, userID uuid.UUID) (bool, error) {
+	query := `SELECT con_test.check_thread_access($1, $2)`
+	var hasAccess bool
+	if err := r.pool.QueryRow(ctx, query, threadID, userID).Scan(&hasAccess); err != nil {
+		return false, fmt.Errorf("failed to check thread access: %w", err)
+	}
+	return hasAccess, nil
+}
+
+// GetThreadPermissionSource returns where user's permission to access thread comes from
+func (r *chatRepository) GetThreadPermissionSource(ctx context.Context, threadID, userID uuid.UUID) (*model.PermissionSource, error) {
+	query := `SELECT source, source_id FROM con_test.get_thread_permission_source($1, $2)`
+	var source model.PermissionSource
+	err := r.pool.QueryRow(ctx, query, threadID, userID).Scan(&source.Source, &source.SourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAccessDenied
+		}
+		return nil, fmt.Errorf("failed to get thread permission source: %w", err)
+	}
+	return &source, nil
+}
+
+// ListThreadsForUser lists threads in a chat filtered by user access
+func (r *chatRepository) ListThreadsForUser(ctx context.Context, chatID, userID uuid.UUID, page, count int) ([]model.Thread, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if count < 1 || count > 100 {
+		count = 20
+	}
+	offset := (page - 1) * count
+
+	// Count only accessible threads (top-level, not subthreads)
+	countQuery := `
+		SELECT COUNT(*) FROM con_test.threads
+		WHERE chat_id = $1 AND is_archived = false AND parent_thread_id IS NULL
+		AND con_test.check_thread_access(id, $2)
+	`
+	var total int
+	if err := r.pool.QueryRow(ctx, countQuery, chatID, userID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count threads: %w", err)
+	}
+
+	query := `
+		SELECT id, chat_id, parent_message_id, parent_thread_id, depth, thread_type, title, message_count, last_message_at,
+		       created_by, created_at, updated_at, is_archived, restricted_participants
+		FROM con_test.threads
+		WHERE chat_id = $1 AND is_archived = false AND parent_thread_id IS NULL
+		AND con_test.check_thread_access(id, $2)
+		ORDER BY last_message_at DESC NULLS LAST, created_at DESC
+		LIMIT $3 OFFSET $4
+	`
+
+	rows, err := r.pool.Query(ctx, query, chatID, userID, count, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list threads: %w", err)
+	}
+	defer rows.Close()
+
+	var threads []model.Thread
+	for rows.Next() {
+		var t model.Thread
+		if err := rows.Scan(
+			&t.ID, &t.ChatID, &t.ParentMessageID, &t.ParentThreadID, &t.Depth,
+			&t.ThreadType, &t.Title, &t.MessageCount, &t.LastMessageAt, &t.CreatedBy,
+			&t.CreatedAt, &t.UpdatedAt, &t.IsArchived, &t.RestrictedParticipants,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan thread: %w", err)
+		}
+		threads = append(threads, t)
+	}
+
+	return threads, total, nil
+}
+
+// ListSubthreads lists subthreads of a parent thread filtered by user access
+func (r *chatRepository) ListSubthreads(ctx context.Context, parentThreadID uuid.UUID, userID uuid.UUID, page, count int) ([]model.Thread, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if count < 1 || count > 100 {
+		count = 20
+	}
+	offset := (page - 1) * count
+
+	// Count only accessible subthreads
+	countQuery := `
+		SELECT COUNT(*) FROM con_test.threads
+		WHERE parent_thread_id = $1 AND is_archived = false
+		AND con_test.check_thread_access(id, $2)
+	`
+	var total int
+	if err := r.pool.QueryRow(ctx, countQuery, parentThreadID, userID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count subthreads: %w", err)
+	}
+
+	query := `
+		SELECT id, chat_id, parent_message_id, parent_thread_id, depth, thread_type, title, message_count, last_message_at,
+		       created_by, created_at, updated_at, is_archived, restricted_participants
+		FROM con_test.threads
+		WHERE parent_thread_id = $1 AND is_archived = false
+		AND con_test.check_thread_access(id, $2)
+		ORDER BY last_message_at DESC NULLS LAST, created_at DESC
+		LIMIT $3 OFFSET $4
+	`
+
+	rows, err := r.pool.Query(ctx, query, parentThreadID, userID, count, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list subthreads: %w", err)
+	}
+	defer rows.Close()
+
+	var threads []model.Thread
+	for rows.Next() {
+		var t model.Thread
+		if err := rows.Scan(
+			&t.ID, &t.ChatID, &t.ParentMessageID, &t.ParentThreadID, &t.Depth,
+			&t.ThreadType, &t.Title, &t.MessageCount, &t.LastMessageAt, &t.CreatedBy,
+			&t.CreatedAt, &t.UpdatedAt, &t.IsArchived, &t.RestrictedParticipants,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan subthread: %w", err)
+		}
+		threads = append(threads, t)
+	}
+
+	return threads, total, nil
 }

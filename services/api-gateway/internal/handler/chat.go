@@ -57,8 +57,19 @@ func (h *ChatHandler) Routes() chi.Router {
 	r.Delete("/messages/{messageId}/reactions/{emoji}", h.RemoveReaction)
 
 	// Thread routes
-	r.Post("/messages/{messageId}/thread", h.CreateThread)
+	r.Get("/{chatId}/threads", h.ListChatThreads)
+	r.Post("/{chatId}/threads", h.CreateChatThread)
+	r.Get("/threads/{threadId}", h.GetThreadByID)
+	r.Post("/threads/{threadId}/archive", h.ArchiveThreadByID)
 	r.Get("/threads/{threadId}/messages", h.GetThreadMessages)
+	r.Post("/threads/{threadId}/participants", h.AddThreadParticipantHandler)
+	r.Delete("/threads/{threadId}/participants/{userId}", h.RemoveThreadParticipantHandler)
+	r.Get("/threads/{threadId}/participants", h.ListThreadParticipantsHandler)
+	// Subthread routes
+	r.Get("/threads/{threadId}/subthreads", h.ListSubthreads)
+	r.Post("/threads/{threadId}/subthreads", h.CreateSubthread)
+	// Reply thread (from message) - kept for backwards compatibility
+	r.Post("/messages/{messageId}/thread", h.CreateThread)
 
 	// Favorites and Archive
 	r.Post("/{chatId}/favorite", h.AddToFavorites)
@@ -594,11 +605,156 @@ func (h *ChatHandler) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// CreateThread creates a thread from message (sends a reply message)
+// ListChatThreads returns threads for a chat
+// GET /api/chats/{chatId}/threads
+func (h *ChatHandler) ListChatThreads(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	chatID := chi.URLParam(r, "chatId")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	count, _ := strconv.Atoi(r.URL.Query().Get("count"))
+	if page <= 0 {
+		page = 1
+	}
+	if count <= 0 {
+		count = 20
+	}
+
+	resp, err := h.chatClient.ListThreads(ctx, chatID, userID.String(), int32(page), int32(count))
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"threads":    resp.Threads,
+		"pagination": resp.Pagination,
+	})
+}
+
+// CreateChatThread creates a new thread in a chat
+// POST /api/chats/{chatId}/threads
+func (h *ChatHandler) CreateChatThread(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	chatID := chi.URLParam(r, "chatId")
+
+	var req struct {
+		ParentMessageID        string `json:"parent_message_id,omitempty"`
+		ThreadType             string `json:"thread_type"`
+		Title                  string `json:"title,omitempty"`
+		RestrictedParticipants bool   `json:"restricted_participants"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Convert thread type string to enum
+	threadType := pb.ThreadType_THREAD_TYPE_USER
+	if req.ThreadType == "system" {
+		threadType = pb.ThreadType_THREAD_TYPE_SYSTEM
+	}
+
+	var parentMsgID *string
+	if req.ParentMessageID != "" {
+		parentMsgID = &req.ParentMessageID
+	}
+
+	var title *string
+	if req.Title != "" {
+		title = &req.Title
+	}
+
+	thread, err := h.chatClient.CreateThread(ctx, chatID, parentMsgID, threadType, title, userID.String(), req.RestrictedParticipants)
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	h.respondJSON(w, http.StatusCreated, thread)
+}
+
+// GetThreadByID returns a specific thread
+// GET /api/chats/threads/{threadId}
+func (h *ChatHandler) GetThreadByID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	threadID := chi.URLParam(r, "threadId")
+
+	thread, err := h.chatClient.GetThread(ctx, threadID, userID.String())
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, thread)
+}
+
+// ArchiveThreadByID archives a thread
+// POST /api/chats/threads/{threadId}/archive
+func (h *ChatHandler) ArchiveThreadByID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	threadID := chi.URLParam(r, "threadId")
+
+	thread, err := h.chatClient.ArchiveThread(ctx, threadID, userID.String())
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, thread)
+}
+
+// CreateThread creates a reply thread from message (backward compatibility)
 // POST /api/chats/messages/{messageId}/thread
 func (h *ChatHandler) CreateThread(w http.ResponseWriter, r *http.Request) {
-	// Thread creation is done by sending a message with parent_id
-	h.respondError(w, http.StatusNotImplemented, "use POST /messages with parent_id instead")
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	messageID := chi.URLParam(r, "messageId")
+
+	// Get message to find chat ID
+	message, err := h.chatClient.GetMessage(ctx, messageID, userID.String())
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	// Create thread with parent message
+	thread, err := h.chatClient.CreateThread(ctx, message.ChatId, &messageID, pb.ThreadType_THREAD_TYPE_USER, nil, userID.String(), false)
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	h.respondJSON(w, http.StatusCreated, thread)
 }
 
 // GetThreadMessages returns thread messages
@@ -611,7 +767,7 @@ func (h *ChatHandler) GetThreadMessages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	parentID := chi.URLParam(r, "threadId")
+	threadID := chi.URLParam(r, "threadId")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	count, _ := strconv.Atoi(r.URL.Query().Get("count"))
 	if page <= 0 {
@@ -621,16 +777,163 @@ func (h *ChatHandler) GetThreadMessages(w http.ResponseWriter, r *http.Request) 
 		count = 50
 	}
 
-	resp, err := h.chatClient.GetThreadMessages(ctx, parentID, userID.String(), int32(page), int32(count))
+	resp, err := h.chatClient.ListThreadMessages(ctx, threadID, userID.String(), int32(page), int32(count))
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	// Enrich messages with file attachments
+	messages := h.enrichMessagesWithFiles(ctx, resp.Messages)
+
+	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"messages":   messages,
+		"pagination": resp.Pagination,
+	})
+}
+
+// AddThreadParticipantHandler adds a participant to a thread
+// POST /api/chats/threads/{threadId}/participants
+func (h *ChatHandler) AddThreadParticipantHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	threadID := chi.URLParam(r, "threadId")
+
+	var req struct {
+		UserID string `json:"user_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.chatClient.AddThreadParticipant(ctx, threadID, req.UserID, userID.String()); err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+// RemoveThreadParticipantHandler removes a participant from a thread
+// DELETE /api/chats/threads/{threadId}/participants/{userId}
+func (h *ChatHandler) RemoveThreadParticipantHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	threadID := chi.URLParam(r, "threadId")
+	targetUserID := chi.URLParam(r, "userId")
+
+	if err := h.chatClient.RemoveThreadParticipant(ctx, threadID, targetUserID, userID.String()); err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListThreadParticipantsHandler returns thread participants
+// GET /api/chats/threads/{threadId}/participants
+func (h *ChatHandler) ListThreadParticipantsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	threadID := chi.URLParam(r, "threadId")
+
+	resp, err := h.chatClient.ListThreadParticipants(ctx, threadID)
 	if err != nil {
 		h.handleGRPCError(w, err)
 		return
 	}
 
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"messages":   resp.Messages,
-		"pagination": resp.Pagination,
+		"participants": resp.Participants,
 	})
+}
+
+// ListSubthreads returns subthreads of a thread
+// GET /api/chats/threads/{threadId}/subthreads
+func (h *ChatHandler) ListSubthreads(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	parentThreadID := chi.URLParam(r, "threadId")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page <= 0 {
+		page = 1
+	}
+	count, _ := strconv.Atoi(r.URL.Query().Get("count"))
+	if count <= 0 {
+		count = 20
+	}
+
+	resp, err := h.chatClient.ListSubthreads(ctx, parentThreadID, userID.String(), int32(page), int32(count))
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	total := int32(0)
+	if resp.Pagination != nil {
+		total = resp.Pagination.Total
+	}
+	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"threads": resp.Threads,
+		"total":   total,
+	})
+}
+
+// CreateSubthread creates a subthread under a parent thread
+// POST /api/chats/threads/{threadId}/subthreads
+func (h *ChatHandler) CreateSubthread(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	parentThreadID := chi.URLParam(r, "threadId")
+
+	var req struct {
+		Title      string `json:"title"`
+		ThreadType string `json:"thread_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	threadType := pb.ThreadType_THREAD_TYPE_USER
+	if req.ThreadType == "system" {
+		threadType = pb.ThreadType_THREAD_TYPE_SYSTEM
+	}
+
+	thread, err := h.chatClient.CreateSubthread(ctx, parentThreadID, req.Title, threadType, userID.String())
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	h.respondJSON(w, http.StatusCreated, thread)
 }
 
 // AddToFavorites adds chat to favorites

@@ -7,6 +7,11 @@ const props = defineProps<{
   message: Message
   isOwn: boolean
   currentUser: User
+  compact?: boolean // For thread view - smaller styling
+}>()
+
+const emit = defineEmits<{
+  reply: [message: Message]
 }>()
 
 const chatStore = useChatStore()
@@ -114,6 +119,26 @@ function isImage(contentType: string): boolean {
 function getFileDownloadUrl(linkId: string): string {
   return `/api/files/${linkId}`
 }
+
+function handleReply() {
+  emit('reply', props.message)
+  showActions.value = false
+}
+
+function getReplyToSenderName(): string {
+  const replyTo = props.message.reply_to
+  if (!replyTo) return 'Unknown'
+  if (replyTo.sender_display_name) return replyTo.sender_display_name
+  if (replyTo.sender?.display_name) return replyTo.sender.display_name
+  if (replyTo.sender_username) return replyTo.sender_username
+  if (replyTo.sender?.username) return replyTo.sender.username
+  return 'Unknown'
+}
+
+function truncateContent(content: string, maxLength: number = 100): string {
+  if (content.length <= maxLength) return content
+  return content.substring(0, maxLength) + '...'
+}
 </script>
 
 <template>
@@ -163,6 +188,21 @@ function getFileDownloadUrl(linkId: string): string {
         class="relative rounded-lg px-4 py-2 inline-block"
         :class="isOwn ? 'bg-indigo-500 text-white' : 'bg-white border'"
       >
+        <!-- Reply-to quote -->
+        <div
+          v-if="message.reply_to"
+          data-testid="message-quote"
+          class="mb-2 pl-2 border-l-2 text-xs"
+          :class="isOwn ? 'border-indigo-300 text-indigo-200' : 'border-gray-300 text-gray-500'"
+        >
+          <div data-testid="message-quote-sender" class="font-medium" :class="isOwn ? 'text-indigo-200' : 'text-gray-600'">
+            {{ getReplyToSenderName() }}
+          </div>
+          <div data-testid="message-quote-content" class="truncate max-w-[200px]">
+            {{ truncateContent(message.reply_to.content, 80) }}
+          </div>
+        </div>
+
         <!-- Edit mode -->
         <div v-if="isEditing" class="min-w-[200px]">
           <textarea
@@ -239,6 +279,18 @@ function getFileDownloadUrl(linkId: string): string {
             class="p-1 hover:bg-gray-100 rounded text-sm"
           >
             {{ emoji }}
+          </button>
+
+          <!-- Reply button -->
+          <button
+            @click="handleReply"
+            data-testid="reply-button"
+            class="p-1 hover:bg-gray-100 rounded text-gray-500"
+            title="Reply"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
           </button>
 
           <!-- Edit (own messages only) -->

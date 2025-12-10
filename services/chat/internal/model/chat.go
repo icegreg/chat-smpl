@@ -71,11 +71,13 @@ type Message struct {
 	ID                     uuid.UUID   `json:"id" db:"id"`
 	ChatID                 uuid.UUID   `json:"chat_id" db:"chat_id"`
 	ParentID               *uuid.UUID  `json:"parent_id,omitempty" db:"parent_id"`
+	ThreadID               *uuid.UUID  `json:"thread_id,omitempty" db:"thread_id"`
 	SenderID               uuid.UUID   `json:"sender_id" db:"sender_id"`
 	Content                string      `json:"content" db:"content"`
 	SentAt                 time.Time   `json:"sent_at" db:"sent_at"`
 	UpdatedAt              *time.Time  `json:"updated_at,omitempty" db:"updated_at"`
 	IsDeleted              bool        `json:"is_deleted" db:"is_deleted"`
+	IsSystem               bool        `json:"is_system" db:"is_system"`
 	SeqNum                 int64       `json:"seq_num" db:"seq_num"` // Sequence number for reliable sync
 	ForwardedFromMessageID *uuid.UUID  `json:"forwarded_from_message_id,omitempty" db:"forwarded_from_message_id"`
 	ForwardedFromChatID    *uuid.UUID  `json:"forwarded_from_chat_id,omitempty" db:"forwarded_from_chat_id"`
@@ -140,4 +142,52 @@ type ArchivedChat struct {
 	ChatID     uuid.UUID `json:"chat_id" db:"chat_id"`
 	UserID     uuid.UUID `json:"user_id" db:"user_id"`
 	ArchivedAt time.Time `json:"archived_at" db:"archived_at"`
+}
+
+// Thread types
+type ThreadType string
+
+const (
+	ThreadTypeUser   ThreadType = "user"
+	ThreadTypeSystem ThreadType = "system"
+)
+
+func (t ThreadType) IsValid() bool {
+	switch t {
+	case ThreadTypeUser, ThreadTypeSystem:
+		return true
+	}
+	return false
+}
+
+// Thread represents a conversation thread within a chat
+type Thread struct {
+	ID                     uuid.UUID  `json:"id" db:"id"`
+	ChatID                 uuid.UUID  `json:"chat_id" db:"chat_id"`
+	ParentMessageID        *uuid.UUID `json:"parent_message_id,omitempty" db:"parent_message_id"`
+	ParentThreadID         *uuid.UUID `json:"parent_thread_id,omitempty" db:"parent_thread_id"` // For subthreads
+	Depth                  int        `json:"depth" db:"depth"`                                 // Nesting level (0 = top-level)
+	ThreadType             ThreadType `json:"thread_type" db:"thread_type"`
+	Title                  *string    `json:"title,omitempty" db:"title"`
+	MessageCount           int        `json:"message_count" db:"message_count"`
+	LastMessageAt          *time.Time `json:"last_message_at,omitempty" db:"last_message_at"`
+	CreatedBy              *uuid.UUID `json:"created_by,omitempty" db:"created_by"`
+	CreatedAt              time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at" db:"updated_at"`
+	IsArchived             bool       `json:"is_archived" db:"is_archived"`
+	RestrictedParticipants bool       `json:"restricted_participants" db:"restricted_participants"`
+}
+
+// PermissionSource indicates where the user's permission to access a thread comes from
+type PermissionSource struct {
+	Source   string    `json:"source"`    // "thread", "parent_thread", "chat"
+	SourceID uuid.UUID `json:"source_id"` // ID of the source entity
+}
+
+// ThreadParticipant represents a participant in a restricted thread
+type ThreadParticipant struct {
+	ID       uuid.UUID `json:"id" db:"id"`
+	ThreadID uuid.UUID `json:"thread_id" db:"thread_id"`
+	UserID   uuid.UUID `json:"user_id" db:"user_id"`
+	AddedAt  time.Time `json:"added_at" db:"added_at"`
 }

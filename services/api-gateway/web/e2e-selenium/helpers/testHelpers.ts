@@ -15,6 +15,9 @@ export function generateTestUser(): RegisterData {
   }
 }
 
+// Alias for compatibility
+export const generateUniqueUser = generateTestUser
+
 // Options for creating test user
 export interface CreateTestUserOptions {
   username?: string

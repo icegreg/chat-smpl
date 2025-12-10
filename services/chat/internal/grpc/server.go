@@ -57,6 +57,8 @@ func handleError(err error) error {
 		return status.Error(codes.NotFound, "message not found")
 	case errors.Is(err, repository.ErrParticipantNotFound):
 		return status.Error(codes.NotFound, "participant not found")
+	case errors.Is(err, repository.ErrThreadNotFound):
+		return status.Error(codes.NotFound, "thread not found")
 	case errors.Is(err, service.ErrNotParticipant):
 		return status.Error(codes.PermissionDenied, "not a participant")
 	case errors.Is(err, service.ErrAccessDenied):
@@ -942,6 +944,364 @@ func (s *ChatServer) ForwardMessage(ctx context.Context, req *pb.ForwardMessageR
 	}
 
 	return messageToProto(message), nil
+}
+
+// Thread helper functions
+
+func toThreadType(tt pb.ThreadType) model.ThreadType {
+	switch tt {
+	case pb.ThreadType_THREAD_TYPE_USER:
+		return model.ThreadTypeUser
+	case pb.ThreadType_THREAD_TYPE_SYSTEM:
+		return model.ThreadTypeSystem
+	default:
+		return model.ThreadTypeUser
+	}
+}
+
+func toProtoThreadType(tt model.ThreadType) pb.ThreadType {
+	switch tt {
+	case model.ThreadTypeUser:
+		return pb.ThreadType_THREAD_TYPE_USER
+	case model.ThreadTypeSystem:
+		return pb.ThreadType_THREAD_TYPE_SYSTEM
+	default:
+		return pb.ThreadType_THREAD_TYPE_USER
+	}
+}
+
+func threadToProto(t *model.Thread) *pb.Thread {
+	if t == nil {
+		return nil
+	}
+	thread := &pb.Thread{
+		Id:                     t.ID.String(),
+		ChatId:                 t.ChatID.String(),
+		ThreadType:             toProtoThreadType(t.ThreadType),
+		MessageCount:           int32(t.MessageCount),
+		CreatedAt:              timestamppb.New(t.CreatedAt),
+		UpdatedAt:              timestamppb.New(t.UpdatedAt),
+		IsArchived:             t.IsArchived,
+		RestrictedParticipants: t.RestrictedParticipants,
+		Depth:                  int32(t.Depth),
+	}
+	if t.ParentMessageID != nil {
+		thread.ParentMessageId = t.ParentMessageID.String()
+	}
+	if t.ParentThreadID != nil {
+		thread.ParentThreadId = t.ParentThreadID.String()
+	}
+	if t.Title != nil {
+		thread.Title = *t.Title
+	}
+	if t.LastMessageAt != nil {
+		thread.LastMessageAt = timestamppb.New(*t.LastMessageAt)
+	}
+	if t.CreatedBy != nil {
+		thread.CreatedBy = t.CreatedBy.String()
+	}
+	return thread
+}
+
+func threadParticipantToProto(tp *model.ThreadParticipant) *pb.ThreadParticipant {
+	if tp == nil {
+		return nil
+	}
+	return &pb.ThreadParticipant{
+		Id:       tp.ID.String(),
+		ThreadId: tp.ThreadID.String(),
+		UserId:   tp.UserID.String(),
+		AddedAt:  timestamppb.New(tp.AddedAt),
+	}
+}
+
+// Thread operations
+
+func (s *ChatServer) CreateThread(ctx context.Context, req *pb.CreateThreadRequest) (*pb.Thread, error) {
+	chatID, err := parseUUID(req.ChatId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid chat_id")
+	}
+
+	var parentMessageID *uuid.UUID
+	if req.ParentMessageId != "" {
+		id, err := parseUUID(req.ParentMessageId)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid parent_message_id")
+		}
+		parentMessageID = &id
+	}
+
+	var createdBy *uuid.UUID
+	if req.CreatedBy != "" {
+		id, err := parseUUID(req.CreatedBy)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid created_by")
+		}
+		createdBy = &id
+	}
+
+	var title *string
+	if req.Title != "" {
+		title = &req.Title
+	}
+
+	thread, err := s.chatService.CreateThread(
+		ctx,
+		chatID,
+		parentMessageID,
+		toThreadType(req.ThreadType),
+		title,
+		createdBy,
+		req.RestrictedParticipants,
+	)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return threadToProto(thread), nil
+}
+
+func (s *ChatServer) GetThread(ctx context.Context, req *pb.GetThreadRequest) (*pb.Thread, error) {
+	threadID, err := parseUUID(req.ThreadId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid thread_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	thread, err := s.chatService.GetThread(ctx, threadID, userID)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return threadToProto(thread), nil
+}
+
+func (s *ChatServer) ListThreads(ctx context.Context, req *pb.ListThreadsRequest) (*pb.ListThreadsResponse, error) {
+	chatID, err := parseUUID(req.ChatId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid chat_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	page := int(req.Page)
+	if page < 1 {
+		page = 1
+	}
+	count := int(req.Count)
+	if count < 1 {
+		count = 20
+	}
+
+	threads, total, err := s.chatService.ListThreads(ctx, chatID, userID, page, count)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	protoThreads := make([]*pb.Thread, len(threads))
+	for i, t := range threads {
+		protoThreads[i] = threadToProto(&t)
+	}
+
+	totalPages := int32(total) / int32(count)
+	if int32(total)%int32(count) > 0 {
+		totalPages++
+	}
+
+	return &pb.ListThreadsResponse{
+		Threads: protoThreads,
+		Pagination: &pb.Pagination{
+			Page:       int32(page),
+			Count:      int32(count),
+			Total:      int32(total),
+			TotalPages: totalPages,
+		},
+	}, nil
+}
+
+func (s *ChatServer) ArchiveThread(ctx context.Context, req *pb.ArchiveThreadRequest) (*pb.Thread, error) {
+	threadID, err := parseUUID(req.ThreadId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid thread_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	thread, err := s.chatService.ArchiveThread(ctx, threadID, userID)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return threadToProto(thread), nil
+}
+
+func (s *ChatServer) ListThreadMessages(ctx context.Context, req *pb.ListThreadMessagesRequest) (*pb.ListMessagesResponse, error) {
+	threadID, err := parseUUID(req.ThreadId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid thread_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	page := int(req.Page)
+	if page < 1 {
+		page = 1
+	}
+	count := int(req.Count)
+	if count < 1 {
+		count = 50
+	}
+
+	messages, total, err := s.chatService.ListThreadMessages(ctx, threadID, userID, page, count)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	protoMessages := make([]*pb.Message, len(messages))
+	for i, m := range messages {
+		protoMessages[i] = messageToProto(&m)
+	}
+
+	totalPages := int32(total) / int32(count)
+	if int32(total)%int32(count) > 0 {
+		totalPages++
+	}
+
+	return &pb.ListMessagesResponse{
+		Messages: protoMessages,
+		Pagination: &pb.Pagination{
+			Page:       int32(page),
+			Count:      int32(count),
+			Total:      int32(total),
+			TotalPages: totalPages,
+		},
+	}, nil
+}
+
+// Thread participant operations
+
+func (s *ChatServer) AddThreadParticipant(ctx context.Context, req *pb.AddThreadParticipantRequest) (*emptypb.Empty, error) {
+	threadID, err := parseUUID(req.ThreadId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid thread_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+	addedBy, err := parseUUID(req.AddedBy)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid added_by")
+	}
+
+	if err := s.chatService.AddThreadParticipant(ctx, threadID, userID, addedBy); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+func (s *ChatServer) RemoveThreadParticipant(ctx context.Context, req *pb.RemoveThreadParticipantRequest) (*emptypb.Empty, error) {
+	threadID, err := parseUUID(req.ThreadId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid thread_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+	removedBy, err := parseUUID(req.RemovedBy)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid removed_by")
+	}
+
+	if err := s.chatService.RemoveThreadParticipant(ctx, threadID, userID, removedBy); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+func (s *ChatServer) ListThreadParticipants(ctx context.Context, req *pb.ListThreadParticipantsRequest) (*pb.ListThreadParticipantsResponse, error) {
+	threadID, err := parseUUID(req.ThreadId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid thread_id")
+	}
+
+	participants, err := s.chatService.ListThreadParticipants(ctx, threadID)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	protoParticipants := make([]*pb.ThreadParticipant, len(participants))
+	for i, p := range participants {
+		protoParticipants[i] = threadParticipantToProto(&p)
+	}
+
+	return &pb.ListThreadParticipantsResponse{
+		Participants: protoParticipants,
+	}, nil
+}
+
+// Subthread operations
+
+func (s *ChatServer) ListSubthreads(ctx context.Context, req *pb.ListSubthreadsRequest) (*pb.ListThreadsResponse, error) {
+	parentThreadID, err := parseUUID(req.ParentThreadId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid parent_thread_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	threads, total, err := s.chatService.ListSubthreads(ctx, parentThreadID, userID, int(req.Page), int(req.Count))
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	protoThreads := make([]*pb.Thread, len(threads))
+	for i, t := range threads {
+		protoThreads[i] = threadToProto(&t)
+	}
+
+	return &pb.ListThreadsResponse{
+		Threads: protoThreads,
+		Pagination: &pb.Pagination{
+			Page:       req.Page,
+			Count:      int32(len(threads)),
+			Total:      int32(total),
+			TotalPages: int32((total + int(req.Count) - 1) / int(req.Count)),
+		},
+	}, nil
+}
+
+func (s *ChatServer) CreateSubthread(ctx context.Context, req *pb.CreateSubthreadRequest) (*pb.Thread, error) {
+	parentThreadID, err := parseUUID(req.ParentThreadId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid parent_thread_id")
+	}
+	createdBy, err := parseUUID(req.CreatedBy)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid created_by")
+	}
+
+	thread, err := s.chatService.CreateSubthread(ctx, parentThreadID, req.Title, toThreadType(req.ThreadType), createdBy)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return threadToProto(thread), nil
 }
 
 // Poll operations - not implemented yet, using UnimplementedChatServiceServer

@@ -15,15 +15,17 @@ import (
 const (
 	ExchangeName = "chat.events"
 
-	RoutingKeyChatCreated    = "chat.created"
-	RoutingKeyChatUpdated    = "chat.updated"
-	RoutingKeyChatDeleted    = "chat.deleted"
-	RoutingKeyMessageCreated = "message.created"
-	RoutingKeyMessageUpdated = "message.updated"
-	RoutingKeyMessageDeleted = "message.deleted"
-	RoutingKeyTyping         = "typing"
-	RoutingKeyReactionAdded  = "reaction.added"
+	RoutingKeyChatCreated     = "chat.created"
+	RoutingKeyChatUpdated     = "chat.updated"
+	RoutingKeyChatDeleted     = "chat.deleted"
+	RoutingKeyMessageCreated  = "message.created"
+	RoutingKeyMessageUpdated  = "message.updated"
+	RoutingKeyMessageDeleted  = "message.deleted"
+	RoutingKeyTyping          = "typing"
+	RoutingKeyReactionAdded   = "reaction.added"
 	RoutingKeyReactionRemoved = "reaction.removed"
+	RoutingKeyThreadCreated   = "thread.created"
+	RoutingKeyThreadArchived  = "thread.archived"
 )
 
 // ChatEvent is the unified event structure for websocket-service consumption
@@ -75,6 +77,18 @@ type ReactionData struct {
 	UserID    string `json:"user_id"`
 }
 
+type ThreadData struct {
+	ID                     string  `json:"id"`
+	ChatID                 string  `json:"chat_id"`
+	ParentMessageID        *string `json:"parent_message_id,omitempty"`
+	ThreadType             string  `json:"thread_type"`
+	Title                  *string `json:"title,omitempty"`
+	MessageCount           int     `json:"message_count"`
+	CreatedBy              *string `json:"created_by,omitempty"`
+	IsArchived             bool    `json:"is_archived"`
+	RestrictedParticipants bool    `json:"restricted_participants"`
+}
+
 type Publisher interface {
 	PublishChatCreated(ctx context.Context, chat *model.Chat, participants []uuid.UUID) error
 	PublishChatUpdated(ctx context.Context, chat *model.Chat, actorID uuid.UUID, participants []uuid.UUID) error
@@ -85,6 +99,8 @@ type Publisher interface {
 	PublishTyping(ctx context.Context, chatID, userID uuid.UUID, isTyping bool, participants []uuid.UUID) error
 	PublishReactionAdded(ctx context.Context, messageID, chatID, userID uuid.UUID, emoji string, participants []uuid.UUID) error
 	PublishReactionRemoved(ctx context.Context, messageID, chatID, userID uuid.UUID, emoji string, participants []uuid.UUID) error
+	PublishThreadCreated(ctx context.Context, thread *model.Thread, participants []uuid.UUID) error
+	PublishThreadArchived(ctx context.Context, thread *model.Thread, archivedBy uuid.UUID, participants []uuid.UUID) error
 }
 
 type publisher struct {
@@ -352,6 +368,89 @@ func (p *publisher) PublishReactionRemoved(ctx context.Context, messageID, chatI
 	return nil
 }
 
+func (p *publisher) PublishThreadCreated(ctx context.Context, thread *model.Thread, participants []uuid.UUID) error {
+	threadData := ThreadData{
+		ID:                     thread.ID.String(),
+		ChatID:                 thread.ChatID.String(),
+		ThreadType:             string(thread.ThreadType),
+		MessageCount:           thread.MessageCount,
+		IsArchived:             thread.IsArchived,
+		RestrictedParticipants: thread.RestrictedParticipants,
+	}
+	if thread.ParentMessageID != nil {
+		parentStr := thread.ParentMessageID.String()
+		threadData.ParentMessageID = &parentStr
+	}
+	if thread.Title != nil {
+		threadData.Title = thread.Title
+	}
+	if thread.CreatedBy != nil {
+		createdByStr := thread.CreatedBy.String()
+		threadData.CreatedBy = &createdByStr
+	}
+
+	actorID := ""
+	if thread.CreatedBy != nil {
+		actorID = thread.CreatedBy.String()
+	}
+
+	event := ChatEvent{
+		Type:         RoutingKeyThreadCreated,
+		Timestamp:    time.Now(),
+		ActorID:      actorID,
+		ChatID:       thread.ChatID.String(),
+		Participants: uuidSliceToStrings(participants),
+		Data:         threadData,
+	}
+
+	if err := p.rmqPublisher.Publish(ctx, RoutingKeyThreadCreated, event); err != nil {
+		logger.Error("failed to publish thread.created event", zap.Error(err), zap.String("thread_id", thread.ID.String()))
+		return err
+	}
+
+	logger.Debug("published thread.created event", zap.String("thread_id", thread.ID.String()), zap.Int("participants", len(participants)))
+	return nil
+}
+
+func (p *publisher) PublishThreadArchived(ctx context.Context, thread *model.Thread, archivedBy uuid.UUID, participants []uuid.UUID) error {
+	threadData := ThreadData{
+		ID:                     thread.ID.String(),
+		ChatID:                 thread.ChatID.String(),
+		ThreadType:             string(thread.ThreadType),
+		MessageCount:           thread.MessageCount,
+		IsArchived:             thread.IsArchived,
+		RestrictedParticipants: thread.RestrictedParticipants,
+	}
+	if thread.ParentMessageID != nil {
+		parentStr := thread.ParentMessageID.String()
+		threadData.ParentMessageID = &parentStr
+	}
+	if thread.Title != nil {
+		threadData.Title = thread.Title
+	}
+	if thread.CreatedBy != nil {
+		createdByStr := thread.CreatedBy.String()
+		threadData.CreatedBy = &createdByStr
+	}
+
+	event := ChatEvent{
+		Type:         RoutingKeyThreadArchived,
+		Timestamp:    time.Now(),
+		ActorID:      archivedBy.String(),
+		ChatID:       thread.ChatID.String(),
+		Participants: uuidSliceToStrings(participants),
+		Data:         threadData,
+	}
+
+	if err := p.rmqPublisher.Publish(ctx, RoutingKeyThreadArchived, event); err != nil {
+		logger.Error("failed to publish thread.archived event", zap.Error(err), zap.String("thread_id", thread.ID.String()))
+		return err
+	}
+
+	logger.Debug("published thread.archived event", zap.String("thread_id", thread.ID.String()))
+	return nil
+}
+
 // NoOpPublisher is a publisher that does nothing (for testing)
 type NoOpPublisher struct{}
 
@@ -392,5 +491,13 @@ func (p *NoOpPublisher) PublishReactionAdded(ctx context.Context, messageID, cha
 }
 
 func (p *NoOpPublisher) PublishReactionRemoved(ctx context.Context, messageID, chatID, userID uuid.UUID, emoji string, participants []uuid.UUID) error {
+	return nil
+}
+
+func (p *NoOpPublisher) PublishThreadCreated(ctx context.Context, thread *model.Thread, participants []uuid.UUID) error {
+	return nil
+}
+
+func (p *NoOpPublisher) PublishThreadArchived(ctx context.Context, thread *model.Thread, archivedBy uuid.UUID, participants []uuid.UUID) error {
 	return nil
 }

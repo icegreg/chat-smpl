@@ -335,3 +335,99 @@ func (c *ChatClient) ForwardMessage(ctx context.Context, messageID, targetChatID
 		SenderId:     senderID,
 	})
 }
+
+// Thread operations
+
+func (c *ChatClient) CreateThread(ctx context.Context, chatID string, parentMessageID *string, threadType pb.ThreadType, title *string, createdBy string, restrictedParticipants bool) (*pb.Thread, error) {
+	req := &pb.CreateThreadRequest{
+		ChatId:                 chatID,
+		ThreadType:             threadType,
+		CreatedBy:              createdBy,
+		RestrictedParticipants: restrictedParticipants,
+	}
+	if parentMessageID != nil {
+		req.ParentMessageId = *parentMessageID
+	}
+	if title != nil {
+		req.Title = *title
+	}
+	return c.client.CreateThread(ctx, req)
+}
+
+func (c *ChatClient) GetThread(ctx context.Context, threadID, userID string) (*pb.Thread, error) {
+	return c.client.GetThread(ctx, &pb.GetThreadRequest{
+		ThreadId: threadID,
+		UserId:   userID,
+	})
+}
+
+func (c *ChatClient) ListThreads(ctx context.Context, chatID, userID string, page, count int32) (*pb.ListThreadsResponse, error) {
+	return c.client.ListThreads(ctx, &pb.ListThreadsRequest{
+		ChatId: chatID,
+		UserId: userID,
+		Page:   page,
+		Count:  count,
+	})
+}
+
+func (c *ChatClient) ArchiveThread(ctx context.Context, threadID, userID string) (*pb.Thread, error) {
+	return c.client.ArchiveThread(ctx, &pb.ArchiveThreadRequest{
+		ThreadId: threadID,
+		UserId:   userID,
+	})
+}
+
+func (c *ChatClient) ListThreadMessages(ctx context.Context, threadID, userID string, page, count int32) (*pb.ListMessagesResponse, error) {
+	return c.client.ListThreadMessages(ctx, &pb.ListThreadMessagesRequest{
+		ThreadId: threadID,
+		UserId:   userID,
+		Page:     page,
+		Count:    count,
+	})
+}
+
+// Thread participant operations
+
+func (c *ChatClient) AddThreadParticipant(ctx context.Context, threadID, userID, addedBy string) error {
+	_, err := c.client.AddThreadParticipant(ctx, &pb.AddThreadParticipantRequest{
+		ThreadId: threadID,
+		UserId:   userID,
+		AddedBy:  addedBy,
+	})
+	return err
+}
+
+func (c *ChatClient) RemoveThreadParticipant(ctx context.Context, threadID, userID, removedBy string) error {
+	_, err := c.client.RemoveThreadParticipant(ctx, &pb.RemoveThreadParticipantRequest{
+		ThreadId:  threadID,
+		UserId:    userID,
+		RemovedBy: removedBy,
+	})
+	return err
+}
+
+func (c *ChatClient) ListThreadParticipants(ctx context.Context, threadID string) (*pb.ListThreadParticipantsResponse, error) {
+	return c.client.ListThreadParticipants(ctx, &pb.ListThreadParticipantsRequest{
+		ThreadId: threadID,
+	})
+}
+
+// Subthread operations
+
+func (c *ChatClient) ListSubthreads(ctx context.Context, parentThreadID, userID string, page, count int32) (*pb.ListThreadsResponse, error) {
+	return c.client.ListSubthreads(ctx, &pb.ListSubthreadsRequest{
+		ParentThreadId: parentThreadID,
+		UserId:         userID,
+		Page:           page,
+		Count:          count,
+	})
+}
+
+func (c *ChatClient) CreateSubthread(ctx context.Context, parentThreadID, title string, threadType pb.ThreadType, createdBy string) (*pb.Thread, error) {
+	return c.client.CreateSubthread(ctx, &pb.CreateSubthreadRequest{
+		ParentThreadId: parentThreadID,
+		Title:          title,
+		ThreadType:     threadType,
+		CreatedBy:      createdBy,
+	})
+}

@@ -66,6 +66,29 @@ type ChatService interface {
 
 	// Forward message
 	ForwardMessage(ctx context.Context, messageID, targetChatID, senderID uuid.UUID) (*model.Message, error)
+
+	// Thread operations
+	CreateThread(ctx context.Context, chatID uuid.UUID, parentMessageID *uuid.UUID, threadType model.ThreadType, title *string, createdBy *uuid.UUID, restrictedParticipants bool) (*model.Thread, error)
+	GetThread(ctx context.Context, threadID, userID uuid.UUID) (*model.Thread, error)
+	ListThreads(ctx context.Context, chatID, userID uuid.UUID, page, count int) ([]model.Thread, int, error)
+	ArchiveThread(ctx context.Context, threadID, userID uuid.UUID) (*model.Thread, error)
+	ListThreadMessages(ctx context.Context, threadID, userID uuid.UUID, page, count int) ([]model.Message, int, error)
+
+	// Thread participant operations (for restricted threads)
+	AddThreadParticipant(ctx context.Context, threadID, userID, addedBy uuid.UUID) error
+	RemoveThreadParticipant(ctx context.Context, threadID, userID, removedBy uuid.UUID) error
+	ListThreadParticipants(ctx context.Context, threadID uuid.UUID) ([]model.ThreadParticipant, error)
+
+	// SendMessage with thread support (overloaded via optional threadID)
+	SendMessageToThread(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID, threadID *uuid.UUID, fileLinkIDs []uuid.UUID, isSystem bool) (*model.Message, error)
+
+	// System thread helpers
+	GetSystemThread(ctx context.Context, chatID uuid.UUID) (*model.Thread, error)
+	SendSystemMessage(ctx context.Context, chatID uuid.UUID, content string) (*model.Message, error)
+
+	// Subthread operations
+	ListSubthreads(ctx context.Context, parentThreadID, userID uuid.UUID, page, count int) ([]model.Thread, int, error)
+	CreateSubthread(ctx context.Context, parentThreadID uuid.UUID, title string, threadType model.ThreadType, createdBy uuid.UUID) (*model.Thread, error)
 }
 
 type chatService struct {
@@ -123,6 +146,19 @@ func (s *chatService) CreateChat(ctx context.Context, name string, chatType mode
 
 	// Publish event
 	_ = s.publisher.PublishChatCreated(ctx, chat, participants)
+
+	// Create system Activity thread for logging participant changes and events
+	activityTitle := "Activity"
+	activityThread := &model.Thread{
+		ChatID:     chat.ID,
+		ThreadType: model.ThreadTypeSystem,
+		Title:      &activityTitle,
+	}
+	if err := s.repo.CreateThread(ctx, activityThread); err != nil {
+		// Log error but don't fail chat creation
+		// System thread creation is not critical
+		_ = err
+	}
 
 	return chat, nil
 }
@@ -243,12 +279,28 @@ func (s *chatService) AddParticipant(ctx context.Context, chatID, userID, addedB
 		}
 	}
 
+	// Send system message to Activity thread
+	username := userID.String()[:8] // Fallback to short UUID if no username
+	if newParticipant.Username != nil {
+		username = *newParticipant.Username
+	}
+	_, _ = s.SendSystemMessage(ctx, chatID, fmt.Sprintf("%s joined the chat", username))
+
 	return newParticipant, nil
 }
 
 func (s *chatService) RemoveParticipant(ctx context.Context, chatID, userID, removedBy uuid.UUID) error {
+	// Get leaving participant info BEFORE removing (for system message)
+	leavingParticipant, err := s.repo.GetParticipant(ctx, chatID, userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrParticipantNotFound) {
+			return ErrNotParticipant
+		}
+		return err
+	}
+
 	if userID != removedBy {
-		participant, err := s.repo.GetParticipant(ctx, chatID, removedBy)
+		removerParticipant, err := s.repo.GetParticipant(ctx, chatID, removedBy)
 		if err != nil {
 			if errors.Is(err, repository.ErrParticipantNotFound) {
 				return ErrNotParticipant
@@ -256,7 +308,7 @@ func (s *chatService) RemoveParticipant(ctx context.Context, chatID, userID, rem
 			return err
 		}
 
-		if !participant.Role.CanModerate() {
+		if !removerParticipant.Role.CanModerate() {
 			return ErrAccessDenied
 		}
 	}
@@ -276,7 +328,22 @@ func (s *chatService) RemoveParticipant(ctx context.Context, chatID, userID, rem
 		}
 	}
 
-	return s.repo.RemoveParticipant(ctx, chatID, userID)
+	if err := s.repo.RemoveParticipant(ctx, chatID, userID); err != nil {
+		return err
+	}
+
+	// Send system message to Activity thread
+	username := userID.String()[:8] // Fallback to short UUID if no username
+	if leavingParticipant.Username != nil {
+		username = *leavingParticipant.Username
+	}
+	if userID == removedBy {
+		_, _ = s.SendSystemMessage(ctx, chatID, fmt.Sprintf("%s left the chat", username))
+	} else {
+		_, _ = s.SendSystemMessage(ctx, chatID, fmt.Sprintf("%s was removed from the chat", username))
+	}
+
+	return nil
 }
 
 func (s *chatService) UpdateParticipantRole(ctx context.Context, chatID, userID, updatedBy uuid.UUID, role model.ParticipantRole) (*model.ChatParticipant, error) {
@@ -688,4 +755,400 @@ func (s *chatService) ForwardMessage(ctx context.Context, messageID, targetChatI
 	_ = s.publisher.PublishMessageCreated(ctx, newMessage, participants)
 
 	return newMessage, nil
+}
+
+// Thread operations
+
+func (s *chatService) CreateThread(ctx context.Context, chatID uuid.UUID, parentMessageID *uuid.UUID, threadType model.ThreadType, title *string, createdBy *uuid.UUID, restrictedParticipants bool) (*model.Thread, error) {
+	// Validate user is participant in the chat (for user threads)
+	if createdBy != nil {
+		isParticipant, err := s.repo.IsParticipant(ctx, chatID, *createdBy)
+		if err != nil {
+			return nil, err
+		}
+		if !isParticipant {
+			return nil, ErrNotParticipant
+		}
+	}
+
+	// For reply threads, validate parent message exists and belongs to the chat
+	if parentMessageID != nil {
+		msg, err := s.repo.GetMessage(ctx, *parentMessageID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get parent message: %w", err)
+		}
+		if msg.ChatID != chatID {
+			return nil, fmt.Errorf("parent message does not belong to this chat")
+		}
+
+		// Check if thread already exists for this parent message
+		existingThread, err := s.repo.GetThreadByParentMessage(ctx, *parentMessageID)
+		if err == nil && existingThread != nil {
+			return existingThread, nil // Return existing thread
+		}
+	}
+
+	thread := &model.Thread{
+		ChatID:                 chatID,
+		ParentMessageID:        parentMessageID,
+		ThreadType:             threadType,
+		Title:                  title,
+		CreatedBy:              createdBy,
+		RestrictedParticipants: restrictedParticipants,
+	}
+
+	if err := s.repo.CreateThread(ctx, thread); err != nil {
+		return nil, fmt.Errorf("failed to create thread: %w", err)
+	}
+
+	// Publish thread created event
+	participants, _ := s.repo.GetParticipantIDs(ctx, chatID)
+	_ = s.publisher.PublishThreadCreated(ctx, thread, participants)
+
+	return thread, nil
+}
+
+func (s *chatService) GetThread(ctx context.Context, threadID, userID uuid.UUID) (*model.Thread, error) {
+	thread, err := s.repo.GetThread(ctx, threadID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check user is participant in the chat
+	isParticipant, err := s.repo.IsParticipant(ctx, thread.ChatID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !isParticipant {
+		return nil, ErrNotParticipant
+	}
+
+	// For restricted threads, check thread participation
+	if thread.RestrictedParticipants {
+		isThreadParticipant, err := s.repo.IsThreadParticipant(ctx, threadID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if !isThreadParticipant {
+			return nil, ErrAccessDenied
+		}
+	}
+
+	return thread, nil
+}
+
+func (s *chatService) ListThreads(ctx context.Context, chatID, userID uuid.UUID, page, count int) ([]model.Thread, int, error) {
+	isParticipant, err := s.repo.IsParticipant(ctx, chatID, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !isParticipant {
+		return nil, 0, ErrNotParticipant
+	}
+
+	return s.repo.ListThreads(ctx, chatID, page, count)
+}
+
+func (s *chatService) ArchiveThread(ctx context.Context, threadID, userID uuid.UUID) (*model.Thread, error) {
+	thread, err := s.repo.GetThread(ctx, threadID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check user has moderator permissions
+	participant, err := s.repo.GetParticipant(ctx, thread.ChatID, userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrParticipantNotFound) {
+			return nil, ErrNotParticipant
+		}
+		return nil, err
+	}
+
+	// Thread creator or moderators can archive
+	if thread.CreatedBy != nil && *thread.CreatedBy != userID && !participant.Role.CanModerate() {
+		return nil, ErrAccessDenied
+	}
+
+	if err := s.repo.ArchiveThread(ctx, threadID); err != nil {
+		return nil, err
+	}
+
+	thread.IsArchived = true
+
+	// Publish thread archived event
+	participants, _ := s.repo.GetParticipantIDs(ctx, thread.ChatID)
+	_ = s.publisher.PublishThreadArchived(ctx, thread, userID, participants)
+
+	return thread, nil
+}
+
+func (s *chatService) ListThreadMessages(ctx context.Context, threadID, userID uuid.UUID, page, count int) ([]model.Message, int, error) {
+	thread, err := s.repo.GetThread(ctx, threadID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Check user is participant in the chat
+	isParticipant, err := s.repo.IsParticipant(ctx, thread.ChatID, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !isParticipant {
+		return nil, 0, ErrNotParticipant
+	}
+
+	// For restricted threads, check thread participation
+	if thread.RestrictedParticipants {
+		isThreadParticipant, err := s.repo.IsThreadParticipant(ctx, threadID, userID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !isThreadParticipant {
+			return nil, 0, ErrAccessDenied
+		}
+	}
+
+	return s.repo.ListThreadMessages(ctx, threadID, page, count)
+}
+
+// Thread participant operations
+
+func (s *chatService) AddThreadParticipant(ctx context.Context, threadID, userID, addedBy uuid.UUID) error {
+	thread, err := s.repo.GetThread(ctx, threadID)
+	if err != nil {
+		return err
+	}
+
+	// Check addedBy has moderator permissions
+	participant, err := s.repo.GetParticipant(ctx, thread.ChatID, addedBy)
+	if err != nil {
+		if errors.Is(err, repository.ErrParticipantNotFound) {
+			return ErrNotParticipant
+		}
+		return err
+	}
+
+	// Thread creator or moderators can add participants
+	if thread.CreatedBy != nil && *thread.CreatedBy != addedBy && !participant.Role.CanModerate() {
+		return ErrAccessDenied
+	}
+
+	// User must be participant in the chat
+	isParticipant, err := s.repo.IsParticipant(ctx, thread.ChatID, userID)
+	if err != nil {
+		return err
+	}
+	if !isParticipant {
+		return fmt.Errorf("user is not a participant in the chat")
+	}
+
+	threadParticipant := &model.ThreadParticipant{
+		ThreadID: threadID,
+		UserID:   userID,
+	}
+
+	return s.repo.AddThreadParticipant(ctx, threadParticipant)
+}
+
+func (s *chatService) RemoveThreadParticipant(ctx context.Context, threadID, userID, removedBy uuid.UUID) error {
+	thread, err := s.repo.GetThread(ctx, threadID)
+	if err != nil {
+		return err
+	}
+
+	// Users can remove themselves, or moderators/creators can remove others
+	if userID != removedBy {
+		participant, err := s.repo.GetParticipant(ctx, thread.ChatID, removedBy)
+		if err != nil {
+			if errors.Is(err, repository.ErrParticipantNotFound) {
+				return ErrNotParticipant
+			}
+			return err
+		}
+
+		if thread.CreatedBy != nil && *thread.CreatedBy != removedBy && !participant.Role.CanModerate() {
+			return ErrAccessDenied
+		}
+	}
+
+	return s.repo.RemoveThreadParticipant(ctx, threadID, userID)
+}
+
+func (s *chatService) ListThreadParticipants(ctx context.Context, threadID uuid.UUID) ([]model.ThreadParticipant, error) {
+	return s.repo.ListThreadParticipants(ctx, threadID)
+}
+
+// SendMessageToThread sends a message with optional thread support
+func (s *chatService) SendMessageToThread(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID, threadID *uuid.UUID, fileLinkIDs []uuid.UUID, isSystem bool) (*model.Message, error) {
+	var participant *model.ChatParticipant
+	var err error
+
+	// System messages don't require participant check
+	if !isSystem {
+		participant, err = s.repo.GetParticipant(ctx, chatID, senderID)
+		if err != nil {
+			if errors.Is(err, repository.ErrParticipantNotFound) {
+				return nil, ErrNotParticipant
+			}
+			return nil, err
+		}
+
+		if !participant.Role.CanWrite() {
+			return nil, ErrCannotWriteChat
+		}
+	}
+
+	// If threadID provided, validate it belongs to this chat
+	if threadID != nil {
+		thread, err := s.repo.GetThread(ctx, *threadID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get thread: %w", err)
+		}
+		if thread.ChatID != chatID {
+			return nil, fmt.Errorf("thread does not belong to this chat")
+		}
+
+		// For restricted threads, check thread participation (unless system message)
+		if thread.RestrictedParticipants && !isSystem {
+			isThreadParticipant, err := s.repo.IsThreadParticipant(ctx, *threadID, senderID)
+			if err != nil {
+				return nil, err
+			}
+			if !isThreadParticipant {
+				return nil, ErrAccessDenied
+			}
+		}
+	}
+
+	message := &model.Message{
+		ChatID:      chatID,
+		SenderID:    senderID,
+		Content:     content,
+		ParentID:    parentID,
+		ThreadID:    threadID,
+		FileLinkIDs: fileLinkIDs,
+		IsSystem:    isSystem,
+	}
+
+	if err := s.repo.CreateMessage(ctx, message); err != nil {
+		return nil, err
+	}
+
+	// Add sender info to message for event (for non-system messages)
+	if participant != nil {
+		message.SenderUsername = participant.Username
+		message.SenderDisplayName = participant.DisplayName
+		message.SenderAvatarURL = participant.AvatarURL
+	}
+
+	// Get participants for event
+	participants, _ := s.repo.GetParticipantIDs(ctx, chatID)
+	_ = s.publisher.PublishMessageCreated(ctx, message, participants)
+
+	return message, nil
+}
+
+// System thread helpers
+
+func (s *chatService) GetSystemThread(ctx context.Context, chatID uuid.UUID) (*model.Thread, error) {
+	return s.repo.GetSystemThread(ctx, chatID)
+}
+
+func (s *chatService) SendSystemMessage(ctx context.Context, chatID uuid.UUID, content string) (*model.Message, error) {
+	// Get system thread
+	systemThread, err := s.repo.GetSystemThread(ctx, chatID)
+	if err != nil {
+		// If no system thread exists, create one
+		if errors.Is(err, repository.ErrThreadNotFound) {
+			activityTitle := "Activity"
+			systemThread, err = s.CreateThread(ctx, chatID, nil, model.ThreadTypeSystem, &activityTitle, nil, false)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create system thread: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to get system thread: %w", err)
+		}
+	}
+
+	// Send message to system thread
+	return s.SendMessageToThread(ctx, chatID, uuid.Nil, content, nil, &systemThread.ID, nil, true)
+}
+
+// Subthread operations
+
+func (s *chatService) ListSubthreads(ctx context.Context, parentThreadID, userID uuid.UUID, page, count int) ([]model.Thread, int, error) {
+	// Get the parent thread to verify access
+	parentThread, err := s.repo.GetThread(ctx, parentThreadID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Check user is participant in the chat
+	isParticipant, err := s.repo.IsParticipant(ctx, parentThread.ChatID, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !isParticipant {
+		return nil, 0, ErrNotParticipant
+	}
+
+	// Use cascading permission check via repository
+	return s.repo.ListSubthreads(ctx, parentThreadID, userID, page, count)
+}
+
+func (s *chatService) CreateSubthread(ctx context.Context, parentThreadID uuid.UUID, title string, threadType model.ThreadType, createdBy uuid.UUID) (*model.Thread, error) {
+	// Get the parent thread
+	parentThread, err := s.repo.GetThread(ctx, parentThreadID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get parent thread: %w", err)
+	}
+
+	// Check user is participant in the chat
+	isParticipant, err := s.repo.IsParticipant(ctx, parentThread.ChatID, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	if !isParticipant {
+		return nil, ErrNotParticipant
+	}
+
+	// Check user has access to parent thread (cascading permission)
+	hasAccess, err := s.repo.HasThreadAccess(ctx, parentThreadID, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	if !hasAccess {
+		return nil, ErrAccessDenied
+	}
+
+	// Check depth limit (max 5 levels of nesting)
+	if parentThread.Depth >= 5 {
+		return nil, fmt.Errorf("maximum subthread depth exceeded (max 5)")
+	}
+
+	// Create the subthread
+	thread := &model.Thread{
+		ChatID:                 parentThread.ChatID,
+		ParentThreadID:         &parentThreadID,
+		ThreadType:             threadType,
+		Title:                  &title,
+		CreatedBy:              &createdBy,
+		RestrictedParticipants: false, // Inherit from parent by default
+	}
+
+	if err := s.repo.CreateThread(ctx, thread); err != nil {
+		return nil, fmt.Errorf("failed to create subthread: %w", err)
+	}
+
+	// Re-fetch to get depth set by database trigger
+	thread, err = s.repo.GetThread(ctx, thread.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get created subthread: %w", err)
+	}
+
+	// Publish thread created event
+	participants, _ := s.repo.GetParticipantIDs(ctx, parentThread.ChatID)
+	_ = s.publisher.PublishThreadCreated(ctx, thread, participants)
+
+	return thread, nil
 }

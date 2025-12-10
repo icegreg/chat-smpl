@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch } from 'vue'
-import type { Chat, Message, Participant, User } from '@/types'
+import type { Chat, Message, Participant, User, Thread } from '@/types'
 import { useChatStore } from '@/stores/chat'
 import { api } from '@/api/client'
 import MessageItem from './MessageItem.vue'
 import ParticipantsPanel from './ParticipantsPanel.vue'
+import ThreadList from './ThreadList.vue'
+import ThreadView from './ThreadView.vue'
 
 const props = defineProps<{
   chat: Chat
@@ -19,9 +21,12 @@ const messageInput = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
 const lastTypingSentAt = ref<number>(0)
 const showParticipants = ref(false)
+const showThreads = ref(false)
+const selectedThread = ref<Thread | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const pendingFiles = ref<{ file: File; linkId: string; uploading: boolean }[]>([])
 const isUploading = ref(false)
+const replyToMessage = ref<Message | null>(null)
 
 const TYPING_SEND_INTERVAL = 5000 // Send typing indicator every 5 seconds
 
@@ -131,18 +136,41 @@ async function sendMessage() {
 
   const savedContent = messageInput.value
   const savedFiles = [...pendingFiles.value]
+  const savedReplyTo = replyToMessage.value
   messageInput.value = ''
   pendingFiles.value = []
+  replyToMessage.value = null
 
   try {
-    await chatStore.sendMessage({ content, file_link_ids: fileLinkIds.length > 0 ? fileLinkIds : undefined })
+    await chatStore.sendMessage({
+      content,
+      file_link_ids: fileLinkIds.length > 0 ? fileLinkIds : undefined,
+      reply_to_id: savedReplyTo?.id
+    })
     // Reset typing timestamp so next input will send typing immediately
     lastTypingSentAt.value = 0
   } catch {
     // Restore message and files on error
     messageInput.value = savedContent
     pendingFiles.value = savedFiles
+    replyToMessage.value = savedReplyTo
   }
+}
+
+function handleReplyToMessage(message: Message) {
+  replyToMessage.value = message
+}
+
+function cancelReply() {
+  replyToMessage.value = null
+}
+
+function getReplyToSenderName(message: Message): string {
+  if (message.sender_display_name) return message.sender_display_name
+  if (message.sender?.display_name) return message.sender.display_name
+  if (message.sender_username) return message.sender_username
+  if (message.sender?.username) return message.sender.username
+  return 'Unknown'
 }
 
 function openFilePicker() {
@@ -216,6 +244,39 @@ function handleKeyDown(event: KeyboardEvent) {
     sendMessage()
   }
 }
+
+// Thread functions
+function toggleThreads() {
+  showThreads.value = !showThreads.value
+  if (!showThreads.value) {
+    selectedThread.value = null
+  }
+}
+
+function selectThread(thread: Thread) {
+  selectedThread.value = thread
+}
+
+function closeThreads() {
+  showThreads.value = false
+  selectedThread.value = null
+}
+
+function backToThreadList() {
+  selectedThread.value = null
+}
+
+async function createThread() {
+  try {
+    const thread = await api.createThread(props.chat.id, {
+      thread_type: 'user',
+      title: 'New Discussion'
+    })
+    selectedThread.value = thread
+  } catch (e) {
+    console.error('Failed to create thread:', e)
+  }
+}
 </script>
 
 <template>
@@ -245,6 +306,16 @@ function handleKeyDown(event: KeyboardEvent) {
           <p class="text-xs text-gray-400">{{ participants.length }} participants</p>
         </div>
         <div class="flex items-center gap-2">
+          <button
+            @click.stop="toggleThreads"
+            class="p-2 text-gray-500 hover:text-indigo-600 rounded-lg hover:bg-gray-100"
+            :class="{ 'text-indigo-600 bg-indigo-50': showThreads }"
+            title="View threads"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </button>
           <button
             @click.stop="chatStore.toggleFavorite(chat.id)"
             class="p-2 text-gray-500 hover:text-yellow-500 rounded-lg hover:bg-gray-100"
@@ -277,6 +348,7 @@ function handleKeyDown(event: KeyboardEvent) {
             :message="message"
             :is-own="message.sender_id === currentUser.id"
             :current-user="currentUser"
+            @reply="handleReplyToMessage"
           />
         </template>
 
@@ -296,6 +368,28 @@ function handleKeyDown(event: KeyboardEvent) {
           Guests cannot send messages. Contact an admin to upgrade your account.
         </div>
         <div v-else>
+          <!-- Reply preview -->
+          <div v-if="replyToMessage" data-testid="reply-preview" class="mb-2 flex items-start gap-2 p-2 bg-gray-50 rounded-lg border-l-4 border-indigo-500">
+            <div class="flex-1 min-w-0">
+              <div data-testid="reply-preview-sender" class="flex items-center gap-1 text-xs text-indigo-600 font-medium">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+                Replying to {{ getReplyToSenderName(replyToMessage) }}
+              </div>
+              <p data-testid="reply-preview-content" class="text-sm text-gray-600 truncate mt-0.5">{{ replyToMessage.content }}</p>
+            </div>
+            <button
+              @click="cancelReply"
+              data-testid="reply-preview-cancel"
+              class="p-1 text-gray-400 hover:text-gray-600 rounded flex-shrink-0"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
           <!-- Pending files preview -->
           <div v-if="pendingFiles.length > 0" data-testid="pending-files-container" class="mb-2 flex flex-wrap gap-2">
             <div
@@ -386,5 +480,25 @@ function handleKeyDown(event: KeyboardEvent) {
       :participants="participants"
       @close="showParticipants = false"
     />
+
+    <!-- Thread panels -->
+    <template v-if="showThreads">
+      <!-- Thread view (when a thread is selected) -->
+      <ThreadView
+        v-if="selectedThread"
+        :thread="selectedThread"
+        :current-user="currentUser"
+        @close="closeThreads"
+        @back="backToThreadList"
+      />
+      <!-- Thread list (when no thread is selected) -->
+      <ThreadList
+        v-else
+        :chat-id="chat.id"
+        @close="closeThreads"
+        @select-thread="selectThread"
+        @create-thread="createThread"
+      />
+    </template>
   </div>
 </template>

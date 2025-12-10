@@ -108,6 +108,7 @@ export interface CreateChatRequest {
 export interface SendMessageRequest {
   content: string
   reply_to_id?: string
+  thread_id?: string
   file_link_ids?: string[]
 }
 
@@ -133,4 +134,39 @@ export interface PresenceInfo {
   is_online: boolean
   connection_count: number
   last_seen_at?: number
+}
+
+// Thread types
+export type ThreadType = 'user' | 'system'
+
+export interface Thread {
+  id: string
+  chat_id: string
+  parent_message_id?: string
+  parent_thread_id?: string  // For subthreads
+  depth: number              // Nesting level (0 = top-level, 1 = subthread, etc.)
+  thread_type: ThreadType
+  title?: string
+  message_count: number
+  last_message_at?: string
+  created_by?: string
+  created_at: string
+  updated_at: string
+  is_archived: boolean
+  restricted_participants: boolean
+}
+
+export interface ThreadParticipant {
+  id: string
+  thread_id: string
+  user_id: string
+  added_at: string
+}
+
+export interface CreateThreadRequest {
+  parent_message_id?: string
+  parent_thread_id?: string  // For creating subthreads
+  thread_type?: ThreadType
+  title?: string
+  restricted_participants?: boolean
 }

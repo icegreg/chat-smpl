@@ -603,4 +603,434 @@ export class ChatPage extends BasePage {
     }
     throw new Error(`Sender name "${expectedName}" not found within timeout`)
   }
+
+  // Reply methods locators
+  private readonly replyButton = By.css('[data-testid="reply-button"]')
+  private readonly replyPreview = By.css('[data-testid="reply-preview"]')
+  private readonly replyPreviewContent = By.css('[data-testid="reply-preview-content"]')
+  private readonly replyPreviewSender = By.css('[data-testid="reply-preview-sender"]')
+  private readonly replyPreviewCancel = By.css('[data-testid="reply-preview-cancel"]')
+  private readonly messageQuote = By.css('[data-testid="message-quote"]')
+  private readonly messageQuoteContent = By.css('[data-testid="message-quote-content"]')
+  private readonly messageQuoteSender = By.css('[data-testid="message-quote-sender"]')
+
+  // Thread methods
+  private readonly threadsButton = By.css('[data-testid="threads-button"]')
+  private readonly threadsPanelTitle = By.xpath('//h4[contains(text(), "Threads")]')
+  private readonly threadsPanelCloseBtn = By.css('[data-testid="threads-panel"] button[title="Close"]')
+  private readonly createThreadButton = By.css('[data-testid="create-thread-button"]')
+  private readonly threadListItems = By.css('[data-testid="thread-item"]')
+  private readonly threadView = By.css('[data-testid="thread-view"]')
+  private readonly threadViewTitle = By.css('[data-testid="thread-view"] h4')
+  private readonly threadViewBackBtn = By.css('[data-testid="thread-view-back"]')
+  private readonly threadViewCloseBtn = By.css('[data-testid="thread-view-close"]')
+  private readonly threadMessageInput = By.css('[data-testid="thread-view"] textarea')
+  private readonly threadSendButton = By.css('[data-testid="thread-view"] button.bg-indigo-600')
+  private readonly threadMessages = By.css('[data-testid="thread-view"] [data-testid="message-item"]')
+  private readonly subthreadsButton = By.css('[data-testid="subthreads-button"]')
+  private readonly threadDepthBadge = By.css('[data-testid="thread-depth-badge"]')
+  private readonly subthreadIndicator = By.css('[data-testid="subthread-indicator"]')
+
+  async openThreadsPanel(): Promise<void> {
+    await this.click(this.threadsButton)
+    await this.sleep(500)
+  }
+
+  async isThreadsPanelVisible(): Promise<boolean> {
+    return this.isDisplayed(this.threadsPanelTitle)
+  }
+
+  async closeThreadsPanel(): Promise<void> {
+    await this.click(this.threadsPanelCloseBtn)
+    await this.sleep(300)
+  }
+
+  async clickCreateThread(): Promise<void> {
+    await this.click(this.createThreadButton)
+    await this.sleep(300)
+  }
+
+  async getThreadsCount(): Promise<number> {
+    const elements = await this.driver.findElements(this.threadListItems)
+    return elements.length
+  }
+
+  async getThreadTitles(): Promise<string[]> {
+    const elements = await this.driver.findElements(this.threadListItems)
+    const titles: string[] = []
+    for (const el of elements) {
+      try {
+        const titleEl = await el.findElement(By.css('.font-medium, p.text-sm'))
+        const text = await titleEl.getText()
+        titles.push(text.trim())
+      } catch {
+        // ignore
+      }
+    }
+    return titles
+  }
+
+  async clickThreadByTitle(title: string): Promise<void> {
+    const elements = await this.driver.findElements(this.threadListItems)
+    for (const el of elements) {
+      try {
+        const text = await el.getText()
+        if (text.includes(title)) {
+          await el.click()
+          await this.sleep(500)
+          return
+        }
+      } catch {
+        continue
+      }
+    }
+    throw new Error(`Thread "${title}" not found`)
+  }
+
+  async clickFirstThread(): Promise<void> {
+    const elements = await this.driver.findElements(this.threadListItems)
+    if (elements.length > 0) {
+      await elements[0].click()
+      await this.sleep(500)
+    } else {
+      throw new Error('No threads found')
+    }
+  }
+
+  async isThreadViewVisible(): Promise<boolean> {
+    return this.isDisplayed(this.threadView)
+  }
+
+  async getThreadViewTitle(): Promise<string> {
+    try {
+      return await this.getText(this.threadViewTitle)
+    } catch {
+      return ''
+    }
+  }
+
+  async closeThreadView(): Promise<void> {
+    await this.click(this.threadViewCloseBtn)
+    await this.sleep(300)
+  }
+
+  async goBackFromThreadView(): Promise<void> {
+    await this.click(this.threadViewBackBtn)
+    await this.sleep(300)
+  }
+
+  async sendThreadMessage(message: string): Promise<void> {
+    await this.type(this.threadMessageInput, message)
+    await this.click(this.threadSendButton)
+    await this.sleep(500)
+  }
+
+  async getThreadMessageCount(): Promise<number> {
+    const elements = await this.driver.findElements(this.threadMessages)
+    return elements.length
+  }
+
+  async waitForThreadMessage(expectedCount: number, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const count = await this.getThreadMessageCount()
+      if (count >= expectedCount) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error(`Expected at least ${expectedCount} thread messages, but found ${await this.getThreadMessageCount()}`)
+  }
+
+  async clickSubthreadsButton(): Promise<void> {
+    await this.click(this.subthreadsButton)
+    await this.sleep(500)
+  }
+
+  async isSubthreadsButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.subthreadsButton)
+  }
+
+  async getThreadDepth(): Promise<string> {
+    try {
+      return await this.getText(this.threadDepthBadge)
+    } catch {
+      return ''
+    }
+  }
+
+  async hasSubthreadIndicator(): Promise<boolean> {
+    return this.isDisplayed(this.subthreadIndicator)
+  }
+
+  async waitForThreadsPanel(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isThreadsPanelVisible()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Threads panel did not appear within timeout')
+  }
+
+  async waitForThreadView(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isThreadViewVisible()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Thread view did not appear within timeout')
+  }
+
+  // Create thread via API from browser context
+  async createThreadViaApi(chatId: string, title: string): Promise<string> {
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/chats/${chatId}/threads', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              title: '${title}',
+              thread_type: 'user'
+            })
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          const thread = await response.json();
+          resolve(thread.id);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `, chatId, title) as string
+
+    return result
+  }
+
+  // Create subthread via API
+  async createSubthreadViaApi(parentThreadId: string, title: string): Promise<string> {
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/chats/threads/${parentThreadId}/subthreads', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              title: '${title}',
+              thread_type: 'user'
+            })
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          const thread = await response.json();
+          resolve(thread.id);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `, parentThreadId, title) as string
+
+    return result
+  }
+
+  // Get chat ID from URL
+  async getCurrentChatId(): Promise<string> {
+    const url = await this.getCurrentUrl()
+    const match = url.match(/\/chat\/([a-f0-9-]+)/)
+    return match ? match[1] : ''
+  }
+
+  // List threads via API
+  async listThreadsViaApi(chatId: string): Promise<{ id: string; title: string; depth: number }[]> {
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/chats/${chatId}/threads', {
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          const data = await response.json();
+          resolve(data.threads || []);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `, chatId) as { id: string; title: string; depth: number }[]
+
+    return result || []
+  }
+
+  // List subthreads via API
+  async listSubthreadsViaApi(parentThreadId: string): Promise<{ id: string; title: string; depth: number }[]> {
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/chats/threads/${parentThreadId}/subthreads', {
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          const data = await response.json();
+          resolve(data.threads || []);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `, parentThreadId) as { id: string; title: string; depth: number }[]
+
+    return result || []
+  }
+
+  // Reply methods
+  async hoverOverFirstMessage(): Promise<void> {
+    const messages = await this.driver.findElements(this.messageItems)
+    if (messages.length > 0) {
+      const actions = this.driver.actions({ async: true })
+      await actions.move({ origin: messages[0] }).perform()
+    }
+  }
+
+  async hoverOverMessage(index: number): Promise<void> {
+    const messages = await this.driver.findElements(this.messageItems)
+    if (messages.length > index) {
+      const actions = this.driver.actions({ async: true })
+      await actions.move({ origin: messages[index] }).perform()
+    }
+  }
+
+  async isReplyButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.replyButton)
+  }
+
+  async clickReplyButton(): Promise<void> {
+    await this.click(this.replyButton)
+  }
+
+  async clickReplyOnFirstMessage(): Promise<void> {
+    await this.hoverOverFirstMessage()
+    await this.sleep(300)
+    await this.clickReplyButton()
+  }
+
+  async clickReplyOnMessage(index: number): Promise<void> {
+    await this.hoverOverMessage(index)
+    await this.sleep(300)
+    await this.clickReplyButton()
+  }
+
+  async isReplyPreviewVisible(): Promise<boolean> {
+    return this.isDisplayed(this.replyPreview)
+  }
+
+  async getReplyPreviewContent(): Promise<string> {
+    try {
+      return await this.getText(this.replyPreviewContent)
+    } catch {
+      // Try fallback to the whole preview area
+      try {
+        return await this.getText(this.replyPreview)
+      } catch {
+        return ''
+      }
+    }
+  }
+
+  async getReplyPreviewSenderName(): Promise<string> {
+    try {
+      return await this.getText(this.replyPreviewSender)
+    } catch {
+      return ''
+    }
+  }
+
+  async cancelReply(): Promise<void> {
+    await this.click(this.replyPreviewCancel)
+  }
+
+  async hasMessageWithQuote(): Promise<boolean> {
+    return this.isDisplayed(this.messageQuote)
+  }
+
+  async getQuoteContent(): Promise<string> {
+    try {
+      return await this.getText(this.messageQuoteContent)
+    } catch {
+      // Try fallback to the whole quote area
+      try {
+        const quotes = await this.driver.findElements(this.messageQuote)
+        if (quotes.length > 0) {
+          return await quotes[quotes.length - 1].getText()
+        }
+      } catch {
+        // ignore
+      }
+      return ''
+    }
+  }
+
+  async getQuoteSenderName(): Promise<string> {
+    try {
+      return await this.getText(this.messageQuoteSender)
+    } catch {
+      return ''
+    }
+  }
+
+  async waitForQuote(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.hasMessageWithQuote()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Quote not found within timeout')
+  }
 }

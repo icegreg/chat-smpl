@@ -59,6 +59,22 @@ service ChatService {
 
     // Typing indicator
     rpc SendTyping(SendTypingRequest) returns (google.protobuf.Empty);
+
+    // Thread operations
+    rpc CreateThread(CreateThreadRequest) returns (Thread);
+    rpc GetThread(GetThreadRequest) returns (Thread);
+    rpc ListThreads(ListThreadsRequest) returns (ListThreadsResponse);
+    rpc ArchiveThread(ArchiveThreadRequest) returns (Thread);
+    rpc ListThreadMessages(ListThreadMessagesRequest) returns (ListMessagesResponse);
+
+    // Thread participant operations
+    rpc AddThreadParticipant(AddThreadParticipantRequest) returns (google.protobuf.Empty);
+    rpc RemoveThreadParticipant(RemoveThreadParticipantRequest) returns (google.protobuf.Empty);
+    rpc ListThreadParticipants(ListThreadParticipantsRequest) returns (ListThreadParticipantsResponse);
+
+    // Subthread operations
+    rpc ListSubthreads(ListSubthreadsRequest) returns (ListThreadsResponse);
+    rpc CreateSubthread(CreateSubthreadRequest) returns (Thread);
 }
 
 // Enums
@@ -74,6 +90,12 @@ enum ParticipantRole {
     PARTICIPANT_ROLE_ADMIN = 1;
     PARTICIPANT_ROLE_MEMBER = 2;
     PARTICIPANT_ROLE_READONLY = 3;
+}
+
+enum ThreadType {
+    THREAD_TYPE_UNSPECIFIED = 0;
+    THREAD_TYPE_USER = 1;
+    THREAD_TYPE_SYSTEM = 2;
 }
 
 // Messages
@@ -119,6 +141,32 @@ message Message {
     int64 seq_num = 15;  // Sequence number for reliable sync
     string forwarded_from_message_id = 16;  // Original message ID if forwarded
     string forwarded_from_chat_id = 17;     // Original chat ID if forwarded
+    string thread_id = 18;  // Thread this message belongs to
+    bool is_system = 19;    // True for system-generated messages
+}
+
+message Thread {
+    string id = 1;
+    string chat_id = 2;
+    string parent_message_id = 3;  // For reply threads
+    ThreadType thread_type = 4;
+    string title = 5;
+    int32 message_count = 6;
+    google.protobuf.Timestamp last_message_at = 7;
+    string created_by = 8;
+    google.protobuf.Timestamp created_at = 9;
+    google.protobuf.Timestamp updated_at = 10;
+    bool is_archived = 11;
+    bool restricted_participants = 12;
+    string parent_thread_id = 13;  // For subthreads
+    int32 depth = 14;              // Nesting level (0 = top-level, 1 = subthread, etc.)
+}
+
+message ThreadParticipant {
+    string id = 1;
+    string thread_id = 2;
+    string user_id = 3;
+    google.protobuf.Timestamp added_at = 4;
 }
 
 message Reaction {
@@ -241,6 +289,7 @@ message SendMessageRequest {
     string content = 3;
     string parent_id = 4;
     repeated string file_link_ids = 5;
+    string thread_id = 6;  // Target thread (optional)
 }
 
 message GetMessageRequest {
@@ -396,4 +445,80 @@ message ForwardMessageRequest {
     string message_id = 1;      // ID of original message to forward
     string target_chat_id = 2;  // Chat to forward the message to
     string sender_id = 3;       // User who is forwarding the message
+}
+
+// Thread operations
+message CreateThreadRequest {
+    string chat_id = 1;
+    string parent_message_id = 2;  // For reply threads (optional)
+    ThreadType thread_type = 3;
+    string title = 4;              // For standalone and system threads
+    string created_by = 5;         // User ID (null for system threads)
+    bool restricted_participants = 6;
+    string parent_thread_id = 7;   // For subthreads (optional)
+}
+
+message GetThreadRequest {
+    string thread_id = 1;
+    string user_id = 2;
+}
+
+message ListThreadsRequest {
+    string chat_id = 1;
+    string user_id = 2;
+    int32 page = 3;
+    int32 count = 4;
+}
+
+message ListThreadsResponse {
+    repeated Thread threads = 1;
+    Pagination pagination = 2;
+}
+
+message ArchiveThreadRequest {
+    string thread_id = 1;
+    string user_id = 2;
+}
+
+message ListThreadMessagesRequest {
+    string thread_id = 1;
+    string user_id = 2;
+    int32 page = 3;
+    int32 count = 4;
+}
+
+// Thread participant operations
+message AddThreadParticipantRequest {
+    string thread_id = 1;
+    string user_id = 2;
+    string added_by = 3;
+}
+
+message RemoveThreadParticipantRequest {
+    string thread_id = 1;
+    string user_id = 2;
+    string removed_by = 3;
+}
+
+message ListThreadParticipantsRequest {
+    string thread_id = 1;
+}
+
+message ListThreadParticipantsResponse {
+    repeated ThreadParticipant participants = 1;
+}
+
+// Subthread operations
+message ListSubthreadsRequest {
+    string parent_thread_id = 1;
+    string user_id = 2;
+    int32 page = 3;
+    int32 count = 4;
+}
+
+message CreateSubthreadRequest {
+    string parent_thread_id = 1;
+    string title = 2;
+    ThreadType thread_type = 3;
+    string created_by = 4;
 }
