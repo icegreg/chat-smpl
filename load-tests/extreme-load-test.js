@@ -43,7 +43,8 @@ const fileUploadLatency = new Trend('file_upload_latency')
 const loginLatency = new Trend('login_latency')
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8888'
-const WS_URL = __ENV.WS_URL || BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://').replace(':8888', ':8000')
+// WebSocket goes through nginx on the same port as HTTP
+const WS_URL = __ENV.WS_URL || BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://')
 const TARGET_MPS = parseInt(__ENV.TARGET_MPS) || 10  // 10 messages per second total
 const VUS = parseInt(__ENV.VUS) || 400
 const DURATION = __ENV.DURATION || '5m'

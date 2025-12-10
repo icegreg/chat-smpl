@@ -14,10 +14,12 @@ scrape_configs:
       - targets: ['rabbitmq:15692']
     metrics_path: /metrics
 
-  # Centrifugo metrics
+  # Centrifugo metrics (all replicas)
   - job_name: 'centrifugo'
-    static_configs:
-      - targets: ['centrifugo:8000']
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/centrifugo.json
+        refresh_interval: 10s
     metrics_path: /metrics
 
   # API Gateway metrics

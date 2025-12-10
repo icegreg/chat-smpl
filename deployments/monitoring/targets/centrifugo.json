@@ -1,0 +1,12 @@
+[
+  {
+    "targets": [
+      "chat-smpl-centrifugo-1:8000",
+      "chat-smpl-centrifugo-2:8000",
+      "chat-smpl-centrifugo-3:8000"
+    ],
+    "labels": {
+      "job": "centrifugo"
+    }
+  }
+]

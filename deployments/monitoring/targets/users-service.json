@@ -1,0 +1,9 @@
+[
+  {
+    "targets": [\n      "chat-smpl-users-service-4:8081",\n      "chat-smpl-users-service-1:8081",\n      "chat-smpl-users-service-2:8081",\n      "chat-smpl-users-service-3:8081"
+    ],
+    "labels": {
+      "job": "users-service"
+    }
+  }
+]
