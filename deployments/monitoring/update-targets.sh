@@ -9,64 +9,55 @@ TARGETS_DIR="$SCRIPT_DIR/targets"
 mkdir -p "$TARGETS_DIR"
 
 update_centrifugo_targets() {
-    local targets=""
-    local first=true
+    local containers=($(docker ps --format "{{.Names}}" | grep centrifugo | sort))
+    local count=${#containers[@]}
 
-    # Get all centrifugo container names
-    for container in $(docker ps --format "{{.Names}}" | grep centrifugo); do
+    if [ $count -eq 0 ]; then
+        echo "No centrifugo containers found"
+        return
+    fi
+
+    # Build JSON array
+    local json='[\n  {\n    "targets": ['
+    local first=true
+    for container in "${containers[@]}"; do
         if [ "$first" = true ]; then
             first=false
+            json="$json\n      \"$container:8000\""
         else
-            targets="$targets,"
+            json="$json,\n      \"$container:8000\""
         fi
-        targets="$targets\n      \"$container:8000\""
     done
+    json="$json\n    ],\n    \"labels\": {\n      \"job\": \"centrifugo\"\n    }\n  }\n]"
 
-    if [ -n "$targets" ]; then
-        cat > "$TARGETS_DIR/centrifugo.json" << EOF
-[
-  {
-    "targets": [$targets
-    ],
-    "labels": {
-      "job": "centrifugo"
-    }
-  }
-]
-EOF
-        echo "Updated centrifugo targets: $(docker ps --format '{{.Names}}' | grep centrifugo | wc -l) instances"
-    else
-        echo "No centrifugo containers found"
-    fi
+    echo -e "$json" > "$TARGETS_DIR/centrifugo.json"
+    echo "Updated centrifugo targets: $count instances"
 }
 
 update_users_service_targets() {
-    local targets=""
-    local first=true
+    local containers=($(docker ps --format "{{.Names}}" | grep users-service | sort))
+    local count=${#containers[@]}
 
-    for container in $(docker ps --format "{{.Names}}" | grep users-service); do
+    if [ $count -eq 0 ]; then
+        echo "No users-service containers found"
+        return
+    fi
+
+    # Build JSON array
+    local json='[\n  {\n    "targets": ['
+    local first=true
+    for container in "${containers[@]}"; do
         if [ "$first" = true ]; then
             first=false
+            json="$json\n      \"$container:8081\""
         else
-            targets="$targets,"
+            json="$json,\n      \"$container:8081\""
         fi
-        targets="$targets\n      \"$container:8081\""
     done
+    json="$json\n    ],\n    \"labels\": {\n      \"job\": \"users-service\"\n    }\n  }\n]"
 
-    if [ -n "$targets" ]; then
-        cat > "$TARGETS_DIR/users-service.json" << EOF
-[
-  {
-    "targets": [$targets
-    ],
-    "labels": {
-      "job": "users-service"
-    }
-  }
-]
-EOF
-        echo "Updated users-service targets: $(docker ps --format '{{.Names}}' | grep users-service | wc -l) instances"
-    fi
+    echo -e "$json" > "$TARGETS_DIR/users-service.json"
+    echo "Updated users-service targets: $count instances"
 }
 
 # Update all or specific service

@@ -28,10 +28,12 @@ scrape_configs:
       - targets: ['api-gateway:8080']
     metrics_path: /metrics
 
-  # Users Service metrics
+  # Users Service metrics (all replicas)
   - job_name: 'users-service'
-    static_configs:
-      - targets: ['users-service:8081']
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/users-service.json
+        refresh_interval: 10s
     metrics_path: /metrics
 
   # Files Service metrics

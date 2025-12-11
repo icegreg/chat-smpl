@@ -423,23 +423,28 @@
           "mode": "single"
         }
       },
-      "title": "Centrifugo - Client Connections",
+      "title": "Centrifugo - Client Connections (Total)",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "centrifugo_node_num_clients",
-          "legendFormat": "Clients",
+          "expr": "sum(centrifugo_node_num_clients)",
+          "legendFormat": "Clients (Total)",
           "refId": "A"
         },
         {
-          "expr": "centrifugo_node_num_subscriptions",
-          "legendFormat": "Subscriptions",
+          "expr": "sum(centrifugo_node_num_subscriptions)",
+          "legendFormat": "Subscriptions (Total)",
           "refId": "B"
         },
         {
-          "expr": "centrifugo_node_num_channels",
-          "legendFormat": "Channels",
+          "expr": "sum(centrifugo_node_num_channels)",
+          "legendFormat": "Channels (Total)",
           "refId": "C"
+        },
+        {
+          "expr": "centrifugo_node_num_clients",
+          "legendFormat": "{{instance}}",
+          "refId": "D"
         }
       ]
     },
@@ -513,32 +518,32 @@
           "mode": "single"
         }
       },
-      "title": "Centrifugo - Messages/sec",
+      "title": "Centrifugo - Messages/sec (Total)",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "rate(centrifugo_node_messages_sent_count{type=\"publication\"}[1m])",
-          "legendFormat": "Publications Sent",
+          "expr": "sum(rate(centrifugo_node_messages_sent_count{type=\"publication\"}[1m]))",
+          "legendFormat": "Publications Sent (Total)",
           "refId": "A"
         },
         {
-          "expr": "rate(centrifugo_node_messages_received_count{type=\"publication\"}[1m])",
-          "legendFormat": "Publications Received",
+          "expr": "sum(rate(centrifugo_node_messages_received_count{type=\"publication\"}[1m]))",
+          "legendFormat": "Publications Received (Total)",
           "refId": "B"
         },
         {
           "expr": "sum(rate(centrifugo_transport_messages_sent{frame_type!=\"\"}[1m]))",
-          "legendFormat": "Transport Messages Sent",
+          "legendFormat": "Transport Messages Sent (Total)",
           "refId": "C"
         },
         {
-          "expr": "rate(centrifugo_node_messages_sent_count{type=\"join\"}[1m])",
-          "legendFormat": "Join Events",
+          "expr": "sum(rate(centrifugo_node_messages_sent_count{type=\"join\"}[1m]))",
+          "legendFormat": "Join Events (Total)",
           "refId": "D"
         },
         {
-          "expr": "rate(centrifugo_node_messages_sent_count{type=\"leave\"}[1m])",
-          "legendFormat": "Leave Events",
+          "expr": "sum(rate(centrifugo_node_messages_sent_count{type=\"leave\"}[1m]))",
+          "legendFormat": "Leave Events (Total)",
           "refId": "E"
         }
       ]
@@ -617,22 +622,22 @@
           "mode": "single"
         }
       },
-      "title": "Centrifugo - Subscribe Operations/sec",
+      "title": "Centrifugo - Subscribe Operations/sec (Total)",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "rate(centrifugo_client_command_duration_seconds_count{method=\"subscribe\"}[1m])",
-          "legendFormat": "Subscribe",
+          "expr": "sum(rate(centrifugo_client_command_duration_seconds_count{method=\"subscribe\"}[1m]))",
+          "legendFormat": "Subscribe (Total)",
           "refId": "A"
         },
         {
-          "expr": "rate(centrifugo_client_command_duration_seconds_count{method=\"unsubscribe\"}[1m])",
-          "legendFormat": "Unsubscribe",
+          "expr": "sum(rate(centrifugo_client_command_duration_seconds_count{method=\"unsubscribe\"}[1m]))",
+          "legendFormat": "Unsubscribe (Total)",
           "refId": "B"
         },
         {
-          "expr": "rate(centrifugo_client_command_duration_seconds_count{method=\"connect\"}[1m])",
-          "legendFormat": "Connect",
+          "expr": "sum(rate(centrifugo_client_command_duration_seconds_count{method=\"connect\"}[1m]))",
+          "legendFormat": "Connect (Total)",
           "refId": "C"
         }
       ]
@@ -711,22 +716,22 @@
           "mode": "single"
         }
       },
-      "title": "Centrifugo - Connection Errors & Limits",
+      "title": "Centrifugo - Connection Errors & Limits (Total)",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "rate(centrifugo_node_client_connection_limit[1m])",
-          "legendFormat": "Connection Limit Reached",
+          "expr": "sum(rate(centrifugo_node_client_connection_limit[1m]))",
+          "legendFormat": "Connection Limit Reached (Total)",
           "refId": "A"
         },
         {
-          "expr": "rate(centrifugo_client_command_duration_seconds_count{method=\"unknown\"}[1m])",
-          "legendFormat": "Unknown Commands",
+          "expr": "sum(rate(centrifugo_client_command_duration_seconds_count{method=\"unknown\"}[1m]))",
+          "legendFormat": "Unknown Commands (Total)",
           "refId": "B"
         },
         {
-          "expr": "rate(centrifugo_transport_connect_count{transport=\"websocket\"}[1m])",
-          "legendFormat": "WebSocket Connects",
+          "expr": "sum(rate(centrifugo_transport_connect_count{transport=\"websocket\"}[1m]))",
+          "legendFormat": "WebSocket Connects (Total)",
           "refId": "C"
         }
       ]

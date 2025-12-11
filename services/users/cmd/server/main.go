@@ -14,6 +14,7 @@ import (
 
 	"github.com/icegreg/chat-smpl/pkg/jwt"
 	"github.com/icegreg/chat-smpl/pkg/logger"
+	"github.com/icegreg/chat-smpl/pkg/metrics"
 	"github.com/icegreg/chat-smpl/pkg/postgres"
 	"github.com/icegreg/chat-smpl/services/users/internal/handler"
 	"github.com/icegreg/chat-smpl/services/users/internal/repository"
@@ -67,12 +68,16 @@ func main() {
 	// Setup router
 	r := chi.NewRouter()
 
+	// Initialize metrics
+	httpMetrics := metrics.NewHTTPMetrics("users_service")
+
 	// Middleware
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(metrics.HTTPMiddleware(httpMetrics))
 
 	// CORS
 	r.Use(func(next http.Handler) http.Handler {
@@ -95,6 +100,9 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+
+	// Prometheus metrics endpoint
+	r.Handle("/metrics", metrics.Handler())
 
 	// Register routes
 	h.RegisterRoutes(r)
