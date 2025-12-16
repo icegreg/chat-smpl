@@ -40,8 +40,9 @@
       "name": "user",
       "presence": false,
       "join_leave": false,
-      "history_size": 10,
+      "history_size": 50,
       "history_ttl": "1h",
+      "force_recovery": true,
       "allow_subscribe_for_client": true
     }
   ],

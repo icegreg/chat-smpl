@@ -7,10 +7,21 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
+	"math/rand"
+	"net"
 	"net/http"
 	"strings"
 	"time"
+)
+
+// Retry configuration
+const (
+	maxRetries     = 3
+	baseRetryDelay = 100 * time.Millisecond
+	maxRetryDelay  = 2 * time.Second
 )
 
 type Client struct {
@@ -136,6 +147,39 @@ func (c *Client) sendCommandWithResponse(ctx context.Context, method string, par
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := c.calculateBackoff(attempt)
+			log.Printf("[centrifugo] retrying %s (attempt %d, delay %v, error: %v)", method, attempt, delay, lastErr)
+
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		result, err := c.doRequest(ctx, jsonBody)
+		if err == nil {
+			if attempt > 0 {
+				log.Printf("[centrifugo] %s succeeded after %d retries", method, attempt)
+			}
+			return result, nil
+		}
+
+		lastErr = err
+		if !c.isRetryableError(err) {
+			return nil, err
+		}
+	}
+
+	log.Printf("[centrifugo] %s failed after %d retries: %v", method, maxRetries, lastErr)
+	return nil, fmt.Errorf("%s failed after %d retries: %w", method, maxRetries, lastErr)
+}
+
+// doRequest executes a single HTTP request to Centrifugo API
+func (c *Client) doRequest(ctx context.Context, jsonBody []byte) (map[string]interface{}, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiURL, bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -149,6 +193,10 @@ func (c *Client) sendCommandWithResponse(ctx context.Context, method string, par
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode >= 500 {
+		return nil, fmt.Errorf("server error: status %d", resp.StatusCode)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("centrifugo returned status %d", resp.StatusCode)
@@ -168,6 +216,50 @@ func (c *Client) sendCommandWithResponse(ctx context.Context, method string, par
 	}
 
 	return result, nil
+}
+
+// isRetryableError determines if an error should trigger a retry
+func (c *Client) isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// Network errors are retryable
+	if strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "no such host") ||
+		strings.Contains(errStr, "i/o timeout") ||
+		strings.Contains(errStr, "server error: status 5") {
+		return true
+	}
+
+	// Check for net.Error (timeout, temporary)
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout()
+	}
+
+	return false
+}
+
+// calculateBackoff calculates delay with exponential backoff and jitter
+func (c *Client) calculateBackoff(attempt int) time.Duration {
+	delay := baseRetryDelay * time.Duration(1<<uint(attempt-1)) // 100ms, 200ms, 400ms...
+	if delay > maxRetryDelay {
+		delay = maxRetryDelay
+	}
+
+	// Add jitter (±25%)
+	jitter := time.Duration(rand.Int63n(int64(delay / 2)))
+	if rand.Intn(2) == 0 {
+		delay += jitter
+	} else {
+		delay -= jitter / 2
+	}
+
+	return delay
 }
 
 func base64URLEncode(data []byte) string {

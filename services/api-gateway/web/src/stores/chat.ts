@@ -111,6 +111,11 @@ export const useChatStore = defineStore('chat', () => {
           const { token } = await api.getCentrifugoConnectionToken()
           return token
         },
+        // Reconnect settings for fault tolerance
+        minReconnectDelay: 500,      // Start with 500ms delay
+        maxReconnectDelay: 20000,    // Max 20 seconds between attempts
+        timeout: 10000,              // Connection timeout 10s
+        maxServerPingDelay: 15000,   // Detect stale connection after 15s
       })
 
       centrifuge.on('connected', () => {
@@ -120,20 +125,24 @@ export const useChatStore = defineStore('chat', () => {
         networkStore.setWebSocketConnected(true)
 
         // Subscribe to user's personal channel
+        // Recovery will happen automatically via subscription's 'subscribed' event
         subscribeToUserChannel(authStore.user!.id)
-        // Register presence connection
-        const presenceStore = usePresenceStore()
-        presenceStore.registerConnection()
-        // Sync messages for current chat after reconnect
-        if (currentChat.value) {
-          syncMessagesAfterReconnect(currentChat.value.id)
-        }
+
         // Process any pending messages
         networkStore.processPendingMessages()
+
+        // Register presence connection in background with delay
+        // This is low priority and can be slow - delay to not block other requests
+        setTimeout(() => {
+          const presenceStore = usePresenceStore()
+          presenceStore.registerConnection().catch(e => {
+            console.warn('Presence registration failed:', e)
+          })
+        }, 2000) // 2 second delay
       })
 
-      centrifuge.on('disconnected', () => {
-        console.log('Disconnected from Centrifugo')
+      centrifuge.on('disconnected', (ctx) => {
+        console.log('Disconnected from Centrifugo:', ctx.reason)
         // Update network store
         const networkStore = useNetworkStore()
         networkStore.setWebSocketConnected(false)
@@ -141,6 +150,14 @@ export const useChatStore = defineStore('chat', () => {
         // Unregister presence connection
         const presenceStore = usePresenceStore()
         presenceStore.unregisterConnection()
+      })
+
+      centrifuge.on('connecting', (ctx) => {
+        console.log('Reconnecting to Centrifugo...', ctx.reason)
+      })
+
+      centrifuge.on('error', (ctx) => {
+        console.error('Centrifugo error:', ctx.error)
       })
 
       centrifuge.connect()
@@ -158,14 +175,34 @@ export const useChatStore = defineStore('chat', () => {
         const { token } = await api.getCentrifugoSubscriptionToken(channel)
         return token
       },
+      // Enable recovery to get missed messages after reconnect
+      // Centrifugo will automatically send messages missed while offline
+      recoverable: true,
     })
 
     userSubscription.on('publication', (ctx) => {
       handleCentrifugoEvent(ctx.data as ChatEvent)
     })
 
+    // Handle recovered publications (messages received while offline)
+    // Note: Recovered messages are delivered automatically via 'publication' events
+    // after the 'subscribed' event, so we just need to check recovery status
+    userSubscription.on('subscribed', (ctx) => {
+      console.log('Subscribed to user channel:', channel)
+      console.log('  wasRecovering:', ctx.wasRecovering, 'recovered:', ctx.recovered)
+
+      if (ctx.wasRecovering && ctx.recovered) {
+        // Recovery successful - missed messages will arrive via 'publication' events
+        console.log('Recovery successful - missed messages will be delivered automatically')
+      } else if (ctx.wasRecovering && !ctx.recovered) {
+        // Recovery failed - need to sync via REST API as fallback
+        console.warn('Recovery failed, syncing via API...')
+        syncAllChatsAfterReconnect()
+      }
+    })
+
     userSubscription.subscribe()
-    console.log('Subscribed to user channel:', channel)
+    console.log('Subscribing to user channel:', channel)
   }
 
   function unsubscribeFromUserChannel() {
@@ -576,6 +613,56 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // Sync all chats after reconnect when Centrifugo recovery failed
+  // This is a fallback to ensure we don't miss any messages
+  async function syncAllChatsAfterReconnect() {
+    console.log('Starting full sync for all chats...')
+
+    // First refresh the chat list to get updated last_message and unread counts
+    try {
+      await fetchChats()
+    } catch (e) {
+      console.error('Failed to refresh chats:', e)
+    }
+
+    // Then sync messages for the current chat if open
+    if (currentChat.value) {
+      await syncMessagesAfterReconnect(currentChat.value.id)
+    }
+
+    // Sync other chats that have tracked seq_nums (user had them open before)
+    // Do this in background to not block UI
+    const otherChats = Array.from(lastSeqNums.value.keys()).filter(
+      chatId => chatId !== currentChat.value?.id
+    )
+
+    for (const chatId of otherChats) {
+      // Find the chat in our list
+      const chat = chats.value.find(c => c.id === chatId)
+      if (!chat) continue
+
+      try {
+        // Just check if there are new messages by comparing seq_num
+        const result = await api.syncMessages(chatId, lastSeqNums.value.get(chatId) || 0, 1)
+        if (result.messages && result.messages.length > 0) {
+          // Update unread count indicator
+          chat.unread_count = (chat.unread_count || 0) + result.messages.length
+          if (result.has_more) {
+            chat.unread_count += 1 // At least one more
+          }
+          // Update last message
+          const lastMsg = result.messages[result.messages.length - 1]
+          chat.last_message = lastMsg
+          updateLastSeqNum(chatId, lastMsg.seq_num)
+        }
+      } catch (e) {
+        console.warn(`Failed to check sync for chat ${chatId}:`, e)
+      }
+    }
+
+    console.log('Full sync completed')
+  }
+
   function cleanup() {
     unsubscribeFromUserChannel()
     if (centrifuge) {
@@ -614,6 +701,7 @@ export const useChatStore = defineStore('chat', () => {
     toggleFavorite,
     sendTyping,
     syncMessagesAfterReconnect,
+    syncAllChatsAfterReconnect,
     cleanup,
   }
 })
