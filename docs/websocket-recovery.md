@@ -12,6 +12,8 @@
 - [Состояния соединения](#состояния-соединения)
 - [Хранение seq_num](#хранение-seq_num)
 - [Конфигурация](#конфигурация)
+- [Временная диаграмма](#временная-диаграмма)
+- [Multi-Device сценарий](#multi-device-сценарий)
 - [Тестирование](#тестирование)
 
 ---
@@ -499,6 +501,115 @@ gantt
     seq_num = 1              :l1, 1, 11
     seq_num = 5              :l2, 13, 2
 ```
+
+---
+
+## Multi-Device сценарий
+
+Когда у одного пользователя несколько устройств и одно из них теряет соединение.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant D1 as Device 1<br/>(Laptop)
+    participant D2 as Device 2<br/>(Phone - OFFLINE)
+    participant D3 as Device 3<br/>(Tablet)
+    participant CF as Centrifugo
+    participant RD as Redis
+    participant API as API Gateway
+    participant OT as Other User
+
+    Note over D1,D3: Все устройства одного пользователя<br/>подписаны на user:{userId}
+
+    rect rgb(200, 255, 200)
+        Note over D1,D3: Фаза 1: Все online
+        OT->>API: POST message
+        API->>CF: Publish to user:{userId}
+        par Доставка на все устройства
+            CF->>D1: WebSocket push (seq=10)
+            CF->>D2: WebSocket push (seq=10)
+            CF->>D3: WebSocket push (seq=10)
+        end
+    end
+
+    rect rgb(255, 230, 230)
+        Note over D2: Фаза 2: Device 2 теряет интернет
+        D2--xCF: Connection lost
+        D2->>D2: localStorage: seq_num=10
+
+        Note over D1,D3: Device 1 и Device 3 работают нормально
+
+        OT->>API: POST message (seq=11)
+        API->>CF: Publish
+        CF->>RD: Store in history
+        par Доставка на online устройства
+            CF->>D1: WebSocket push (seq=11)
+            CF->>D3: WebSocket push (seq=11)
+        end
+        Note over D2: Не получено
+
+        OT->>API: POST message (seq=12)
+        API->>CF: Publish
+        CF->>RD: Store in history
+        par
+            CF->>D1: WebSocket push (seq=12)
+            CF->>D3: WebSocket push (seq=12)
+        end
+        Note over D2: Не получено
+
+        OT->>API: POST message (seq=13)
+        API->>CF: Publish
+        CF->>RD: Store in history
+        par
+            CF->>D1: WebSocket push (seq=13)
+            CF->>D3: WebSocket push (seq=13)
+        end
+        Note over D2: Не получено
+    end
+
+    rect rgb(230, 230, 255)
+        Note over D2: Фаза 3: Device 2 восстанавливает соединение
+        D2->>CF: Reconnect + Subscribe<br/>with recoverable: true
+
+        CF->>RD: Get missed messages<br/>since last offset
+        RD-->>CF: [seq=11, 12, 13]
+
+        CF-->>D2: subscribed<br/>{wasRecovering: true, recovered: true}
+
+        loop Доставка пропущенных
+            CF->>D2: publication (seq=11)
+            CF->>D2: publication (seq=12)
+            CF->>D2: publication (seq=13)
+        end
+
+        D2->>D2: localStorage: seq_num=13
+        Note over D2: UI обновлён<br/>Все сообщения получены
+    end
+
+    rect rgb(200, 255, 200)
+        Note over D1,D3: Фаза 4: Все устройства синхронизированы
+        Note over D1: seq_num=13
+        Note over D2: seq_num=13
+        Note over D3: seq_num=13
+    end
+```
+
+### Ключевые особенности Multi-Device
+
+| Аспект | Поведение |
+|--------|-----------|
+| **Канал подписки** | Все устройства подписаны на `user:{userId}` |
+| **Независимость** | Каждое устройство имеет свой WebSocket и свой `seq_num` |
+| **localStorage** | Каждое устройство хранит свой `seq_num` локально |
+| **Recovery** | Centrifugo восстанавливает сообщения для каждого устройства отдельно |
+| **Дубликаты** | Клиент фильтрует дубликаты по `message.id` |
+
+### Почему это работает
+
+1. **Centrifugo tracking** - Centrifugo отслеживает позицию каждого клиента отдельно
+2. **Client offset** - При reconnect клиент сообщает свой последний offset
+3. **Redis history** - Пропущенные сообщения хранятся в Redis до 1 часа (user:*) или 24 часов (chat:*)
+4. **Automatic recovery** - `recoverable: true` включает автоматическую доставку пропущенных сообщений
 
 ---
 
