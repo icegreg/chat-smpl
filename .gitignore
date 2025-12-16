@@ -27,6 +27,10 @@ chats.json
 # OS
 .DS_Store
 Thumbs.db
+nul
+
+# Claude Code local settings
+.claude/settings.local.json
 
 # Temp files
 /tmp/
