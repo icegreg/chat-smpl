@@ -175,6 +175,13 @@ func messageToProto(m *model.Message) *pb.Message {
 	if m.ForwardedFromChatID != nil {
 		msg.ForwardedFromChatId = m.ForwardedFromChatID.String()
 	}
+	// Add reply_to fields
+	for _, id := range m.ReplyToIDs {
+		msg.ReplyToIds = append(msg.ReplyToIds, id.String())
+	}
+	for _, replyMsg := range m.ReplyToMessages {
+		msg.ReplyToMessages = append(msg.ReplyToMessages, messageToProto(&replyMsg))
+	}
 	return msg
 }
 
@@ -494,7 +501,17 @@ func (s *ChatServer) SendMessage(ctx context.Context, req *pb.SendMessageRequest
 		fileLinkIDs = append(fileLinkIDs, fileLinkID)
 	}
 
-	message, err := s.chatService.SendMessage(ctx, chatID, senderID, req.Content, parseUUIDPtr(req.ParentId), fileLinkIDs)
+	// Parse reply_to IDs
+	var replyToIDs []uuid.UUID
+	for _, id := range req.ReplyToIds {
+		replyToID, err := parseUUID(id)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid reply_to_id: "+id)
+		}
+		replyToIDs = append(replyToIDs, replyToID)
+	}
+
+	message, err := s.chatService.SendMessage(ctx, chatID, senderID, req.Content, parseUUIDPtr(req.ParentId), fileLinkIDs, replyToIDs)
 	if err != nil {
 		return nil, handleError(err)
 	}

@@ -7,6 +7,7 @@ RUN apk add --no-cache git
 
 # Copy go mod files
 COPY go.mod go.sum ./
+COPY proto/voice/go.mod proto/voice/go.sum* proto/voice/
 RUN go mod download
 
 # Copy source code
@@ -29,8 +30,11 @@ WORKDIR /app
 COPY --from=builder /app/users-server .
 COPY --from=builder /app/users-cli .
 
-# Create non-root user
-RUN adduser -D -g '' appuser
+# Create avatars directory with proper permissions
+RUN mkdir -p /app/avatars
+
+# Create non-root user and set ownership
+RUN adduser -D -g '' appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8081

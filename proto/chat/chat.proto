@@ -143,6 +143,8 @@ message Message {
     string forwarded_from_chat_id = 17;     // Original chat ID if forwarded
     string thread_id = 18;  // Thread this message belongs to
     bool is_system = 19;    // True for system-generated messages
+    repeated string reply_to_ids = 20;      // IDs of messages this is replying to
+    repeated Message reply_to_messages = 21; // Full message data for replies (populated on read)
 }
 
 message Thread {
@@ -290,6 +292,7 @@ message SendMessageRequest {
     string parent_id = 4;
     repeated string file_link_ids = 5;
     string thread_id = 6;  // Target thread (optional)
+    repeated string reply_to_ids = 7;  // IDs of messages to reply to (optional)
 }
 
 message GetMessageRequest {

@@ -127,7 +127,7 @@ const headerTitle = computed(() => {
 </script>
 
 <template>
-  <div class="w-72 border-l bg-white flex flex-col h-full">
+  <div data-testid="threads-panel" class="w-72 border-l bg-white flex flex-col h-full">
     <!-- Header -->
     <div class="px-4 py-3 border-b flex items-center justify-between">
       <div class="flex items-center gap-2">
@@ -149,6 +149,7 @@ const headerTitle = computed(() => {
       <div class="flex items-center gap-2">
         <button
           @click="$emit('createThread')"
+          data-testid="create-thread-button"
           class="p-1 text-gray-400 hover:text-indigo-600 rounded"
           title="Create new thread"
         >
@@ -158,6 +159,7 @@ const headerTitle = computed(() => {
         </button>
         <button
           @click="$emit('close')"
+          data-testid="threads-panel-close"
           class="p-1 text-gray-400 hover:text-gray-600 rounded"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,6 +211,8 @@ const headerTitle = computed(() => {
               v-for="thread in systemThreads"
               :key="thread.id"
               @click="$emit('selectThread', thread)"
+              data-testid="thread-item"
+              :data-thread-type="thread.thread_type"
               class="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100"
             >
               <div class="flex items-start gap-3">
@@ -244,6 +248,8 @@ const headerTitle = computed(() => {
             <li
               v-for="thread in userThreads"
               :key="thread.id"
+              data-testid="thread-item"
+              :data-thread-type="thread.thread_type"
               class="px-4 py-3 hover:bg-gray-50 border-b border-gray-100"
             >
               <div class="flex items-start gap-3">

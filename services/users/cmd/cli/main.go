@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,6 +12,7 @@ import (
 	"github.com/icegreg/chat-smpl/pkg/jwt"
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	"github.com/icegreg/chat-smpl/pkg/postgres"
+	"github.com/icegreg/chat-smpl/services/users/internal/avatar"
 	"github.com/icegreg/chat-smpl/services/users/internal/model"
 	"github.com/icegreg/chat-smpl/services/users/internal/repository"
 	"github.com/icegreg/chat-smpl/services/users/internal/service"
@@ -21,6 +21,7 @@ import (
 var (
 	databaseURL string
 	jwtSecret   string
+	avatarsPath string
 )
 
 func main() {
@@ -34,6 +35,7 @@ func main() {
 
 	rootCmd.PersistentFlags().StringVar(&databaseURL, "database-url", getEnv("DATABASE_URL", "postgres://chatapp:secret@localhost:5432/chatapp?sslmode=disable"), "Database connection URL")
 	rootCmd.PersistentFlags().StringVar(&jwtSecret, "jwt-secret", getEnv("JWT_SECRET", "your-super-secret-jwt-key"), "JWT secret key")
+	rootCmd.PersistentFlags().StringVar(&avatarsPath, "avatars-path", getEnv("AVATARS_PATH", "./avatars"), "Path to avatars storage")
 
 	rootCmd.AddCommand(userCmd())
 
@@ -59,7 +61,7 @@ func getService() (service.UserService, func(), error) {
 
 	jwtManager := jwt.NewManager(jwt.DefaultConfig(jwtSecret))
 	userRepo := repository.NewUserRepository(pool)
-	userService := service.NewUserService(userRepo, jwtManager)
+	userService := service.NewUserService(userRepo, jwtManager, avatarsPath)
 
 	cleanup := func() {
 		postgres.Close(pool)
@@ -307,10 +309,9 @@ func getUserCmd() *cobra.Command {
 	return cmd
 }
 
-// generateCatAvatarURL generates a random cat avatar URL based on user ID
-func generateCatAvatarURL(userID uuid.UUID) string {
-	seed := strings.ReplaceAll(userID.String(), "-", "")[:8]
-	return fmt.Sprintf("https://cataas.com/cat?width=128&height=128&%s", seed)
+// generateLocalAvatarURL returns the local URL for a user's avatar
+func generateLocalAvatarURL(userID uuid.UUID) string {
+	return fmt.Sprintf("/api/users/avatars/%s", avatar.GetFilename(userID))
 }
 
 func generateAvatarsCmd() *cobra.Command {
@@ -318,8 +319,8 @@ func generateAvatarsCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "generate-avatars",
-		Short: "Generate cat avatars for all users without avatar",
-		Long:  "Generate random cat avatar URLs for all users. Use --overwrite to regenerate for users who already have avatars.",
+		Short: "Generate identicon avatars for all users",
+		Long:  "Generate local identicon avatars for all users. Use --overwrite to regenerate for users who already have avatars.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			pool, err := postgres.NewPool(ctx, postgres.DefaultConfig(databaseURL))
@@ -338,6 +339,12 @@ func generateAvatarsCmd() *cobra.Command {
 }
 
 func generateAvatars(ctx context.Context, pool *pgxpool.Pool, overwrite bool) error {
+	// Initialize avatar generator
+	avatarGen := avatar.NewGenerator(avatarsPath)
+	if err := avatarGen.EnsureDir(); err != nil {
+		return fmt.Errorf("failed to create avatars directory: %w", err)
+	}
+
 	// Select users that need avatar update
 	var query string
 	if overwrite {
@@ -371,22 +378,31 @@ func generateAvatars(ctx context.Context, pool *pgxpool.Pool, overwrite bool) er
 		return nil
 	}
 
-	fmt.Printf("Updating avatars for %d users...\n", len(users))
+	fmt.Printf("Generating avatars for %d users...\n", len(users))
 
 	updateQuery := `UPDATE con_test.users SET avatar_url = $2, updated_at = NOW() WHERE id = $1`
 	updated := 0
 
 	for _, u := range users {
-		avatarURL := generateCatAvatarURL(u.ID)
+		// Generate avatar file
+		if err := avatarGen.Generate(u.ID); err != nil {
+			fmt.Printf("  Failed to generate avatar for %s: %v\n", u.Username, err)
+			continue
+		}
+
+		// Update database with local URL
+		avatarURL := generateLocalAvatarURL(u.ID)
 		_, err := pool.Exec(ctx, updateQuery, u.ID, avatarURL)
 		if err != nil {
-			fmt.Printf("  Failed to update %s: %v\n", u.Username, err)
+			fmt.Printf("  Failed to update DB for %s: %v\n", u.Username, err)
 			continue
 		}
 		updated++
-		fmt.Printf("  Updated %s: %s\n", u.Username, avatarURL)
+		if updated%100 == 0 {
+			fmt.Printf("  Progress: %d/%d users...\n", updated, len(users))
+		}
 	}
 
-	fmt.Printf("\nDone! Updated %d/%d users\n", updated, len(users))
+	fmt.Printf("\nDone! Generated avatars for %d/%d users\n", updated, len(users))
 	return nil
 }

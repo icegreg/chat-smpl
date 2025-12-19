@@ -519,6 +519,35 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function forwardMessage(
+    message: Message,
+    sourceChatId: string,
+    targetChatId: string,
+    comment?: string
+  ) {
+    error.value = null
+    try {
+      // Build forwarded message content
+      const forwardedContent = comment
+        ? `${comment}\n\n↪️ Forwarded from ${message.sender_display_name || message.sender_username || 'unknown'}:\n${message.content}`
+        : message.content
+
+      // Send message to target chat with forwarded info
+      const newMessage = await api.sendMessage(targetChatId, {
+        content: forwardedContent,
+        forwarded_from_id: message.id,
+        forwarded_from_chat_id: sourceChatId,
+        // Also forward file attachments if any
+        file_link_ids: message.file_attachments?.map(f => f.link_id)
+      })
+
+      return newMessage
+    } catch (e) {
+      error.value = e instanceof ApiError ? e.message : 'Failed to forward message'
+      throw e
+    }
+  }
+
   async function addReaction(messageId: string, emoji: string) {
     try {
       await api.addReaction(messageId, emoji)
@@ -696,6 +725,7 @@ export const useChatStore = defineStore('chat', () => {
     sendMessage,
     updateMessage,
     deleteMessage,
+    forwardMessage,
     addReaction,
     removeReaction,
     toggleFavorite,

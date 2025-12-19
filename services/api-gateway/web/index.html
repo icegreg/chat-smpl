@@ -8,6 +8,14 @@
   </head>
   <body>
     <div id="app"></div>
+
+    <!-- jQuery (required for Verto.js) -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+    <!-- Verto.js from FreeSWITCH - served by nginx from /verto/verto.min.js -->
+    <!-- In production, copy verto.min.js from FreeSWITCH source to public/ folder -->
+    <script src="/verto.min.js" onerror="console.warn('Verto.js not found. Voice calls will not work.')"></script>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

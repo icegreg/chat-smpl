@@ -84,7 +84,9 @@ type Message struct {
 	SenderUsername         *string     `json:"sender_username,omitempty" db:"sender_username"`
 	SenderDisplayName      *string     `json:"sender_display_name,omitempty" db:"sender_display_name"`
 	SenderAvatarURL        *string     `json:"sender_avatar_url,omitempty" db:"sender_avatar_url"`
-	FileLinkIDs            []uuid.UUID `json:"file_link_ids,omitempty"` // Loaded from message_file_attachments
+	FileLinkIDs            []uuid.UUID `json:"file_link_ids,omitempty"`    // Loaded from message_file_attachments
+	ReplyToIDs             []uuid.UUID `json:"reply_to_ids,omitempty"`     // IDs of messages this is replying to
+	ReplyToMessages        []Message   `json:"reply_to_messages,omitempty"` // Full message data for replies (loaded)
 }
 
 type Reaction struct {

@@ -97,6 +97,12 @@ type ChatRepository interface {
 	GetThreadPermissionSource(ctx context.Context, threadID, userID uuid.UUID) (*model.PermissionSource, error)
 	ListThreadsForUser(ctx context.Context, chatID, userID uuid.UUID, page, count int) ([]model.Thread, int, error)
 	ListSubthreads(ctx context.Context, parentThreadID uuid.UUID, userID uuid.UUID, page, count int) ([]model.Thread, int, error)
+
+	// Reply operations
+	SaveMessageReplies(ctx context.Context, messageID uuid.UUID, replyToIDs []uuid.UUID) error
+	GetMessageReplies(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error)
+	GetMessageRepliesBatch(ctx context.Context, messageIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
+	GetMessagesById(ctx context.Context, ids []uuid.UUID) ([]model.Message, error)
 }
 
 type chatRepository struct {
@@ -458,6 +464,21 @@ func (r *chatRepository) CreateMessage(ctx context.Context, message *model.Messa
 			_, err = tx.Exec(ctx, attachQuery, uuid.New(), message.ID, linkID, i)
 			if err != nil {
 				return fmt.Errorf("failed to create file attachment: %w", err)
+			}
+		}
+	}
+
+	// Save reply relationships if any
+	if len(message.ReplyToIDs) > 0 {
+		replyQuery := `
+			INSERT INTO con_test.message_replies (id, message_id, reply_to_message_id, created_at)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (message_id, reply_to_message_id) DO NOTHING
+		`
+		for _, replyToID := range message.ReplyToIDs {
+			_, err = tx.Exec(ctx, replyQuery, uuid.New(), message.ID, replyToID, message.SentAt)
+			if err != nil {
+				return fmt.Errorf("failed to create message reply: %w", err)
 			}
 		}
 	}
@@ -1333,4 +1354,118 @@ func (r *chatRepository) ListSubthreads(ctx context.Context, parentThreadID uuid
 	}
 
 	return threads, total, nil
+}
+
+// Reply operations
+
+func (r *chatRepository) SaveMessageReplies(ctx context.Context, messageID uuid.UUID, replyToIDs []uuid.UUID) error {
+	if len(replyToIDs) == 0 {
+		return nil
+	}
+
+	query := `
+		INSERT INTO con_test.message_replies (id, message_id, reply_to_message_id, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (message_id, reply_to_message_id) DO NOTHING
+	`
+
+	now := time.Now()
+	for _, replyToID := range replyToIDs {
+		_, err := r.pool.Exec(ctx, query, uuid.New(), messageID, replyToID, now)
+		if err != nil {
+			return fmt.Errorf("failed to save message reply: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *chatRepository) GetMessageReplies(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error) {
+	query := `
+		SELECT reply_to_message_id
+		FROM con_test.message_replies
+		WHERE message_id = $1
+		ORDER BY created_at
+	`
+
+	rows, err := r.pool.Query(ctx, query, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get message replies: %w", err)
+	}
+	defer rows.Close()
+
+	var replyToIDs []uuid.UUID
+	for rows.Next() {
+		var replyToID uuid.UUID
+		if err := rows.Scan(&replyToID); err != nil {
+			return nil, fmt.Errorf("failed to scan reply to ID: %w", err)
+		}
+		replyToIDs = append(replyToIDs, replyToID)
+	}
+
+	return replyToIDs, nil
+}
+
+func (r *chatRepository) GetMessageRepliesBatch(ctx context.Context, messageIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	if len(messageIDs) == 0 {
+		return make(map[uuid.UUID][]uuid.UUID), nil
+	}
+
+	query := `
+		SELECT message_id, reply_to_message_id
+		FROM con_test.message_replies
+		WHERE message_id = ANY($1)
+		ORDER BY message_id, created_at
+	`
+
+	rows, err := r.pool.Query(ctx, query, messageIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get message replies batch: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID][]uuid.UUID)
+	for rows.Next() {
+		var messageID, replyToID uuid.UUID
+		if err := rows.Scan(&messageID, &replyToID); err != nil {
+			return nil, fmt.Errorf("failed to scan reply: %w", err)
+		}
+		result[messageID] = append(result[messageID], replyToID)
+	}
+
+	return result, nil
+}
+
+func (r *chatRepository) GetMessagesById(ctx context.Context, ids []uuid.UUID) ([]model.Message, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	query := `
+		SELECT m.id, m.chat_id, m.parent_id, m.sender_id, m.content, m.sent_at, m.updated_at, m.is_deleted, m.seq_num,
+		       u.username, u.display_name, u.avatar_url
+		FROM con_test.messages m
+		LEFT JOIN con_test.users u ON m.sender_id = u.id
+		WHERE m.id = ANY($1)
+	`
+
+	rows, err := r.pool.Query(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get messages by id: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []model.Message
+	for rows.Next() {
+		var msg model.Message
+		if err := rows.Scan(
+			&msg.ID, &msg.ChatID, &msg.ParentID, &msg.SenderID, &msg.Content, &msg.SentAt, &msg.UpdatedAt, &msg.IsDeleted, &msg.SeqNum,
+			&msg.SenderUsername, &msg.SenderDisplayName, &msg.SenderAvatarURL,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan message: %w", err)
+		}
+		messages = append(messages, msg)
+	}
+
+	return messages, nil
 }

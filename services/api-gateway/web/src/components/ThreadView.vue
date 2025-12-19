@@ -111,7 +111,7 @@ onMounted(loadMessages)
 </script>
 
 <template>
-  <div class="w-96 border-l flex flex-col h-full" :class="isSystemThread ? 'bg-orange-50' : 'bg-indigo-50'">
+  <div data-testid="thread-view" class="w-96 border-l flex flex-col h-full" :class="isSystemThread ? 'bg-orange-50' : 'bg-indigo-50'">
     <!-- Thread indicator banner -->
     <div
       class="px-3 py-1.5 text-xs font-medium flex items-center gap-2"
@@ -129,6 +129,7 @@ onMounted(loadMessages)
     <div class="px-4 py-3 border-b bg-white/80 flex items-center gap-3">
       <button
         @click="$emit('back')"
+        data-testid="thread-view-back"
         class="p-1 text-gray-400 hover:text-gray-600 rounded"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -178,6 +179,7 @@ onMounted(loadMessages)
         </button>
         <button
           @click="$emit('close')"
+          data-testid="thread-view-close"
           class="p-1 text-gray-400 hover:text-gray-600 rounded"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

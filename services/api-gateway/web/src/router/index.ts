@@ -6,7 +6,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/chat',
+      redirect: '/chats',
     },
     {
       path: '/login',
@@ -22,14 +22,24 @@ const router = createRouter({
     },
     {
       path: '/chat',
-      name: 'chat',
+      redirect: '/chats',
+    },
+    {
+      path: '/chats',
+      name: 'chats',
       component: () => import('@/views/ChatView.vue'),
       meta: { requiresAuth: true },
     },
     {
-      path: '/chat/:id',
+      path: '/chats/:id',
       name: 'chat-room',
       component: () => import('@/views/ChatView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/events',
+      name: 'events',
+      component: () => import('@/views/ScheduledEventsView.vue'),
       meta: { requiresAuth: true },
     },
   ],
@@ -49,7 +59,7 @@ router.beforeEach(async (to, _from, next) => {
   if (requiresAuth && !authStore.isAuthenticated) {
     next({ name: 'login', query: { redirect: to.fullPath } })
   } else if (guestOnly && authStore.isAuthenticated) {
-    next({ name: 'chat' })
+    next({ name: 'chats' })
   } else {
     next()
   }

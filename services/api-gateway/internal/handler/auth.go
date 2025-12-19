@@ -52,32 +52,75 @@ func (h *AuthHandler) Routes() chi.Router {
 	return r
 }
 
-// Register proxies registration request to users service
-// POST /api/auth/register
+// Register godoc
+// @Summary Register new user
+// @Description Creates a new user account and returns authentication tokens
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body RegisterRequest true "Registration data"
+// @Success 201 {object} AuthResponse "User registered successfully"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 409 {object} ErrorResponse "User already exists"
+// @Router /auth/register [post]
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	h.proxyToUsers(w, r, "/api/auth/register")
 }
 
-// Login proxies login request to users service
-// POST /api/auth/login
+// Login godoc
+// @Summary User login
+// @Description Authenticates user and returns JWT tokens
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body LoginRequest true "Login credentials"
+// @Success 200 {object} AuthResponse "Login successful"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Invalid credentials"
+// @Router /auth/login [post]
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	h.proxyToUsers(w, r, "/api/auth/login")
 }
 
-// RefreshToken proxies refresh request to users service
-// POST /api/auth/refresh
+// RefreshToken godoc
+// @Summary Refresh access token
+// @Description Exchanges refresh token for new access token
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body RefreshTokenRequest true "Refresh token"
+// @Success 200 {object} AuthResponse "Token refreshed"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Invalid or expired refresh token"
+// @Router /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	h.proxyToUsers(w, r, "/api/auth/refresh")
 }
 
-// Logout proxies logout request to users service
-// POST /api/auth/logout
+// Logout godoc
+// @Summary User logout
+// @Description Invalidates user's refresh token
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Success 200 {object} map[string]string "Logout successful"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Router /auth/logout [post]
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	h.proxyToUsers(w, r, "/api/auth/logout")
 }
 
-// GetCurrentUser returns current user info
-// GET /api/auth/me
+// GetCurrentUser godoc
+// @Summary Get current user
+// @Description Returns information about the authenticated user
+// @Tags auth
+// @Produce json
+// @Security Bearer
+// @Success 200 {object} UserResponse "User information"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 502 {object} ErrorResponse "Service unavailable"
+// @Router /auth/me [get]
 func (h *AuthHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -109,8 +152,19 @@ func (h *AuthHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	h.copyResponse(w, resp)
 }
 
-// UpdateCurrentUser updates current user info
-// PUT /api/auth/me
+// UpdateCurrentUser godoc
+// @Summary Update current user
+// @Description Updates the authenticated user's profile information
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body UpdateUserRequest true "User data to update"
+// @Success 200 {object} UserResponse "Updated user information"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 502 {object} ErrorResponse "Service unavailable"
+// @Router /auth/me [put]
 func (h *AuthHandler) UpdateCurrentUser(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -148,8 +202,19 @@ func (h *AuthHandler) UpdateCurrentUser(w http.ResponseWriter, r *http.Request) 
 	h.copyResponse(w, resp)
 }
 
-// ChangePassword changes user password
-// PUT /api/auth/me/password
+// ChangePassword godoc
+// @Summary Change password
+// @Description Changes the authenticated user's password
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body ChangePasswordRequest true "Password change data"
+// @Success 200 {object} map[string]string "Password changed successfully"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized or invalid current password"
+// @Failure 502 {object} ErrorResponse "Service unavailable"
+// @Router /auth/me/password [put]
 func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -268,8 +333,15 @@ func (h *CentrifugoHandler) Routes() chi.Router {
 	return r
 }
 
-// GetConnectionToken returns a connection token for Centrifugo
-// GET /api/centrifugo/connection-token
+// GetConnectionToken godoc
+// @Summary Get Centrifugo connection token
+// @Description Returns a JWT token for establishing WebSocket connection with Centrifugo
+// @Tags centrifugo
+// @Produce json
+// @Security Bearer
+// @Success 200 {object} ConnectionTokenResponse "Connection token"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Router /centrifugo/connection-token [get]
 func (h *CentrifugoHandler) GetConnectionToken(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -287,8 +359,18 @@ func (h *CentrifugoHandler) GetConnectionToken(w http.ResponseWriter, r *http.Re
 	})
 }
 
-// GetSubscriptionToken returns a subscription token for a channel
-// POST /api/centrifugo/subscription-token
+// GetSubscriptionToken godoc
+// @Summary Get Centrifugo subscription token
+// @Description Returns a JWT token for subscribing to a specific channel
+// @Tags centrifugo
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body SubscriptionTokenRequest true "Channel to subscribe"
+// @Success 200 {object} SubscriptionTokenResponse "Subscription token"
+// @Failure 400 {object} ErrorResponse "Invalid request body or missing channel"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Router /centrifugo/subscription-token [post]
 func (h *CentrifugoHandler) GetSubscriptionToken(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {

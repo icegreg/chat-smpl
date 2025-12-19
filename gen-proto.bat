@@ -1,0 +1,2 @@
+@echo off
+docker run --rm -v "C:\Users\ryabikov\dev\testing\chat-smpl:/workspace" -w /workspace golang:1.23 bash -c "apt-get update && apt-get install -y protobuf-compiler && go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2 && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0 && export PATH=$PATH:/root/go/bin && protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative proto/chat/*.proto"

@@ -12,6 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   reply: [message: Message]
+  forward: [message: Message]
 }>()
 
 const chatStore = useChatStore()
@@ -125,9 +126,12 @@ function handleReply() {
   showActions.value = false
 }
 
-function getReplyToSenderName(): string {
-  const replyTo = props.message.reply_to
-  if (!replyTo) return 'Unknown'
+function handleForward() {
+  emit('forward', props.message)
+  showActions.value = false
+}
+
+function getReplyToSenderName(replyTo: Message): string {
   if (replyTo.sender_display_name) return replyTo.sender_display_name
   if (replyTo.sender?.display_name) return replyTo.sender.display_name
   if (replyTo.sender_username) return replyTo.sender_username
@@ -138,6 +142,38 @@ function getReplyToSenderName(): string {
 function truncateContent(content: string, maxLength: number = 100): string {
   if (content.length <= maxLength) return content
   return content.substring(0, maxLength) + '...'
+}
+
+function getReplyToTime(replyTo: Message): string {
+  return formatTime(replyTo.sent_at) || formatTime(replyTo.created_at)
+}
+
+function hasReplyToAttachments(replyTo: Message): boolean {
+  return (replyTo.file_attachments?.length ?? 0) > 0
+}
+
+function getReplyToAttachmentInfo(replyTo: Message): string {
+  const attachments = replyTo.file_attachments
+  if (!attachments || attachments.length === 0) return ''
+  if (attachments.length === 1) {
+    const att = attachments[0]
+    if (att.content_type.startsWith('image/')) return '📷 Photo'
+    return `📎 ${att.original_filename}`
+  }
+  return `📎 ${attachments.length} files`
+}
+
+// Get reply messages - support both old reply_to and new reply_to_messages
+function getReplyToMessages(): Message[] {
+  // New format: array of reply messages
+  if (props.message.reply_to_messages && props.message.reply_to_messages.length > 0) {
+    return props.message.reply_to_messages
+  }
+  // Old format: single reply_to
+  if (props.message.reply_to) {
+    return [props.message.reply_to]
+  }
+  return []
 }
 </script>
 
@@ -188,18 +224,53 @@ function truncateContent(content: string, maxLength: number = 100): string {
         class="relative rounded-lg px-4 py-2 inline-block"
         :class="isOwn ? 'bg-indigo-500 text-white' : 'bg-white border'"
       >
-        <!-- Reply-to quote -->
+        <!-- Forwarded indicator -->
         <div
-          v-if="message.reply_to"
-          data-testid="message-quote"
-          class="mb-2 pl-2 border-l-2 text-xs"
-          :class="isOwn ? 'border-indigo-300 text-indigo-200' : 'border-gray-300 text-gray-500'"
+          v-if="message.is_forwarded || message.forwarded_from_id"
+          data-testid="message-forwarded"
+          class="mb-2 flex items-center gap-1 text-xs"
+          :class="isOwn ? 'text-indigo-200' : 'text-gray-500'"
         >
-          <div data-testid="message-quote-sender" class="font-medium" :class="isOwn ? 'text-indigo-200' : 'text-gray-600'">
-            {{ getReplyToSenderName() }}
-          </div>
-          <div data-testid="message-quote-content" class="truncate max-w-[200px]">
-            {{ truncateContent(message.reply_to.content, 80) }}
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+          </svg>
+          <span>Forwarded</span>
+          <span v-if="message.forwarded_from?.original_sender_name" class="font-medium">
+            from {{ message.forwarded_from.original_sender_name }}
+          </span>
+        </div>
+
+        <!-- Reply-to quotes (supports multiple) -->
+        <div
+          v-if="getReplyToMessages().length > 0"
+          data-testid="message-quote"
+          class="mb-2 space-y-1"
+        >
+          <div
+            v-for="replyTo in getReplyToMessages()"
+            :key="replyTo.id"
+            class="pl-2 border-l-2 text-xs rounded-r cursor-pointer hover:opacity-80 transition-opacity"
+            :class="isOwn ? 'border-indigo-300 bg-indigo-400/20' : 'border-gray-300 bg-gray-100'"
+          >
+            <div class="flex items-center gap-1">
+              <svg class="w-3 h-3 flex-shrink-0" :class="isOwn ? 'text-indigo-200' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              <span data-testid="message-quote-sender" class="font-medium" :class="isOwn ? 'text-indigo-200' : 'text-gray-600'">
+                {{ getReplyToSenderName(replyTo) }}
+              </span>
+              <span v-if="getReplyToTime(replyTo)" class="opacity-70">
+                {{ getReplyToTime(replyTo) }}
+              </span>
+            </div>
+            <div data-testid="message-quote-content" class="mt-0.5" :class="isOwn ? 'text-indigo-100' : 'text-gray-600'">
+              <span v-if="replyTo.content" class="line-clamp-2">
+                {{ truncateContent(replyTo.content, 150) }}
+              </span>
+              <span v-if="hasReplyToAttachments(replyTo)" class="block text-xs opacity-80 mt-0.5">
+                {{ getReplyToAttachmentInfo(replyTo) }}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -290,6 +361,18 @@ function truncateContent(content: string, maxLength: number = 100): string {
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
+          </button>
+
+          <!-- Forward button -->
+          <button
+            @click="handleForward"
+            data-testid="forward-button"
+            class="p-1 hover:bg-gray-100 rounded text-gray-500"
+            title="Forward to another chat"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
             </svg>
           </button>
 

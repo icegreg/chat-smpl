@@ -1,0 +1,387 @@
+syntax = "proto3";
+
+package voice;
+
+option go_package = "github.com/icegreg/chat-smpl/proto/voice";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// VoiceService provides audio conferencing and calling capabilities
+service VoiceService {
+    // Conference management
+    rpc CreateConference(CreateConferenceRequest) returns (Conference);
+    rpc GetConference(GetConferenceRequest) returns (Conference);
+    rpc ListConferences(ListConferencesRequest) returns (ListConferencesResponse);
+    rpc EndConference(EndConferenceRequest) returns (google.protobuf.Empty);
+
+    // Participant management
+    rpc JoinConference(JoinConferenceRequest) returns (Participant);
+    rpc LeaveConference(LeaveConferenceRequest) returns (google.protobuf.Empty);
+    rpc GetParticipants(GetParticipantsRequest) returns (GetParticipantsResponse);
+    rpc MuteParticipant(MuteParticipantRequest) returns (Participant);
+    rpc KickParticipant(KickParticipantRequest) returns (google.protobuf.Empty);
+
+    // Direct calls (1-on-1)
+    rpc InitiateCall(InitiateCallRequest) returns (Call);
+    rpc AnswerCall(AnswerCallRequest) returns (Call);
+    rpc HangupCall(HangupCallRequest) returns (google.protobuf.Empty);
+    rpc GetCall(GetCallRequest) returns (Call);
+    rpc GetCallHistory(GetCallHistoryRequest) returns (GetCallHistoryResponse);
+
+    // Authentication & Quick actions
+    rpc GetVertoCredentials(GetVertoCredentialsRequest) returns (VertoCredentials);
+    rpc StartChatCall(StartChatCallRequest) returns (StartChatCallResponse);
+
+    // Scheduled events
+    rpc ScheduleConference(ScheduleConferenceRequest) returns (Conference);
+    rpc CreateAdHocFromChat(CreateAdHocFromChatRequest) returns (Conference);
+    rpc UpdateRSVP(UpdateRSVPRequest) returns (Participant);
+    rpc UpdateParticipantRole(UpdateParticipantRoleRequest) returns (Participant);
+    rpc AddParticipants(AddParticipantsRequest) returns (google.protobuf.Empty);
+    rpc RemoveParticipant(RemoveParticipantRequest) returns (google.protobuf.Empty);
+    rpc ListScheduledConferences(ListScheduledConferencesRequest) returns (ListScheduledConferencesResponse);
+    rpc GetChatConferences(GetChatConferencesRequest) returns (GetChatConferencesResponse);
+    rpc CancelConference(CancelConferenceRequest) returns (google.protobuf.Empty);
+}
+
+// Enums
+enum ConferenceStatus {
+    CONFERENCE_STATUS_UNSPECIFIED = 0;
+    CONFERENCE_STATUS_ACTIVE = 1;
+    CONFERENCE_STATUS_ENDED = 2;
+    CONFERENCE_STATUS_SCHEDULED = 3;
+    CONFERENCE_STATUS_CANCELLED = 4;
+}
+
+enum ParticipantStatus {
+    PARTICIPANT_STATUS_UNSPECIFIED = 0;
+    PARTICIPANT_STATUS_CONNECTING = 1;
+    PARTICIPANT_STATUS_JOINED = 2;
+    PARTICIPANT_STATUS_LEFT = 3;
+    PARTICIPANT_STATUS_KICKED = 4;
+}
+
+enum CallStatus {
+    CALL_STATUS_UNSPECIFIED = 0;
+    CALL_STATUS_INITIATED = 1;
+    CALL_STATUS_RINGING = 2;
+    CALL_STATUS_ANSWERED = 3;
+    CALL_STATUS_ENDED = 4;
+    CALL_STATUS_FAILED = 5;
+    CALL_STATUS_MISSED = 6;
+}
+
+// Event type for conferences/meetings
+enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    EVENT_TYPE_ADHOC = 1;           // Quick call without chat
+    EVENT_TYPE_ADHOC_CHAT = 2;      // Ad-hoc from chat
+    EVENT_TYPE_SCHEDULED = 3;       // One-time scheduled event
+    EVENT_TYPE_RECURRING = 4;       // Recurring event
+}
+
+// Role in conference/meeting
+enum ConferenceRole {
+    CONFERENCE_ROLE_UNSPECIFIED = 0;
+    CONFERENCE_ROLE_ORIGINATOR = 1;   // Organizer - full control
+    CONFERENCE_ROLE_MODERATOR = 2;    // Moderator - can manage participants
+    CONFERENCE_ROLE_SPEAKER = 3;      // Speaker - logical role
+    CONFERENCE_ROLE_ASSISTANT = 4;    // Assistant - logical role
+    CONFERENCE_ROLE_PARTICIPANT = 5;  // Regular participant
+}
+
+// RSVP status for scheduled events
+enum RSVPStatus {
+    RSVP_STATUS_UNSPECIFIED = 0;
+    RSVP_STATUS_PENDING = 1;
+    RSVP_STATUS_ACCEPTED = 2;
+    RSVP_STATUS_DECLINED = 3;
+}
+
+// Recurrence frequency for recurring events
+enum RecurrenceFrequency {
+    RECURRENCE_FREQUENCY_UNSPECIFIED = 0;
+    RECURRENCE_FREQUENCY_DAILY = 1;
+    RECURRENCE_FREQUENCY_WEEKLY = 2;
+    RECURRENCE_FREQUENCY_BIWEEKLY = 3;
+    RECURRENCE_FREQUENCY_MONTHLY = 4;
+}
+
+// Messages
+
+// Recurrence rule for recurring events
+message RecurrenceRule {
+    RecurrenceFrequency frequency = 1;
+    repeated int32 days_of_week = 2;     // 0=Sun, 1=Mon, ..., 6=Sat
+    int32 day_of_month = 3;              // For monthly recurrence
+    google.protobuf.Timestamp until = 4; // End date for series
+    int32 count = 5;                     // Or max occurrences
+}
+
+message Conference {
+    string id = 1;
+    string name = 2;
+    string chat_id = 3;  // Optional link to chat
+    string freeswitch_name = 4;  // Internal FreeSWITCH conference name
+    string created_by = 5;
+    ConferenceStatus status = 6;
+    int32 max_members = 7;
+    bool is_private = 8;
+    int32 participant_count = 9;
+    string recording_path = 10;
+    google.protobuf.Timestamp started_at = 11;
+    google.protobuf.Timestamp ended_at = 12;
+    google.protobuf.Timestamp created_at = 13;
+    // Scheduled events fields
+    EventType event_type = 14;
+    google.protobuf.Timestamp scheduled_at = 15;
+    RecurrenceRule recurrence = 16;
+    string series_id = 17;               // ID of recurring series
+    int32 accepted_count = 18;
+    int32 declined_count = 19;
+    repeated Participant participants = 20;  // For widget display
+}
+
+message Participant {
+    string id = 1;
+    string conference_id = 2;
+    string user_id = 3;
+    string fs_member_id = 4;  // FreeSWITCH member ID
+    ParticipantStatus status = 5;
+    bool is_muted = 6;
+    bool is_deaf = 7;
+    bool is_speaking = 8;
+    google.protobuf.Timestamp joined_at = 9;
+    google.protobuf.Timestamp left_at = 10;
+    // User info (from users service)
+    string username = 11;
+    string display_name = 12;
+    string avatar_url = 13;
+    // Scheduled events fields
+    ConferenceRole role = 14;
+    RSVPStatus rsvp_status = 15;
+    google.protobuf.Timestamp rsvp_at = 16;
+}
+
+message Call {
+    string id = 1;
+    string caller_id = 2;
+    string callee_id = 3;
+    string chat_id = 4;  // Optional link to chat
+    string conference_id = 5;  // Conference created for this call
+    CallStatus status = 6;
+    string fs_call_uuid = 7;  // FreeSWITCH call UUID
+    int32 duration = 8;  // Duration in seconds
+    string end_reason = 9;
+    google.protobuf.Timestamp started_at = 10;
+    google.protobuf.Timestamp answered_at = 11;
+    google.protobuf.Timestamp ended_at = 12;
+    google.protobuf.Timestamp created_at = 13;
+    // User info
+    string caller_username = 14;
+    string caller_display_name = 15;
+    string callee_username = 16;
+    string callee_display_name = 17;
+}
+
+message VertoCredentials {
+    string user_id = 1;
+    string login = 2;
+    string password = 3;
+    string ws_url = 4;
+    repeated IceServer ice_servers = 5;
+    int64 expires_at = 6;  // Unix timestamp
+}
+
+message IceServer {
+    repeated string urls = 1;
+    string username = 2;
+    string credential = 3;
+}
+
+// Request/Response messages
+
+// Conference management
+message CreateConferenceRequest {
+    string name = 1;
+    string chat_id = 2;  // Optional
+    string created_by = 3;
+    int32 max_members = 4;
+    bool is_private = 5;
+    bool enable_recording = 6;
+}
+
+message GetConferenceRequest {
+    string conference_id = 1;
+    string user_id = 2;  // For access check
+}
+
+message ListConferencesRequest {
+    string user_id = 1;
+    bool active_only = 2;
+    int32 limit = 3;
+    int32 offset = 4;
+}
+
+message ListConferencesResponse {
+    repeated Conference conferences = 1;
+    int32 total = 2;
+}
+
+message EndConferenceRequest {
+    string conference_id = 1;
+    string user_id = 2;  // Actor
+}
+
+// Participant management
+message JoinConferenceRequest {
+    string conference_id = 1;
+    string user_id = 2;
+    bool muted = 3;
+}
+
+message LeaveConferenceRequest {
+    string conference_id = 1;
+    string user_id = 2;
+}
+
+message GetParticipantsRequest {
+    string conference_id = 1;
+}
+
+message GetParticipantsResponse {
+    repeated Participant participants = 1;
+}
+
+message MuteParticipantRequest {
+    string conference_id = 1;
+    string user_id = 2;  // Actor
+    string target_user_id = 3;  // Target to mute/unmute
+    bool mute = 4;
+}
+
+message KickParticipantRequest {
+    string conference_id = 1;
+    string user_id = 2;  // Actor
+    string target_user_id = 3;  // Target to kick
+}
+
+// Call management
+message InitiateCallRequest {
+    string caller_id = 1;
+    string callee_id = 2;
+    string chat_id = 3;  // Optional
+}
+
+message AnswerCallRequest {
+    string call_id = 1;
+    string user_id = 2;
+}
+
+message HangupCallRequest {
+    string call_id = 1;
+    string user_id = 2;
+}
+
+message GetCallRequest {
+    string call_id = 1;
+}
+
+message GetCallHistoryRequest {
+    string user_id = 1;
+    int32 limit = 2;
+    int32 offset = 3;
+}
+
+message GetCallHistoryResponse {
+    repeated Call calls = 1;
+    int32 total = 2;
+}
+
+// Auth & Quick actions
+message GetVertoCredentialsRequest {
+    string user_id = 1;
+}
+
+message StartChatCallRequest {
+    string chat_id = 1;
+    string user_id = 2;
+}
+
+message StartChatCallResponse {
+    Conference conference = 1;
+    VertoCredentials credentials = 2;
+}
+
+// Scheduled events requests/responses
+
+message ScheduleConferenceRequest {
+    string name = 1;
+    string chat_id = 2;  // Optional - if linked to chat
+    string user_id = 3;  // Creator
+    google.protobuf.Timestamp scheduled_at = 4;
+    RecurrenceRule recurrence = 5;  // Optional - for recurring
+    repeated string participant_user_ids = 6;  // For ad-hoc without chat
+    int32 max_members = 7;
+    bool enable_recording = 8;
+}
+
+message CreateAdHocFromChatRequest {
+    string chat_id = 1;
+    string user_id = 2;  // Initiator
+    repeated string participant_user_ids = 3;  // Empty = all chat members
+}
+
+message UpdateRSVPRequest {
+    string conference_id = 1;
+    string user_id = 2;
+    RSVPStatus rsvp_status = 3;
+}
+
+message UpdateParticipantRoleRequest {
+    string conference_id = 1;
+    string actor_user_id = 2;   // Who is changing
+    string target_user_id = 3;  // Whose role is changing
+    ConferenceRole new_role = 4;
+}
+
+message AddParticipantsRequest {
+    string conference_id = 1;
+    string actor_user_id = 2;
+    repeated string user_ids = 3;
+    ConferenceRole default_role = 4;
+}
+
+message RemoveParticipantRequest {
+    string conference_id = 1;
+    string actor_user_id = 2;
+    string target_user_id = 3;
+}
+
+message ListScheduledConferencesRequest {
+    string user_id = 1;
+    bool upcoming_only = 2;
+    int32 limit = 3;
+    int32 offset = 4;
+}
+
+message ListScheduledConferencesResponse {
+    repeated Conference conferences = 1;
+    int32 total = 2;
+}
+
+message GetChatConferencesRequest {
+    string chat_id = 1;
+    bool upcoming_only = 2;
+}
+
+message GetChatConferencesResponse {
+    repeated Conference conferences = 1;
+}
+
+message CancelConferenceRequest {
+    string conference_id = 1;
+    string user_id = 2;  // Actor
+    bool cancel_series = 3;  // For recurring - cancel all future
+}

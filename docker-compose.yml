@@ -85,6 +85,9 @@ services:
       - DATABASE_URL=postgres://chatapp:secret@postgres:5432/chatapp?sslmode=disable
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - HTTP_PORT=8081
+      - AVATARS_PATH=/app/avatars
+    volumes:
+      - user_avatars:/app/avatars
     # No external ports - accessed via nginx
     expose:
       - "8081"
@@ -176,6 +179,77 @@ services:
     networks:
       - chatapp-network
 
+  # FreeSWITCH - VoIP/WebRTC media server
+  freeswitch:
+    build:
+      context: ./deployments/freeswitch
+      dockerfile: Dockerfile
+    container_name: chatapp-freeswitch
+    ports:
+      - "5060:5060/udp"      # SIP signaling (for future use)
+      - "5060:5060/tcp"
+      - "8021:8021/tcp"      # ESL (Event Socket Library)
+      - "8081:8081/tcp"      # Verto WebSocket
+      - "16384-16484:16384-16484/udp"  # RTP media ports
+    volumes:
+      - freeswitch_recordings:/recordings
+    environment:
+      - FREESWITCH_DOMAIN=chatapp.local
+    healthcheck:
+      test: ["CMD", "fs_cli", "-x", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - chatapp-network
+
+  # Coturn - TURN/STUN server for NAT traversal
+  coturn:
+    image: coturn/coturn:latest
+    container_name: chatapp-coturn
+    ports:
+      - "3478:3478/udp"      # STUN/TURN UDP
+      - "3478:3478/tcp"      # STUN/TURN TCP
+      - "5349:5349/tcp"      # TURN over TLS
+      - "49152-49252:49152-49252/udp"  # Relay ports
+    volumes:
+      - ./deployments/coturn/turnserver.conf:/etc/turnserver.conf:ro
+    command: -c /etc/turnserver.conf
+    networks:
+      - chatapp-network
+
+  # Voice service - manages conferences and calls via ESL
+  voice-service:
+    build:
+      context: .
+      dockerfile: services/voice/Dockerfile
+    container_name: chatapp-voice
+    environment:
+      - DATABASE_URL=postgres://chatapp:secret@postgres:5432/chatapp?sslmode=disable
+      - RABBITMQ_URL=amqp://chatapp:secret@rabbitmq:5672/
+      - GRPC_ADDR=:50054
+      - HTTP_PORT=8084
+      - FREESWITCH_ESL_HOST=freeswitch
+      - FREESWITCH_ESL_PORT=8021
+      - FREESWITCH_ESL_PASSWORD=ClueCon
+      - TURN_URL=turn:coturn:3478
+      - TURN_USERNAME=chatapp
+      - TURN_PASSWORD=chatapp_turn_secret
+      - VERTO_WS_URL=ws://freeswitch:8081
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+    ports:
+      - "50054:50054"  # gRPC
+      - "8084:8084"    # HTTP (for webhooks)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      # freeswitch dependency removed - voice-service can start without it
+    networks:
+      - chatapp-network
+
   api-gateway:
     build:
       context: .
@@ -186,12 +260,17 @@ services:
       - USERS_SERVICE_URL=http://users-service:8081
       - CHAT_SERVICE_ADDR=chat-service:50051
       - PRESENCE_SERVICE_ADDR=presence-service:50052
+      - VOICE_SERVICE_ADDR=voice-service:50054
       - FILES_SERVICE_URL=http://files-service:8082
       - CENTRIFUGO_API_URL=http://centrifugo:8000/api
       - CENTRIFUGO_API_KEY=centrifugo-api-key
       - CENTRIFUGO_SECRET=your-centrifugo-secret-key-change-in-production
       - RABBITMQ_URL=amqp://chatapp:secret@rabbitmq:5672/
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - TURN_URL=turn:localhost:3478
+      - TURN_USERNAME=chatapp
+      - TURN_PASSWORD=chatapp_turn_secret
+      - VERTO_WS_URL=ws://localhost:8888/verto
     ports:
       - "9180:8080"
     depends_on:
@@ -199,6 +278,7 @@ services:
       - chat-service
       - files-service
       - presence-service
+      - voice-service
       - centrifugo
       - rabbitmq
     networks:
@@ -216,6 +296,7 @@ services:
       - users-service
       - files-service
       - centrifugo
+      - freeswitch
     networks:
       - chatapp-network
 
@@ -266,6 +347,8 @@ volumes:
   rabbitmq_data:
   redis_data:
   files_storage:
+  freeswitch_recordings:
+  user_avatars:
 
 networks:
   chatapp-network:

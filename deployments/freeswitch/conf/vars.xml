@@ -1,0 +1,46 @@
+<include>
+  <!-- Domain -->
+  <X-PRE-PROCESS cmd="set" data="domain=chatapp.local"/>
+  <X-PRE-PROCESS cmd="set" data="domain_name=$${domain}"/>
+
+  <!-- Global codec preferences -->
+  <X-PRE-PROCESS cmd="set" data="global_codec_prefs=OPUS,PCMU,PCMA"/>
+  <X-PRE-PROCESS cmd="set" data="outbound_codec_prefs=OPUS,PCMU,PCMA"/>
+
+  <!-- Default password for internal users -->
+  <X-PRE-PROCESS cmd="set" data="default_password=chatapp_secret"/>
+
+  <!-- Sound directories -->
+  <X-PRE-PROCESS cmd="set" data="sounds_dir=/usr/share/freeswitch/sounds"/>
+  <X-PRE-PROCESS cmd="set" data="sound_prefix=/usr/share/freeswitch/sounds/en/us/callie"/>
+
+  <!-- Recordings directory -->
+  <X-PRE-PROCESS cmd="set" data="recordings_dir=/recordings"/>
+
+  <!-- Hold music -->
+  <X-PRE-PROCESS cmd="set" data="hold_music=local_stream://moh"/>
+
+  <!-- Default ring tones -->
+  <X-PRE-PROCESS cmd="set" data="us-ring=%(2000,4000,440,480)"/>
+  <X-PRE-PROCESS cmd="set" data="uk-ring=%(400,200,400,450);%(400,2000,400,450)"/>
+  <X-PRE-PROCESS cmd="set" data="bong-ring=v=-7;%(100,0,941,1477);v=-7;>=2;+=.1;%(1000,0,640)"/>
+
+  <!-- Default tone-spec for call-waiting tone -->
+  <X-PRE-PROCESS cmd="set" data="call_waiting_tone=%(200,100,440);%(200,100,440)"/>
+
+  <!-- Default DTMF duration -->
+  <X-PRE-PROCESS cmd="set" data="default_dtmf_duration=2000"/>
+
+  <!-- Internal SIP profile -->
+  <X-PRE-PROCESS cmd="set" data="internal_sip_port=5060"/>
+  <X-PRE-PROCESS cmd="set" data="internal_tls_port=5061"/>
+  <X-PRE-PROCESS cmd="set" data="internal_ssl_enable=false"/>
+
+  <!-- External SIP profile -->
+  <X-PRE-PROCESS cmd="set" data="external_sip_port=5080"/>
+  <X-PRE-PROCESS cmd="set" data="external_tls_port=5081"/>
+  <X-PRE-PROCESS cmd="set" data="external_ssl_enable=false"/>
+
+  <!-- Verto settings -->
+  <X-PRE-PROCESS cmd="set" data="verto_ws_port=8081"/>
+</include>

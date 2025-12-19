@@ -13,7 +13,7 @@ import {
   generateTestUser,
   sleep,
   TestReport,
-} from '../helpers/apiTestClient'
+} from '../helpers/apiTestClient.js'
 
 const BASE_URL = process.env.API_URL || 'http://127.0.0.1:8888'
 
@@ -129,7 +129,7 @@ describe('Multi-User Simulation Tests', function () {
       const results = await Promise.all(readPromises)
 
       // Проверить что все получили сообщения
-      results.forEach((res, idx) => {
+      results.forEach((res) => {
         expect(res.messages.length).to.be.at.least(userCount * messagesPerUser)
       })
 

@@ -33,8 +33,19 @@ func (h *FilesHandler) Routes() chi.Router {
 	return r
 }
 
-// Upload proxies file upload to files service
-// POST /api/files/upload
+// Upload godoc
+// @Summary Upload a file
+// @Description Uploads a file to the storage service
+// @Tags files
+// @Accept multipart/form-data
+// @Produce json
+// @Security Bearer
+// @Param file formData file true "File to upload"
+// @Success 201 {object} FileUploadResponse "File uploaded successfully"
+// @Failure 400 {object} ErrorResponse "Invalid file"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 502 {object} ErrorResponse "Files service unavailable"
+// @Router /files/upload [post]
 func (h *FilesHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -72,8 +83,19 @@ func (h *FilesHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-// Download proxies file download from files service
-// GET /api/files/{linkId}
+// Download godoc
+// @Summary Download a file
+// @Description Downloads a file by its link ID
+// @Tags files
+// @Produce octet-stream
+// @Security Bearer
+// @Param linkId path string true "File link ID"
+// @Success 200 {file} binary "File content"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "File not found"
+// @Failure 502 {object} ErrorResponse "Files service unavailable"
+// @Router /files/{linkId} [get]
 func (h *FilesHandler) Download(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	linkId := chi.URLParam(r, "linkId")

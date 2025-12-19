@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -47,9 +49,14 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 
 	// User routes (protected)
 	r.Route("/api/users", func(r chi.Router) {
-		r.Use(h.AuthMiddleware)
-		r.Get("/", h.ListUsers)
-		r.Get("/{userGUID}", h.GetUser)
+		// Avatar route is public (no auth required for viewing avatars)
+		r.Get("/avatars/{filename}", h.ServeAvatar)
+
+		r.Group(func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Get("/", h.ListUsers)
+			r.Get("/{userGUID}", h.GetUser)
+		})
 	})
 
 	// Group routes (protected)
@@ -292,4 +299,37 @@ func (h *Handler) respondJSON(w http.ResponseWriter, status int, data interface{
 
 func (h *Handler) respondError(w http.ResponseWriter, status int, errCode, message string) {
 	h.respondJSON(w, status, model.NewErrorResponse(errCode, message))
+}
+
+// ServeAvatar serves avatar image files
+func (h *Handler) ServeAvatar(w http.ResponseWriter, r *http.Request) {
+	filename := chi.URLParam(r, "filename")
+
+	// Security: ensure filename is just a UUID.png, no path traversal
+	if !strings.HasSuffix(filename, ".png") || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Extract user ID from filename
+	userIDStr := strings.TrimSuffix(filename, ".png")
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Get avatar file path
+	avatarPath := h.userService.GetAvatarPath(userID)
+
+	// Check if file exists
+	if _, err := os.Stat(avatarPath); os.IsNotExist(err) {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Serve the file with appropriate headers
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 1 day
+	http.ServeFile(w, r, avatarPath)
 }

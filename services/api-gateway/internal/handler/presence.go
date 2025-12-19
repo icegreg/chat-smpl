@@ -52,8 +52,19 @@ type PresenceResponse struct {
 	LastSeenAt      int64  `json:"last_seen_at,omitempty"`
 }
 
-// SetStatus sets the current user's status
-// PUT /api/presence/status
+// SetStatus godoc
+// @Summary Set user status
+// @Description Sets the current user's presence status
+// @Tags presence
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body PresenceStatusRequest true "Status to set (available, busy, away, dnd)"
+// @Success 200 {object} PresenceResponse "Updated presence"
+// @Failure 400 {object} ErrorResponse "Invalid request body or status"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /presence/status [put]
 func (h *PresenceHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -84,8 +95,16 @@ func (h *PresenceHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, presenceToResponse(presence))
 }
 
-// GetMyStatus gets the current user's presence info
-// GET /api/presence/status
+// GetMyStatus godoc
+// @Summary Get my presence status
+// @Description Returns the current user's presence information
+// @Tags presence
+// @Produce json
+// @Security Bearer
+// @Success 200 {object} PresenceResponse "User presence"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /presence/status [get]
 func (h *PresenceHandler) GetMyStatus(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -103,8 +122,17 @@ func (h *PresenceHandler) GetMyStatus(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, presenceToResponse(presence))
 }
 
-// GetUsersPresence gets presence info for multiple users
-// GET /api/presence/users?ids=user1,user2,user3
+// GetUsersPresence godoc
+// @Summary Get users presence
+// @Description Returns presence information for multiple users (max 100)
+// @Tags presence
+// @Produce json
+// @Security Bearer
+// @Param ids query string true "Comma-separated user IDs"
+// @Success 200 {object} PresenceListResponse "List of user presences"
+// @Failure 400 {object} ErrorResponse "Invalid or missing IDs"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /presence/users [get]
 func (h *PresenceHandler) GetUsersPresence(w http.ResponseWriter, r *http.Request) {
 	idsParam := r.URL.Query().Get("ids")
 	if idsParam == "" {
@@ -225,8 +253,19 @@ type ConnectRequest struct {
 	ConnectionID string `json:"connection_id"`
 }
 
-// Connect registers a new WebSocket connection for the user
-// POST /api/presence/connect
+// Connect godoc
+// @Summary Register connection
+// @Description Registers a new WebSocket connection for the user
+// @Tags presence
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body map[string]string true "Connection ID"
+// @Success 200 {object} PresenceResponse "Updated presence"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /presence/connect [post]
 func (h *PresenceHandler) Connect(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -255,8 +294,19 @@ func (h *PresenceHandler) Connect(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, presenceToResponse(presence))
 }
 
-// Disconnect unregisters a WebSocket connection for the user
-// POST /api/presence/disconnect
+// Disconnect godoc
+// @Summary Unregister connection
+// @Description Unregisters a WebSocket connection for the user
+// @Tags presence
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body map[string]string true "Connection ID"
+// @Success 200 {object} PresenceResponse "Updated presence"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /presence/disconnect [post]
 func (h *PresenceHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {

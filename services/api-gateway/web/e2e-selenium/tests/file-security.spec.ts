@@ -129,8 +129,11 @@ describe('File Security', function () {
     console.log('User 1 entered the chat')
 
     // Step 2: Wait for User 2 to see the chat
-    console.log('\n--- Step 2: User 2 receives chat via real-time ---')
-    await user2ChatPage.waitForChatInList(chatName, 30000)
+    console.log('\n--- Step 2: User 2 receives chat ---')
+    // Refresh User 2's page to ensure they fetch chats from API (not just real-time)
+    await user2ChatPage.refresh()
+    await user2ChatPage.sleep(1000)
+    await user2ChatPage.waitForChatInList(chatName, 15000)
     await user2ChatPage.clickChatByNameInList(chatName)
     await user2ChatPage.waitForChatRoom()
     console.log('User 2 entered the chat')

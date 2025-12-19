@@ -12,6 +12,20 @@ import type {
   Thread,
   ThreadParticipant,
   CreateThreadRequest,
+  Conference,
+  VoiceParticipant,
+  Call,
+  VertoCredentials,
+  CreateConferenceRequest,
+  JoinConferenceRequest,
+  InitiateCallRequest,
+  StartChatCallResponse,
+  ScheduledConference,
+  ConferenceParticipant,
+  ScheduleConferenceRequest,
+  CreateAdHocFromChatRequest,
+  RSVPStatus,
+  ConferenceRole,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -62,9 +76,17 @@ function sleep(ms: number): Promise<void> {
 
 class ApiClient {
   private accessToken: string | null = null
+  private isRefreshing = false
+  private refreshPromise: Promise<AuthTokens> | null = null
+  private onAuthFailure: (() => void) | null = null
 
   constructor() {
     this.accessToken = localStorage.getItem('access_token')
+  }
+
+  // Set callback for auth failure (logout + redirect)
+  setOnAuthFailure(callback: () => void) {
+    this.onAuthFailure = callback
   }
 
   setAccessToken(token: string | null) {
@@ -76,14 +98,29 @@ class ApiClient {
     }
   }
 
+  // Clear all auth data
+  clearAuth() {
+    this.accessToken = null
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+  }
+
+  // Handle auth failure - clear tokens and trigger callback
+  private handleAuthFailure() {
+    this.clearAuth()
+    if (this.onAuthFailure) {
+      this.onAuthFailure()
+    }
+  }
+
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
     requireAuth = true,
-    options: { retry?: boolean; maxRetries?: number } = {}
+    options: { retry?: boolean; maxRetries?: number; skipAuthRefresh?: boolean } = {}
   ): Promise<T> {
-    const { retry = true, maxRetries = RETRY_CONFIG.maxRetries } = options
+    const { retry = true, maxRetries = RETRY_CONFIG.maxRetries, skipAuthRefresh = false } = options
     let lastError: Error | null = null
 
     for (let attempt = 0; attempt <= (retry ? maxRetries : 0); attempt++) {
@@ -101,6 +138,19 @@ class ApiClient {
           headers,
           body: body ? JSON.stringify(body) : undefined,
         })
+
+        // Handle 401 - try to refresh token
+        if (response.status === 401 && requireAuth && !skipAuthRefresh) {
+          const refreshed = await this.tryRefreshToken()
+          if (refreshed) {
+            // Retry the request with new token
+            return this.request<T>(method, path, body, requireAuth, { ...options, skipAuthRefresh: true })
+          } else {
+            // Refresh failed - trigger auth failure
+            this.handleAuthFailure()
+            throw new ApiError(401, 'Session expired. Please login again.')
+          }
+        }
 
         if (!response.ok) {
           const error = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -121,6 +171,11 @@ class ApiClient {
           lastError = new ApiError(0, 'Network error: Unable to connect', true)
         }
 
+        // Don't retry 401 errors
+        if (lastError instanceof ApiError && lastError.status === 401) {
+          throw lastError
+        }
+
         // Should we retry?
         if (retry && attempt < maxRetries && isRetryableError(lastError)) {
           const delay = getRetryDelay(attempt)
@@ -136,6 +191,55 @@ class ApiClient {
 
     // Should never reach here, but just in case
     throw lastError || new Error('Unknown error')
+  }
+
+  // Try to refresh token, returns true if successful
+  private async tryRefreshToken(): Promise<boolean> {
+    const refreshToken = localStorage.getItem('refresh_token')
+    if (!refreshToken) {
+      return false
+    }
+
+    // Prevent multiple simultaneous refresh attempts
+    if (this.isRefreshing) {
+      try {
+        await this.refreshPromise
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    this.isRefreshing = true
+    this.refreshPromise = this.doRefreshToken(refreshToken)
+
+    try {
+      await this.refreshPromise
+      return true
+    } catch (error) {
+      console.error('[API] Token refresh failed:', error)
+      return false
+    } finally {
+      this.isRefreshing = false
+      this.refreshPromise = null
+    }
+  }
+
+  private async doRefreshToken(refreshToken: string): Promise<AuthTokens> {
+    const response = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+
+    if (!response.ok) {
+      throw new ApiError(response.status, 'Token refresh failed')
+    }
+
+    const result = await response.json() as AuthTokens
+    this.setAccessToken(result.access_token)
+    localStorage.setItem('refresh_token', result.refresh_token)
+    return result
   }
 
   // Request without retry (for fire-and-forget operations like typing indicator)
@@ -431,6 +535,156 @@ class ApiClient {
 
   async createSubthread(parentThreadId: string, data: CreateThreadRequest): Promise<Thread> {
     return this.request<Thread>('POST', `/chats/threads/${parentThreadId}/subthreads`, data)
+  }
+
+  // Voice/Conference endpoints
+  async createConference(data: CreateConferenceRequest): Promise<Conference> {
+    return this.request<Conference>('POST', '/voice/conferences', data)
+  }
+
+  async getConference(conferenceId: string): Promise<Conference> {
+    return this.request<Conference>('GET', `/voice/conferences/${conferenceId}`)
+  }
+
+  async listConferences(chatId?: string, status?: string): Promise<{ conferences: Conference[] }> {
+    let url = '/voice/conferences'
+    const params: string[] = []
+    if (chatId) params.push(`chat_id=${chatId}`)
+    if (status) params.push(`status=${status}`)
+    if (params.length > 0) url += '?' + params.join('&')
+    return this.request<{ conferences: Conference[] }>('GET', url)
+  }
+
+  async joinConference(conferenceId: string, data?: JoinConferenceRequest): Promise<VoiceParticipant> {
+    return this.request<VoiceParticipant>('POST', `/voice/conferences/${conferenceId}/join`, data || {})
+  }
+
+  async leaveConference(conferenceId: string): Promise<void> {
+    return this.request<void>('POST', `/voice/conferences/${conferenceId}/leave`)
+  }
+
+  async getConferenceParticipants(conferenceId: string): Promise<{ participants: VoiceParticipant[] }> {
+    return this.request<{ participants: VoiceParticipant[] }>('GET', `/voice/conferences/${conferenceId}/participants`)
+  }
+
+  async muteParticipant(conferenceId: string, userId: string, mute: boolean): Promise<VoiceParticipant> {
+    return this.request<VoiceParticipant>('POST', `/voice/conferences/${conferenceId}/participants/${userId}/mute`, { mute })
+  }
+
+  async kickParticipant(conferenceId: string, userId: string): Promise<void> {
+    return this.request<void>('DELETE', `/voice/conferences/${conferenceId}/participants/${userId}`)
+  }
+
+  async endConference(conferenceId: string): Promise<void> {
+    return this.request<void>('DELETE', `/voice/conferences/${conferenceId}`)
+  }
+
+  // Call operations
+  async initiateCall(data: InitiateCallRequest): Promise<Call> {
+    return this.request<Call>('POST', '/voice/calls', data)
+  }
+
+  async answerCall(callId: string): Promise<Call> {
+    return this.request<Call>('POST', `/voice/calls/${callId}/answer`)
+  }
+
+  async hangupCall(callId: string): Promise<void> {
+    return this.request<void>('POST', `/voice/calls/${callId}/hangup`)
+  }
+
+  // Verto credentials
+  async getVertoCredentials(): Promise<VertoCredentials> {
+    return this.request<VertoCredentials>('GET', '/voice/credentials')
+  }
+
+  // Quick call from chat
+  async startChatCall(chatId: string): Promise<StartChatCallResponse> {
+    return this.request<StartChatCallResponse>('POST', `/voice/chats/${chatId}/call`)
+  }
+
+  // Scheduled Events API
+
+  // Schedule a new conference (one-time or recurring)
+  async scheduleConference(data: ScheduleConferenceRequest): Promise<ScheduledConference> {
+    return this.request<ScheduledConference>('POST', '/voice/conferences/schedule', data)
+  }
+
+  // Create ad-hoc conference from chat
+  async createAdHocFromChat(data: CreateAdHocFromChatRequest): Promise<ScheduledConference> {
+    return this.request<ScheduledConference>('POST', '/voice/conferences/adhoc-chat', data)
+  }
+
+  // Create quick ad-hoc conference (without chat)
+  async createQuickAdHoc(name?: string): Promise<ScheduledConference> {
+    return this.request<ScheduledConference>('POST', '/voice/conferences/adhoc', { name })
+  }
+
+  // Update RSVP status for a conference
+  async updateRSVP(conferenceId: string, status: RSVPStatus): Promise<ConferenceParticipant> {
+    return this.request<ConferenceParticipant>('PUT', `/voice/conferences/${conferenceId}/rsvp`, { rsvp_status: status })
+  }
+
+  // Update participant role in a conference
+  async updateParticipantRole(
+    conferenceId: string,
+    userId: string,
+    newRole: ConferenceRole
+  ): Promise<ConferenceParticipant> {
+    return this.request<ConferenceParticipant>(
+      'PUT',
+      `/voice/conferences/${conferenceId}/participants/${userId}/role`,
+      { new_role: newRole }
+    )
+  }
+
+  // Add participants to a conference
+  async addConferenceParticipants(
+    conferenceId: string,
+    userIds: string[],
+    defaultRole?: ConferenceRole
+  ): Promise<void> {
+    return this.request<void>('POST', `/voice/conferences/${conferenceId}/participants`, {
+      user_ids: userIds,
+      default_role: defaultRole,
+    })
+  }
+
+  // Remove participant from a conference
+  async removeConferenceParticipant(conferenceId: string, userId: string): Promise<void> {
+    return this.request<void>('DELETE', `/voice/conferences/${conferenceId}/participants/${userId}`)
+  }
+
+  // List scheduled conferences for current user
+  async listScheduledConferences(
+    upcomingOnly = true,
+    limit = 50,
+    offset = 0
+  ): Promise<{ conferences: ScheduledConference[]; total: number }> {
+    return this.request<{ conferences: ScheduledConference[]; total: number }>(
+      'GET',
+      `/voice/conferences/scheduled?upcoming_only=${upcomingOnly}&limit=${limit}&offset=${offset}`
+    )
+  }
+
+  // Get conferences for a specific chat (for widget)
+  async getChatConferences(
+    chatId: string,
+    upcomingOnly = true
+  ): Promise<{ conferences: ScheduledConference[] }> {
+    return this.request<{ conferences: ScheduledConference[] }>(
+      'GET',
+      `/voice/chats/${chatId}/conferences?upcoming_only=${upcomingOnly}`
+    )
+  }
+
+  // Cancel a scheduled conference
+  async cancelConference(conferenceId: string, cancelSeries = false): Promise<void> {
+    return this.request<void>('DELETE', `/voice/conferences/${conferenceId}?cancel_series=${cancelSeries}`)
+  }
+
+  // Get scheduled conference with participants
+  async getScheduledConference(conferenceId: string): Promise<ScheduledConference> {
+    return this.request<ScheduledConference>('GET', `/voice/conferences/${conferenceId}/scheduled`)
   }
 }
 

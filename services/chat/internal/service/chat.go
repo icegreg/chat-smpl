@@ -35,7 +35,7 @@ type ChatService interface {
 	ListParticipants(ctx context.Context, chatID uuid.UUID, page, count int) ([]model.ChatParticipant, int, error)
 
 	// Message operations
-	SendMessage(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID *uuid.UUID, fileLinkIDs []uuid.UUID) (*model.Message, error)
+	SendMessage(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID *uuid.UUID, fileLinkIDs, replyToIDs []uuid.UUID) (*model.Message, error)
 	GetMessage(ctx context.Context, messageID, userID uuid.UUID) (*model.Message, error)
 	ListMessages(ctx context.Context, chatID, userID uuid.UUID, page, count int) ([]model.Message, int, error)
 	SyncMessages(ctx context.Context, chatID, userID uuid.UUID, afterSeqNum int64, limit int) ([]model.Message, error)
@@ -80,7 +80,7 @@ type ChatService interface {
 	ListThreadParticipants(ctx context.Context, threadID uuid.UUID) ([]model.ThreadParticipant, error)
 
 	// SendMessage with thread support (overloaded via optional threadID)
-	SendMessageToThread(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID, threadID *uuid.UUID, fileLinkIDs []uuid.UUID, isSystem bool) (*model.Message, error)
+	SendMessageToThread(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID, threadID *uuid.UUID, fileLinkIDs, replyToIDs []uuid.UUID, isSystem bool) (*model.Message, error)
 
 	// System thread helpers
 	GetSystemThread(ctx context.Context, chatID uuid.UUID) (*model.Thread, error)
@@ -372,7 +372,7 @@ func (s *chatService) ListParticipants(ctx context.Context, chatID uuid.UUID, pa
 
 // Message operations
 
-func (s *chatService) SendMessage(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID *uuid.UUID, fileLinkIDs []uuid.UUID) (*model.Message, error) {
+func (s *chatService) SendMessage(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID *uuid.UUID, fileLinkIDs, replyToIDs []uuid.UUID) (*model.Message, error) {
 	participant, err := s.repo.GetParticipant(ctx, chatID, senderID)
 	if err != nil {
 		if errors.Is(err, repository.ErrParticipantNotFound) {
@@ -391,6 +391,7 @@ func (s *chatService) SendMessage(ctx context.Context, chatID, senderID uuid.UUI
 		Content:     content,
 		ParentID:    parentID,
 		FileLinkIDs: fileLinkIDs,
+		ReplyToIDs:  replyToIDs,
 	}
 
 	if err := s.repo.CreateMessage(ctx, message); err != nil {
@@ -401,6 +402,14 @@ func (s *chatService) SendMessage(ctx context.Context, chatID, senderID uuid.UUI
 	message.SenderUsername = participant.Username
 	message.SenderDisplayName = participant.DisplayName
 	message.SenderAvatarURL = participant.AvatarURL
+
+	// Load reply_to_messages if any
+	if len(replyToIDs) > 0 {
+		replyMessages, err := s.repo.GetMessagesById(ctx, replyToIDs)
+		if err == nil {
+			message.ReplyToMessages = replyMessages
+		}
+	}
 
 	// Get participants for event
 	participants, _ := s.repo.GetParticipantIDs(ctx, chatID)
@@ -979,7 +988,7 @@ func (s *chatService) ListThreadParticipants(ctx context.Context, threadID uuid.
 }
 
 // SendMessageToThread sends a message with optional thread support
-func (s *chatService) SendMessageToThread(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID, threadID *uuid.UUID, fileLinkIDs []uuid.UUID, isSystem bool) (*model.Message, error) {
+func (s *chatService) SendMessageToThread(ctx context.Context, chatID, senderID uuid.UUID, content string, parentID, threadID *uuid.UUID, fileLinkIDs, replyToIDs []uuid.UUID, isSystem bool) (*model.Message, error) {
 	var participant *model.ChatParticipant
 	var err error
 
@@ -1027,6 +1036,7 @@ func (s *chatService) SendMessageToThread(ctx context.Context, chatID, senderID 
 		ParentID:    parentID,
 		ThreadID:    threadID,
 		FileLinkIDs: fileLinkIDs,
+		ReplyToIDs:  replyToIDs,
 		IsSystem:    isSystem,
 	}
 
@@ -1039,6 +1049,14 @@ func (s *chatService) SendMessageToThread(ctx context.Context, chatID, senderID 
 		message.SenderUsername = participant.Username
 		message.SenderDisplayName = participant.DisplayName
 		message.SenderAvatarURL = participant.AvatarURL
+	}
+
+	// Load reply_to_messages if any
+	if len(replyToIDs) > 0 {
+		replyMessages, err := s.repo.GetMessagesById(ctx, replyToIDs)
+		if err == nil {
+			message.ReplyToMessages = replyMessages
+		}
 	}
 
 	// Get participants for event
@@ -1071,7 +1089,7 @@ func (s *chatService) SendSystemMessage(ctx context.Context, chatID uuid.UUID, c
 	}
 
 	// Send message to system thread
-	return s.SendMessageToThread(ctx, chatID, uuid.Nil, content, nil, &systemThread.ID, nil, true)
+	return s.SendMessageToThread(ctx, chatID, uuid.Nil, content, nil, &systemThread.ID, nil, nil, true)
 }
 
 // Subthread operations

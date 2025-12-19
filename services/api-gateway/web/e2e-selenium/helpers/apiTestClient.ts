@@ -181,7 +181,7 @@ export class ApiTestClient {
    * Загрузить файл (multipart/form-data)
    */
   async uploadFile(
-    filePath: string,
+    _filePath: string,
     fileName: string,
     content: string | Buffer
   ): Promise<{ data: any; timing: RequestTiming }> {
@@ -642,10 +642,10 @@ export class ApiTestClient {
     // Verdict
     console.log('\n' + '-'.repeat(70))
     const slowPercent = (stats.slow / stats.total) * 100
-    const failPercent = (stats.failed / stats.total) * 100
 
     if (stats.failed > 0) {
-      console.log(`  VERDICT: FAIL - ${stats.failed} failed request(s)`)
+      const failPercent = (stats.failed / stats.total) * 100
+      console.log(`  VERDICT: FAIL - ${stats.failed} failed request(s) (${failPercent.toFixed(1)}%)`)
     } else if (slowPercent > 10) {
       console.log(`  VERDICT: WARNING - ${slowPercent.toFixed(1)}% slow requests`)
     } else if (slowPercent > 0) {

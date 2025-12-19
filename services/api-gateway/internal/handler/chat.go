@@ -86,8 +86,19 @@ func (h *ChatHandler) Routes() chi.Router {
 	return r
 }
 
-// CreateChat creates a new chat
-// POST /api/chats
+// CreateChat godoc
+// @Summary Create a new chat
+// @Description Creates a new chat room (private, group, or channel)
+// @Tags chats
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body CreateChatRequest true "Chat creation data"
+// @Success 201 {object} ChatResponse "Chat created successfully"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /chats [post]
 func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -128,8 +139,17 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusCreated, chat)
 }
 
-// GetChat returns chat details
-// GET /api/chats/{chatId}
+// GetChat godoc
+// @Summary Get chat by ID
+// @Description Returns detailed information about a specific chat
+// @Tags chats
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Success 200 {object} ChatResponse "Chat details"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId} [get]
 func (h *ChatHandler) GetChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -149,8 +169,17 @@ func (h *ChatHandler) GetChat(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusOK, chat)
 }
 
-// ListChats returns list of user's chats
-// GET /api/chats
+// ListChats godoc
+// @Summary List user's chats
+// @Description Returns paginated list of chats the user participates in
+// @Tags chats
+// @Produce json
+// @Security Bearer
+// @Param page query int false "Page number" default(1)
+// @Param count query int false "Items per page" default(20)
+// @Success 200 {object} ChatListResponse "List of chats"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Router /chats [get]
 func (h *ChatHandler) ListChats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -180,8 +209,21 @@ func (h *ChatHandler) ListChats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateChat updates chat details
-// PUT /api/chats/{chatId}
+// UpdateChat godoc
+// @Summary Update chat
+// @Description Updates chat details (name, description)
+// @Tags chats
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param request body UpdateChatRequest true "Chat update data"
+// @Success 200 {object} ChatResponse "Updated chat"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId} [put]
 func (h *ChatHandler) UpdateChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -210,8 +252,17 @@ func (h *ChatHandler) UpdateChat(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusOK, chat)
 }
 
-// DeleteChat deletes a chat
-// DELETE /api/chats/{chatId}
+// DeleteChat godoc
+// @Summary Delete chat
+// @Description Deletes a chat and all its messages
+// @Tags chats
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Success 204 "Chat deleted"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId} [delete]
 func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -230,8 +281,19 @@ func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GetParticipants returns chat participants
-// GET /api/chats/{chatId}/participants
+// GetParticipants godoc
+// @Summary List chat participants
+// @Description Returns paginated list of chat participants
+// @Tags chats
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param page query int false "Page number" default(1)
+// @Param count query int false "Items per page" default(50)
+// @Success 200 {object} map[string]interface{} "Participants list with pagination"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/participants [get]
 func (h *ChatHandler) GetParticipants(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_, ok := middleware.GetUserID(ctx)
@@ -262,8 +324,21 @@ func (h *ChatHandler) GetParticipants(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AddParticipant adds a participant to chat
-// POST /api/chats/{chatId}/participants
+// AddParticipant godoc
+// @Summary Add participant to chat
+// @Description Adds a new participant to the chat with specified role
+// @Tags chats
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param request body AddMembersRequest true "Participant data"
+// @Success 201 {object} map[string]interface{} "Participant added"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/participants [post]
 func (h *ChatHandler) AddParticipant(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -302,8 +377,18 @@ func (h *ChatHandler) AddParticipant(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusCreated, participant)
 }
 
-// RemoveParticipant removes a participant from chat
-// DELETE /api/chats/{chatId}/participants/{userId}
+// RemoveParticipant godoc
+// @Summary Remove participant from chat
+// @Description Removes a participant from the chat
+// @Tags chats
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param userId path string true "User ID to remove"
+// @Success 204 "Participant removed"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Chat or user not found"
+// @Router /chats/{chatId}/participants/{userId} [delete]
 func (h *ChatHandler) RemoveParticipant(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -323,8 +408,22 @@ func (h *ChatHandler) RemoveParticipant(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// UpdateParticipantRole updates participant's role
-// PUT /api/chats/{chatId}/participants/{userId}/role
+// UpdateParticipantRole godoc
+// @Summary Update participant role
+// @Description Updates the role of a chat participant
+// @Tags chats
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param userId path string true "User ID"
+// @Param request body map[string]string true "Role update data"
+// @Success 200 {object} map[string]interface{} "Updated participant"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Chat or user not found"
+// @Router /chats/{chatId}/participants/{userId}/role [put]
 func (h *ChatHandler) UpdateParticipantRole(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -363,8 +462,21 @@ func (h *ChatHandler) UpdateParticipantRole(w http.ResponseWriter, r *http.Reque
 	h.respondJSON(w, http.StatusOK, participant)
 }
 
-// SendMessage sends a message
-// POST /api/chats/{chatId}/messages
+// SendMessage godoc
+// @Summary Send a message
+// @Description Sends a new message to the chat with optional file attachments and reply references
+// @Tags messages
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param request body SendMessageRequest true "Message data"
+// @Success 201 {object} MessageResponse "Message sent"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied (guests cannot send)"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/messages [post]
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -386,6 +498,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		Content     string   `json:"content"`
 		ParentID    string   `json:"parent_id,omitempty"`
 		FileLinkIDs []string `json:"file_link_ids,omitempty"`
+		ReplyToIDs  []string `json:"reply_to_ids,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -401,7 +514,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	message, err := h.chatClient.SendMessage(ctx, chatID, userID.String(), req.Content, req.ParentID, req.FileLinkIDs)
+	message, err := h.chatClient.SendMessage(ctx, chatID, userID.String(), req.Content, req.ParentID, req.FileLinkIDs, req.ReplyToIDs)
 	if err != nil {
 		h.handleGRPCError(w, err)
 		return
@@ -435,8 +548,19 @@ func (h *ChatHandler) grantFilePermissionsToParticipants(ctx context.Context, ch
 	return h.filesClient.GrantPermissions(ctx, fileLinkIDs, userIDs, uploaderID)
 }
 
-// GetMessages returns chat messages
-// GET /api/chats/{chatId}/messages
+// GetMessages godoc
+// @Summary List chat messages
+// @Description Returns paginated list of messages in a chat
+// @Tags messages
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param page query int false "Page number" default(1)
+// @Param count query int false "Items per page" default(50)
+// @Success 200 {object} MessageListResponse "Messages list"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/messages [get]
 func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -470,8 +594,19 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SyncMessages returns messages after a specific seq_num for reliable sync after reconnect
-// GET /api/chats/{chatId}/messages/sync?after_seq=123&limit=100
+// SyncMessages godoc
+// @Summary Sync messages
+// @Description Returns messages after a specific sequence number for reliable sync after reconnect
+// @Tags messages
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param after_seq query int false "Sequence number to start after" default(0)
+// @Param limit query int false "Max messages to return" default(100)
+// @Success 200 {object} map[string]interface{} "Messages with has_more flag"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/messages/sync [get]
 func (h *ChatHandler) SyncMessages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -505,8 +640,21 @@ func (h *ChatHandler) SyncMessages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateMessage updates a message
-// PUT /api/chats/messages/{messageId}
+// UpdateMessage godoc
+// @Summary Update a message
+// @Description Updates the content of an existing message
+// @Tags messages
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param messageId path string true "Message ID"
+// @Param request body UpdateMessageRequest true "Message update data"
+// @Success 200 {object} MessageResponse "Updated message"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Message not found"
+// @Router /chats/messages/{messageId} [put]
 func (h *ChatHandler) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -535,8 +683,17 @@ func (h *ChatHandler) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusOK, message)
 }
 
-// DeleteMessage deletes a message
-// DELETE /api/chats/messages/{messageId}
+// DeleteMessage godoc
+// @Summary Delete a message
+// @Description Deletes a message from the chat
+// @Tags messages
+// @Security Bearer
+// @Param messageId path string true "Message ID"
+// @Success 204 "Message deleted"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Message not found"
+// @Router /chats/messages/{messageId} [delete]
 func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -555,8 +712,19 @@ func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// AddReaction adds a reaction to message
-// POST /api/chats/messages/{messageId}/reactions
+// AddReaction godoc
+// @Summary Add reaction to message
+// @Description Adds an emoji reaction to a message
+// @Tags messages
+// @Accept json
+// @Security Bearer
+// @Param messageId path string true "Message ID"
+// @Param request body AddReactionRequest true "Reaction data"
+// @Success 201 "Reaction added"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Message not found"
+// @Router /chats/messages/{messageId}/reactions [post]
 func (h *ChatHandler) AddReaction(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -584,8 +752,17 @@ func (h *ChatHandler) AddReaction(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-// RemoveReaction removes a reaction from message
-// DELETE /api/chats/messages/{messageId}/reactions/{emoji}
+// RemoveReaction godoc
+// @Summary Remove reaction from message
+// @Description Removes an emoji reaction from a message
+// @Tags messages
+// @Security Bearer
+// @Param messageId path string true "Message ID"
+// @Param emoji path string true "Emoji to remove"
+// @Success 204 "Reaction removed"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Message or reaction not found"
+// @Router /chats/messages/{messageId}/reactions/{emoji} [delete]
 func (h *ChatHandler) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -605,8 +782,19 @@ func (h *ChatHandler) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ListChatThreads returns threads for a chat
-// GET /api/chats/{chatId}/threads
+// ListChatThreads godoc
+// @Summary List chat threads
+// @Description Returns paginated list of threads in a chat
+// @Tags threads
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param page query int false "Page number" default(1)
+// @Param count query int false "Items per page" default(20)
+// @Success 200 {object} ThreadListResponse "Threads list"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/threads [get]
 func (h *ChatHandler) ListChatThreads(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -637,8 +825,20 @@ func (h *ChatHandler) ListChatThreads(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateChatThread creates a new thread in a chat
-// POST /api/chats/{chatId}/threads
+// CreateChatThread godoc
+// @Summary Create a thread
+// @Description Creates a new thread in a chat
+// @Tags threads
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param request body CreateThreadRequest true "Thread creation data"
+// @Success 201 {object} ThreadResponse "Thread created"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/threads [post]
 func (h *ChatHandler) CreateChatThread(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -686,8 +886,17 @@ func (h *ChatHandler) CreateChatThread(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusCreated, thread)
 }
 
-// GetThreadByID returns a specific thread
-// GET /api/chats/threads/{threadId}
+// GetThreadByID godoc
+// @Summary Get thread by ID
+// @Description Returns detailed information about a specific thread
+// @Tags threads
+// @Produce json
+// @Security Bearer
+// @Param threadId path string true "Thread ID"
+// @Success 200 {object} ThreadResponse "Thread details"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Thread not found"
+// @Router /chats/threads/{threadId} [get]
 func (h *ChatHandler) GetThreadByID(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -707,8 +916,18 @@ func (h *ChatHandler) GetThreadByID(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusOK, thread)
 }
 
-// ArchiveThreadByID archives a thread
-// POST /api/chats/threads/{threadId}/archive
+// ArchiveThreadByID godoc
+// @Summary Archive a thread
+// @Description Archives a thread, making it read-only
+// @Tags threads
+// @Produce json
+// @Security Bearer
+// @Param threadId path string true "Thread ID"
+// @Success 200 {object} ThreadResponse "Archived thread"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Thread not found"
+// @Router /chats/threads/{threadId}/archive [post]
 func (h *ChatHandler) ArchiveThreadByID(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -728,8 +947,17 @@ func (h *ChatHandler) ArchiveThreadByID(w http.ResponseWriter, r *http.Request) 
 	h.respondJSON(w, http.StatusOK, thread)
 }
 
-// CreateThread creates a reply thread from message (backward compatibility)
-// POST /api/chats/messages/{messageId}/thread
+// CreateThread godoc
+// @Summary Create thread from message
+// @Description Creates a reply thread from an existing message (backward compatibility)
+// @Tags threads
+// @Produce json
+// @Security Bearer
+// @Param messageId path string true "Message ID"
+// @Success 201 {object} ThreadResponse "Thread created"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Message not found"
+// @Router /chats/messages/{messageId}/thread [post]
 func (h *ChatHandler) CreateThread(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -757,8 +985,19 @@ func (h *ChatHandler) CreateThread(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusCreated, thread)
 }
 
-// GetThreadMessages returns thread messages
-// GET /api/chats/threads/{threadId}/messages
+// GetThreadMessages godoc
+// @Summary List thread messages
+// @Description Returns paginated list of messages in a thread
+// @Tags threads
+// @Produce json
+// @Security Bearer
+// @Param threadId path string true "Thread ID"
+// @Param page query int false "Page number" default(1)
+// @Param count query int false "Items per page" default(50)
+// @Success 200 {object} MessageListResponse "Messages list"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Thread not found"
+// @Router /chats/threads/{threadId}/messages [get]
 func (h *ChatHandler) GetThreadMessages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -792,8 +1031,20 @@ func (h *ChatHandler) GetThreadMessages(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// AddThreadParticipantHandler adds a participant to a thread
-// POST /api/chats/threads/{threadId}/participants
+// AddThreadParticipantHandler godoc
+// @Summary Add participant to thread
+// @Description Adds a new participant to a thread
+// @Tags threads
+// @Accept json
+// @Security Bearer
+// @Param threadId path string true "Thread ID"
+// @Param request body map[string]string true "User ID to add"
+// @Success 201 "Participant added"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Thread not found"
+// @Router /chats/threads/{threadId}/participants [post]
 func (h *ChatHandler) AddThreadParticipantHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -821,8 +1072,18 @@ func (h *ChatHandler) AddThreadParticipantHandler(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusCreated)
 }
 
-// RemoveThreadParticipantHandler removes a participant from a thread
-// DELETE /api/chats/threads/{threadId}/participants/{userId}
+// RemoveThreadParticipantHandler godoc
+// @Summary Remove participant from thread
+// @Description Removes a participant from a thread
+// @Tags threads
+// @Security Bearer
+// @Param threadId path string true "Thread ID"
+// @Param userId path string true "User ID to remove"
+// @Success 204 "Participant removed"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "Thread or user not found"
+// @Router /chats/threads/{threadId}/participants/{userId} [delete]
 func (h *ChatHandler) RemoveThreadParticipantHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -842,8 +1103,17 @@ func (h *ChatHandler) RemoveThreadParticipantHandler(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ListThreadParticipantsHandler returns thread participants
-// GET /api/chats/threads/{threadId}/participants
+// ListThreadParticipantsHandler godoc
+// @Summary List thread participants
+// @Description Returns list of participants in a thread
+// @Tags threads
+// @Produce json
+// @Security Bearer
+// @Param threadId path string true "Thread ID"
+// @Success 200 {object} map[string]interface{} "Participants list"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Thread not found"
+// @Router /chats/threads/{threadId}/participants [get]
 func (h *ChatHandler) ListThreadParticipantsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_, ok := middleware.GetUserID(ctx)
@@ -865,8 +1135,19 @@ func (h *ChatHandler) ListThreadParticipantsHandler(w http.ResponseWriter, r *ht
 	})
 }
 
-// ListSubthreads returns subthreads of a thread
-// GET /api/chats/threads/{threadId}/subthreads
+// ListSubthreads godoc
+// @Summary List subthreads
+// @Description Returns paginated list of subthreads within a parent thread
+// @Tags threads
+// @Produce json
+// @Security Bearer
+// @Param threadId path string true "Parent Thread ID"
+// @Param page query int false "Page number" default(1)
+// @Param count query int false "Items per page" default(20)
+// @Success 200 {object} map[string]interface{} "Subthreads list"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Thread not found"
+// @Router /chats/threads/{threadId}/subthreads [get]
 func (h *ChatHandler) ListSubthreads(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -901,8 +1182,20 @@ func (h *ChatHandler) ListSubthreads(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateSubthread creates a subthread under a parent thread
-// POST /api/chats/threads/{threadId}/subthreads
+// CreateSubthread godoc
+// @Summary Create subthread
+// @Description Creates a new subthread under a parent thread
+// @Tags threads
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param threadId path string true "Parent Thread ID"
+// @Param request body map[string]string true "Subthread data"
+// @Success 201 {object} ThreadResponse "Subthread created"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Parent thread not found"
+// @Router /chats/threads/{threadId}/subthreads [post]
 func (h *ChatHandler) CreateSubthread(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -936,8 +1229,16 @@ func (h *ChatHandler) CreateSubthread(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusCreated, thread)
 }
 
-// AddToFavorites adds chat to favorites
-// POST /api/chats/{chatId}/favorite
+// AddToFavorites godoc
+// @Summary Add chat to favorites
+// @Description Adds a chat to user's favorites list
+// @Tags chats
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Success 201 "Added to favorites"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/favorite [post]
 func (h *ChatHandler) AddToFavorites(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -956,8 +1257,16 @@ func (h *ChatHandler) AddToFavorites(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-// RemoveFromFavorites removes chat from favorites
-// DELETE /api/chats/{chatId}/favorite
+// RemoveFromFavorites godoc
+// @Summary Remove chat from favorites
+// @Description Removes a chat from user's favorites list
+// @Tags chats
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Success 204 "Removed from favorites"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/favorite [delete]
 func (h *ChatHandler) RemoveFromFavorites(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -976,8 +1285,16 @@ func (h *ChatHandler) RemoveFromFavorites(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ArchiveChat archives a chat
-// POST /api/chats/{chatId}/archive
+// ArchiveChat godoc
+// @Summary Archive chat
+// @Description Archives a chat for the current user
+// @Tags chats
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Success 200 "Chat archived"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/archive [post]
 func (h *ChatHandler) ArchiveChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -996,8 +1313,16 @@ func (h *ChatHandler) ArchiveChat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// UnarchiveChat unarchives a chat
-// DELETE /api/chats/{chatId}/archive
+// UnarchiveChat godoc
+// @Summary Unarchive chat
+// @Description Removes a chat from user's archive
+// @Tags chats
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Success 200 "Chat unarchived"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/archive [delete]
 func (h *ChatHandler) UnarchiveChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -1016,8 +1341,19 @@ func (h *ChatHandler) UnarchiveChat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// SendTypingIndicator sends typing status
-// POST /api/chats/{chatId}/typing
+// SendTypingIndicator godoc
+// @Summary Send typing indicator
+// @Description Sends typing status to notify other chat participants
+// @Tags chats
+// @Accept json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param request body map[string]bool true "Typing status"
+// @Success 200 "Typing indicator sent"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 404 {object} ErrorResponse "Chat not found"
+// @Router /chats/{chatId}/typing [post]
 func (h *ChatHandler) SendTypingIndicator(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)
@@ -1046,8 +1382,21 @@ func (h *ChatHandler) SendTypingIndicator(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 }
 
-// ForwardMessage forwards a message to another chat
-// POST /api/chats/messages/{messageId}/forward
+// ForwardMessage godoc
+// @Summary Forward a message
+// @Description Forwards an existing message to another chat
+// @Tags messages
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param messageId path string true "Message ID to forward"
+// @Param request body ForwardMessageRequest true "Forward destination"
+// @Success 201 {object} MessageResponse "Forwarded message"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied (guests cannot forward)"
+// @Failure 404 {object} ErrorResponse "Message or target chat not found"
+// @Router /chats/messages/{messageId}/forward [post]
 func (h *ChatHandler) ForwardMessage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := middleware.GetUserID(ctx)

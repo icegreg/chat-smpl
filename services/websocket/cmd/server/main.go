@@ -42,12 +42,20 @@ func main() {
 		HMACSecret: centrifugoSecret,
 	})
 
-	// Create consumer
-	cons := consumer.New(rmqConn, centrifugoClient)
+	// Create chat consumer
+	chatConsumer := consumer.New(rmqConn, centrifugoClient)
 
-	// Setup queue bindings
-	if err := cons.Setup(); err != nil {
-		logger.Fatal("failed to setup consumer", zap.Error(err))
+	// Setup chat queue bindings
+	if err := chatConsumer.Setup(); err != nil {
+		logger.Fatal("failed to setup chat consumer", zap.Error(err))
+	}
+
+	// Create voice consumer
+	voiceConsumer := consumer.NewVoiceConsumer(rmqConn, centrifugoClient)
+
+	// Setup voice queue bindings
+	if err := voiceConsumer.Setup(); err != nil {
+		logger.Fatal("failed to setup voice consumer", zap.Error(err))
 	}
 
 	// Create context with cancellation
@@ -64,10 +72,18 @@ func main() {
 		cancel()
 	}()
 
-	// Start consuming
+	// Start chat consumer in goroutine
+	go func() {
+		logger.Info("starting chat consumer...")
+		if err := chatConsumer.Start(ctx); err != nil && err != context.Canceled {
+			logger.Error("chat consumer error", zap.Error(err))
+		}
+	}()
+
+	// Start voice consumer
 	logger.Info("websocket-service started, waiting for events...")
-	if err := cons.Start(ctx); err != nil && err != context.Canceled {
-		logger.Error("consumer error", zap.Error(err))
+	if err := voiceConsumer.Start(ctx); err != nil && err != context.Canceled {
+		logger.Error("voice consumer error", zap.Error(err))
 	}
 
 	logger.Info("websocket-service stopped")

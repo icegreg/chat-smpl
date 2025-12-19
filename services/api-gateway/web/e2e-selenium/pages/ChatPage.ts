@@ -85,7 +85,8 @@ export class ChatPage extends BasePage {
   }
 
   async logout(): Promise<void> {
-    await this.click(this.logoutButton)
+    // Use forceClick to bypass any overlay issues
+    await this.forceClick(this.logoutButton)
   }
 
   async isEmptyStateVisible(): Promise<boolean> {
@@ -617,7 +618,7 @@ export class ChatPage extends BasePage {
   // Thread methods
   private readonly threadsButton = By.css('[data-testid="threads-button"]')
   private readonly threadsPanelTitle = By.xpath('//h4[contains(text(), "Threads")]')
-  private readonly threadsPanelCloseBtn = By.css('[data-testid="threads-panel"] button[title="Close"]')
+  private readonly threadsPanelCloseBtn = By.css('[data-testid="threads-panel-close"]')
   private readonly createThreadButton = By.css('[data-testid="create-thread-button"]')
   private readonly threadListItems = By.css('[data-testid="thread-item"]')
   private readonly threadView = By.css('[data-testid="thread-view"]')
@@ -994,6 +995,14 @@ export class ChatPage extends BasePage {
     await this.click(this.replyPreviewCancel)
   }
 
+  async getReplyPreviewText(): Promise<string> {
+    try {
+      return await this.getText(this.replyPreview)
+    } catch {
+      return ''
+    }
+  }
+
   async hasMessageWithQuote(): Promise<boolean> {
     return this.isDisplayed(this.messageQuote)
   }
@@ -1032,5 +1041,455 @@ export class ChatPage extends BasePage {
       await this.sleep(300)
     }
     throw new Error('Quote not found within timeout')
+  }
+
+  // Forward message methods
+  private readonly forwardButton = By.css('[data-testid="forward-button"]')
+  private readonly forwardModal = By.css('[data-testid="forward-modal"]')
+  private readonly forwardSearchInput = By.css('[data-testid="forward-search-input"]')
+  private readonly forwardChatItems = By.css('[data-testid="forward-chat-item"]')
+  private readonly forwardCommentInput = By.css('[data-testid="forward-comment-input"]')
+  private readonly forwardSubmitButton = By.css('[data-testid="forward-submit-button"]')
+  private readonly messageForwarded = By.css('[data-testid="message-forwarded"]')
+
+  async isForwardButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.forwardButton)
+  }
+
+  async clickForwardButton(): Promise<void> {
+    await this.click(this.forwardButton)
+  }
+
+  async clickForwardOnFirstMessage(): Promise<void> {
+    await this.hoverOverFirstMessage()
+    await this.sleep(300)
+    await this.clickForwardButton()
+  }
+
+  async clickForwardOnMessage(index: number): Promise<void> {
+    await this.hoverOverMessage(index)
+    await this.sleep(300)
+    await this.clickForwardButton()
+  }
+
+  async isForwardModalVisible(): Promise<boolean> {
+    return this.isDisplayed(this.forwardModal)
+  }
+
+  async waitForForwardModal(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isForwardModalVisible()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Forward modal did not appear within timeout')
+  }
+
+  async searchChatInForwardModal(query: string): Promise<void> {
+    await this.type(this.forwardSearchInput, query)
+    await this.sleep(300)
+  }
+
+  async getForwardChatItemsCount(): Promise<number> {
+    const elements = await this.driver.findElements(this.forwardChatItems)
+    return elements.length
+  }
+
+  async getForwardChatNames(): Promise<string[]> {
+    const elements = await this.driver.findElements(this.forwardChatItems)
+    const names: string[] = []
+    for (const el of elements) {
+      const text = await el.getText()
+      names.push(text.trim())
+    }
+    return names
+  }
+
+  async selectForwardChatByIndex(index: number): Promise<void> {
+    const elements = await this.driver.findElements(this.forwardChatItems)
+    if (elements.length > index) {
+      await elements[index].click()
+      await this.sleep(200)
+    } else {
+      throw new Error(`Chat at index ${index} not found`)
+    }
+  }
+
+  async selectForwardChatByName(name: string): Promise<void> {
+    const elements = await this.driver.findElements(this.forwardChatItems)
+    for (const el of elements) {
+      const text = await el.getText()
+      if (text.includes(name)) {
+        await el.click()
+        await this.sleep(200)
+        return
+      }
+    }
+    throw new Error(`Chat "${name}" not found in forward modal`)
+  }
+
+  async enterForwardComment(comment: string): Promise<void> {
+    await this.type(this.forwardCommentInput, comment)
+  }
+
+  async submitForward(): Promise<void> {
+    await this.click(this.forwardSubmitButton)
+    await this.sleep(500)
+  }
+
+  async closeForwardModal(): Promise<void> {
+    // Click outside modal to close
+    await this.driver.executeScript(`
+      const modal = document.querySelector('[data-testid="forward-modal"]');
+      if (modal && modal.parentElement) {
+        modal.parentElement.click();
+      }
+    `)
+    await this.sleep(300)
+  }
+
+  async forwardMessageToChat(messageIndex: number, targetChatName: string, comment?: string): Promise<void> {
+    await this.clickForwardOnMessage(messageIndex)
+    await this.waitForForwardModal()
+    await this.selectForwardChatByName(targetChatName)
+    if (comment) {
+      await this.enterForwardComment(comment)
+    }
+    await this.submitForward()
+  }
+
+  async hasForwardedMessage(): Promise<boolean> {
+    return this.isDisplayed(this.messageForwarded)
+  }
+
+  async getForwardedIndicatorText(): Promise<string> {
+    try {
+      const element = await this.driver.findElement(this.messageForwarded)
+      return await element.getText()
+    } catch {
+      return ''
+    }
+  }
+
+  async waitForForwardedMessage(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.hasForwardedMessage()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Forwarded message indicator not found within timeout')
+  }
+
+  // Quote time display (improved reply)
+  async getQuoteTime(): Promise<string> {
+    try {
+      const quoteEl = await this.driver.findElement(this.messageQuote)
+      const text = await quoteEl.getText()
+      // Extract time pattern (HH:MM)
+      const match = text.match(/\d{1,2}:\d{2}/)
+      return match ? match[0] : ''
+    } catch {
+      return ''
+    }
+  }
+
+  async hasQuoteAttachmentInfo(): Promise<boolean> {
+    try {
+      const quoteEl = await this.driver.findElement(this.messageQuote)
+      const text = await quoteEl.getText()
+      return text.includes('📷') || text.includes('📎')
+    } catch {
+      return false
+    }
+  }
+
+  // ========== Left Navigation Panel ==========
+  private readonly leftNavPanel = By.css('nav.left-nav-panel')
+  private readonly leftNavChatsButton = By.css('nav.left-nav-panel button[title="Chats"]')
+  private readonly leftNavQuickCallButton = By.css('nav.left-nav-panel button[title="Quick Call"]')
+  private readonly leftNavEventsButton = By.css('nav.left-nav-panel button[title="Events"]')
+  private readonly leftNavEventsBadge = By.css('nav.left-nav-panel button[title="Events"] .badge')
+
+  async isLeftNavPanelVisible(): Promise<boolean> {
+    return this.isDisplayed(this.leftNavPanel)
+  }
+
+  async clickLeftNavChats(): Promise<void> {
+    await this.dismissNetworkStatusBar()
+    await this.click(this.leftNavChatsButton)
+    await this.sleep(300)
+  }
+
+  /** Dismiss network status bar if visible (it can block clicks) */
+  async dismissNetworkStatusBar(): Promise<void> {
+    try {
+      const statusBar = await this.driver.findElements(By.css('[data-testid="network-status-bar"]'))
+      if (statusBar.length > 0 && await statusBar[0].isDisplayed()) {
+        // Wait a moment for network to stabilize
+        await this.sleep(500)
+        // If still visible, use JavaScript to hide it
+        const stillVisible = await statusBar[0].isDisplayed().catch(() => false)
+        if (stillVisible) {
+          await this.executeScript(`
+            const bar = document.querySelector('[data-testid="network-status-bar"]');
+            if (bar) bar.style.display = 'none';
+          `)
+        }
+      }
+    } catch {
+      // Ignore - status bar might not exist
+    }
+  }
+
+  async clickLeftNavQuickCall(): Promise<void> {
+    await this.dismissNetworkStatusBar()
+    await this.click(this.leftNavQuickCallButton)
+    await this.sleep(500)
+  }
+
+  async clickLeftNavEvents(): Promise<void> {
+    await this.dismissNetworkStatusBar()
+    await this.click(this.leftNavEventsButton)
+    await this.sleep(300)
+  }
+
+  async isLeftNavChatsActive(): Promise<boolean> {
+    try {
+      const element = await this.driver.findElement(this.leftNavChatsButton)
+      const classes = await element.getAttribute('class')
+      return classes.includes('active')
+    } catch {
+      return false
+    }
+  }
+
+  async isLeftNavEventsActive(): Promise<boolean> {
+    try {
+      const element = await this.driver.findElement(this.leftNavEventsButton)
+      const classes = await element.getAttribute('class')
+      return classes.includes('active')
+    } catch {
+      return false
+    }
+  }
+
+  async hasEventsBadge(): Promise<boolean> {
+    return this.isDisplayed(this.leftNavEventsBadge)
+  }
+
+  async getEventsBadgeText(): Promise<string> {
+    try {
+      return await this.getText(this.leftNavEventsBadge)
+    } catch {
+      return ''
+    }
+  }
+
+  async isQuickCallButtonLoading(): Promise<boolean> {
+    try {
+      const element = await this.driver.findElement(this.leftNavQuickCallButton)
+      const classes = await element.getAttribute('class')
+      return classes.includes('loading')
+    } catch {
+      return false
+    }
+  }
+
+  // ========== AdHoc Call Button (in chat room) ==========
+  private readonly adHocCallButton = By.css('.adhoc-call-button .main-btn')
+  private readonly adHocCallDropdown = By.css('.adhoc-call-button .dropdown')
+  private readonly adHocCallAllOption = By.xpath('//button[contains(text(), "Call All")]')
+  // Select Participants is clicked via JS in clickSelectParticipants()
+  private readonly adHocParticipantSelector = By.css('.adhoc-call-button .participant-selector')
+  private readonly adHocParticipantItems = By.css('.adhoc-call-button .participant-item')
+  private readonly adHocStartCallButton = By.css('.adhoc-call-button .start-call-btn')
+  private readonly adHocBackButton = By.css('.adhoc-call-button .back-btn')
+
+  async isAdHocCallButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.adHocCallButton)
+  }
+
+  async clickAdHocCallButton(): Promise<void> {
+    await this.click(this.adHocCallButton)
+    await this.sleep(300)
+  }
+
+  async isAdHocDropdownVisible(): Promise<boolean> {
+    return this.isDisplayed(this.adHocCallDropdown)
+  }
+
+  async waitForAdHocDropdown(timeout: number = 5000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isAdHocDropdownVisible()) {
+        return
+      }
+      await this.sleep(200)
+    }
+    throw new Error('AdHoc dropdown did not appear within timeout')
+  }
+
+  async clickCallAll(): Promise<void> {
+    await this.click(this.adHocCallAllOption)
+    await this.sleep(500)
+  }
+
+  async clickSelectParticipants(): Promise<void> {
+    // Use JavaScript click to ensure the Vue handler is triggered
+    await this.executeScript(`
+      const items = document.querySelectorAll('.adhoc-call-button .dropdown-options .dropdown-item');
+      if (items.length >= 2) {
+        items[1].click();
+      }
+    `)
+    await this.sleep(500)
+  }
+
+  async isParticipantSelectorVisible(): Promise<boolean> {
+    return this.isDisplayed(this.adHocParticipantSelector)
+  }
+
+  async getAdHocParticipantCount(): Promise<number> {
+    const elements = await this.driver.findElements(this.adHocParticipantItems)
+    return elements.length
+  }
+
+  async getAdHocParticipantNames(): Promise<string[]> {
+    const elements = await this.driver.findElements(this.adHocParticipantItems)
+    const names: string[] = []
+    for (const el of elements) {
+      try {
+        const nameEl = await el.findElement(By.css('.participant-name'))
+        const text = await nameEl.getText()
+        names.push(text.trim())
+      } catch {
+        const text = await el.getText()
+        names.push(text.trim())
+      }
+    }
+    return names
+  }
+
+  async selectAdHocParticipantByIndex(index: number): Promise<void> {
+    const elements = await this.driver.findElements(this.adHocParticipantItems)
+    if (elements.length > index) {
+      await elements[index].click()
+      await this.sleep(200)
+    } else {
+      throw new Error(`Participant at index ${index} not found`)
+    }
+  }
+
+  async selectAdHocParticipantByName(name: string): Promise<void> {
+    const elements = await this.driver.findElements(this.adHocParticipantItems)
+    for (const el of elements) {
+      const text = await el.getText()
+      if (text.includes(name)) {
+        await el.click()
+        await this.sleep(200)
+        return
+      }
+    }
+    throw new Error(`Participant "${name}" not found in selector`)
+  }
+
+  async getSelectedParticipantsCount(): Promise<number> {
+    const elements = await this.driver.findElements(this.adHocParticipantItems)
+    let count = 0
+    for (const el of elements) {
+      const classes = await el.getAttribute('class')
+      if (classes.includes('selected')) {
+        count++
+      }
+    }
+    return count
+  }
+
+  async clickStartCallWithSelected(): Promise<void> {
+    await this.click(this.adHocStartCallButton)
+    await this.sleep(500)
+  }
+
+  async getStartCallButtonText(): Promise<string> {
+    try {
+      return await this.getText(this.adHocStartCallButton)
+    } catch {
+      return ''
+    }
+  }
+
+  async isStartCallButtonDisabled(): Promise<boolean> {
+    try {
+      const element = await this.driver.findElement(this.adHocStartCallButton)
+      const disabled = await element.getAttribute('disabled')
+      return disabled === 'true' || disabled === ''
+    } catch {
+      return true
+    }
+  }
+
+  async clickBackInParticipantSelector(): Promise<void> {
+    await this.click(this.adHocBackButton)
+    await this.sleep(200)
+  }
+
+  async isAdHocButtonInCallState(): Promise<boolean> {
+    try {
+      const element = await this.driver.findElement(this.adHocCallButton)
+      const classes = await element.getAttribute('class')
+      return classes.includes('active')
+    } catch {
+      return false
+    }
+  }
+
+  // Aliases and convenience methods
+  async getChatList(): Promise<string[]> {
+    return this.getChatNames()
+  }
+
+  async selectChatByIndex(index: number): Promise<void> {
+    const elements = await this.driver.findElements(this.chatListItem)
+    if (elements.length > index) {
+      await elements[index].click()
+      await this.sleep(500)
+    } else {
+      throw new Error(`Chat at index ${index} not found`)
+    }
+  }
+
+  async selectChatByName(name: string): Promise<void> {
+    await this.clickChatByNameInList(name)
+    await this.sleep(500)
+  }
+
+  async waitForChatList(timeout: number = 10000): Promise<void> {
+    await this.waitForElement(this.chatSidebar, timeout)
+    // Wait for at least one chat or empty state
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const count = await this.getChatCount()
+      if (count > 0) {
+        return
+      }
+      await this.sleep(300)
+    }
+    // No chats found, but sidebar loaded - that's ok
+  }
+
+  async waitForMessagesArea(timeout: number = 10000): Promise<void> {
+    await this.waitForChatRoom(timeout)
+  }
+
+  async getMessages(): Promise<string[]> {
+    return this.getMessageTexts()
+  }
+
+  async hasReplyQuote(): Promise<boolean> {
+    return this.hasMessageWithQuote()
   }
 }

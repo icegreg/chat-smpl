@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/icegreg/chat-smpl/pkg/jwt"
 	"github.com/icegreg/chat-smpl/pkg/password"
+	"github.com/icegreg/chat-smpl/services/users/internal/avatar"
 	"github.com/icegreg/chat-smpl/services/users/internal/model"
 	"github.com/icegreg/chat-smpl/services/users/internal/repository"
 )
@@ -20,11 +20,9 @@ var (
 	ErrAccessDenied       = errors.New("access denied")
 )
 
-// generateCatAvatarURL generates a random cat avatar URL based on user ID
-func generateCatAvatarURL(userID uuid.UUID) string {
-	// Use user ID as seed for consistent avatar per user
-	seed := strings.ReplaceAll(userID.String(), "-", "")[:8]
-	return fmt.Sprintf("https://cataas.com/cat?width=128&height=128&%s", seed)
+// generateLocalAvatarURL returns the local URL for a user's avatar
+func generateLocalAvatarURL(userID uuid.UUID) string {
+	return fmt.Sprintf("/api/users/avatars/%s", avatar.GetFilename(userID))
 }
 
 type UserService interface {
@@ -42,17 +40,23 @@ type UserService interface {
 	UpdateRole(ctx context.Context, id uuid.UUID, role model.Role) (*model.UserDTO, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	ChangePassword(ctx context.Context, id uuid.UUID, req model.ChangePasswordRequest) error
+
+	// Avatars
+	GetAvatarPath(userID uuid.UUID) string
+	RegenerateMissingAvatars(ctx context.Context) (int, error)
 }
 
 type userService struct {
-	repo       repository.UserRepository
-	jwtManager *jwt.Manager
+	repo            repository.UserRepository
+	jwtManager      *jwt.Manager
+	avatarGenerator *avatar.Generator
 }
 
-func NewUserService(repo repository.UserRepository, jwtManager *jwt.Manager) UserService {
+func NewUserService(repo repository.UserRepository, jwtManager *jwt.Manager, avatarsPath string) UserService {
 	return &userService{
-		repo:       repo,
-		jwtManager: jwtManager,
+		repo:            repo,
+		jwtManager:      jwtManager,
+		avatarGenerator: avatar.NewGenerator(avatarsPath),
 	}
 }
 
@@ -194,16 +198,10 @@ func (s *userService) Create(ctx context.Context, req model.CreateUserRequest) (
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Generate a temporary UUID to create avatar URL
-	// The actual ID will be set by repository.Create
-	tempID := uuid.New()
-	avatarURL := generateCatAvatarURL(tempID)
-
 	user := &model.User{
 		Username:     req.Username,
 		Email:        req.Email,
 		DisplayName:  req.DisplayName,
-		AvatarURL:    &avatarURL,
 		PasswordHash: hashedPassword,
 		Role:         req.Role,
 	}
@@ -212,11 +210,15 @@ func (s *userService) Create(ctx context.Context, req model.CreateUserRequest) (
 		return nil, err
 	}
 
-	// Update avatar URL with actual user ID
-	actualAvatarURL := generateCatAvatarURL(user.ID)
-	user.AvatarURL = &actualAvatarURL
+	// Generate local avatar file
+	if err := s.avatarGenerator.Generate(user.ID); err != nil {
+		fmt.Printf("warning: failed to generate avatar: %v\n", err)
+	}
+
+	// Set avatar URL to local path
+	avatarURL := generateLocalAvatarURL(user.ID)
+	user.AvatarURL = &avatarURL
 	if err := s.repo.Update(ctx, user); err != nil {
-		// Not critical, user already created
 		fmt.Printf("warning: failed to update avatar URL: %v\n", err)
 	}
 
@@ -322,4 +324,59 @@ func (s *userService) ChangePassword(ctx context.Context, id uuid.UUID, req mode
 
 	user.PasswordHash = hashedPassword
 	return s.repo.Update(ctx, user)
+}
+
+// GetAvatarPath returns the filesystem path to a user's avatar
+func (s *userService) GetAvatarPath(userID uuid.UUID) string {
+	return s.avatarGenerator.GetPath(userID)
+}
+
+// RegenerateMissingAvatars checks all users and regenerates avatars for those missing files
+func (s *userService) RegenerateMissingAvatars(ctx context.Context) (int, error) {
+	// Get all users
+	users, _, err := s.repo.List(ctx, 1, 10000) // Get all users
+	if err != nil {
+		return 0, fmt.Errorf("failed to list users: %w", err)
+	}
+
+	regenerated := 0
+	for _, user := range users {
+		// Check if user has avatar URL but file doesn't exist
+		if user.AvatarURL != nil && *user.AvatarURL != "" {
+			if !s.avatarGenerator.Exists(user.ID) {
+				// Regenerate avatar
+				if err := s.avatarGenerator.Generate(user.ID); err != nil {
+					fmt.Printf("warning: failed to regenerate avatar for user %s: %v\n", user.ID, err)
+					continue
+				}
+
+				// Update avatar URL to local path
+				avatarURL := generateLocalAvatarURL(user.ID)
+				user.AvatarURL = &avatarURL
+				if err := s.repo.Update(ctx, &user); err != nil {
+					fmt.Printf("warning: failed to update avatar URL for user %s: %v\n", user.ID, err)
+				}
+
+				regenerated++
+				fmt.Printf("Regenerated avatar for user %s (%s)\n", user.Username, user.ID)
+			}
+		} else {
+			// User doesn't have avatar at all - generate one
+			if err := s.avatarGenerator.Generate(user.ID); err != nil {
+				fmt.Printf("warning: failed to generate avatar for user %s: %v\n", user.ID, err)
+				continue
+			}
+
+			avatarURL := generateLocalAvatarURL(user.ID)
+			user.AvatarURL = &avatarURL
+			if err := s.repo.Update(ctx, &user); err != nil {
+				fmt.Printf("warning: failed to update avatar URL for user %s: %v\n", user.ID, err)
+			}
+
+			regenerated++
+			fmt.Printf("Generated avatar for user %s (%s)\n", user.Username, user.ID)
+		}
+	}
+
+	return regenerated, nil
 }

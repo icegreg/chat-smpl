@@ -34,3 +34,7 @@ nul
 
 # Temp files
 /tmp/
+
+# Docker volumes (local data)
+avatars/
+**/avatars/

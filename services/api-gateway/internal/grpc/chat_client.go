@@ -131,13 +131,14 @@ func (c *ChatClient) ListParticipants(ctx context.Context, chatID string, page, 
 
 // Message operations
 
-func (c *ChatClient) SendMessage(ctx context.Context, chatID, senderID, content string, parentID string, fileLinkIDs []string) (*pb.Message, error) {
+func (c *ChatClient) SendMessage(ctx context.Context, chatID, senderID, content string, parentID string, fileLinkIDs, replyToIDs []string) (*pb.Message, error) {
 	return c.client.SendMessage(ctx, &pb.SendMessageRequest{
 		ChatId:      chatID,
 		SenderId:    senderID,
 		Content:     content,
 		ParentId:    parentID,
 		FileLinkIds: fileLinkIDs,
+		ReplyToIds:  replyToIDs,
 	})
 }
 

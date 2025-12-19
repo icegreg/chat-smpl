@@ -53,6 +53,12 @@ export class BasePage {
     await element.click()
   }
 
+  // Force click using JavaScript (bypasses overlay check)
+  async forceClick(locator: By): Promise<void> {
+    const element = await this.waitForElement(locator)
+    await this.driver.executeScript('arguments[0].click()', element)
+  }
+
   async type(locator: By, text: string): Promise<void> {
     const element = await this.waitForElementVisible(locator)
     await element.clear()

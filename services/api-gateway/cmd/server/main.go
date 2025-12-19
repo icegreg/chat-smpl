@@ -1,3 +1,37 @@
+// @title Chat-SMPL API
+// @version 1.0.0
+// @description Микросервисное чат-приложение с JWT авторизацией, gRPC коммуникацией и real-time обновлениями
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.email support@chat-smpl.local
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8888
+// @BasePath /api
+
+// @securityDefinitions.apikey Bearer
+// @in header
+// @name Authorization
+// @description JWT Bearer token. Format: "Bearer {token}"
+
+// @tag.name auth
+// @tag.description Аутентификация и управление пользователями
+// @tag.name chats
+// @tag.description Операции с чатами
+// @tag.name messages
+// @tag.description Операции с сообщениями
+// @tag.name threads
+// @tag.description Операции с потоками (threads)
+// @tag.name files
+// @tag.description Загрузка и скачивание файлов
+// @tag.name presence
+// @tag.description Статус присутствия пользователей
+// @tag.name centrifugo
+// @tag.description WebSocket токены для real-time
+
 package main
 
 import (
@@ -10,11 +44,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	"github.com/icegreg/chat-smpl/pkg/jwt"
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	"github.com/icegreg/chat-smpl/pkg/metrics"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/centrifugo"
+	_ "github.com/icegreg/chat-smpl/services/api-gateway/docs" // swagger docs
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/files"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/handler"
@@ -57,6 +93,16 @@ func main() {
 
 	log.Info("connected to presence service", "addr", presenceServiceAddr)
 
+	// Initialize gRPC voice client
+	voiceServiceAddr := getEnv("VOICE_SERVICE_ADDR", "localhost:50054")
+	voiceClient, err := grpc.NewVoiceClient(voiceServiceAddr)
+	if err != nil {
+		log.Fatal("failed to connect to voice service", "error", err)
+	}
+	defer voiceClient.Close()
+
+	log.Info("connected to voice service", "addr", voiceServiceAddr)
+
 	// Initialize Centrifugo client
 	centrifugoAPIURL := getEnv("CENTRIFUGO_API_URL", "http://localhost:8000/api")
 	centrifugoAPIKey := getEnv("CENTRIFUGO_API_KEY", "your-api-key")
@@ -81,6 +127,7 @@ func main() {
 	centrifugoHandler := handler.NewCentrifugoHandler(centrifugoClient, log)
 	filesHandler := handler.NewFilesHandler(filesServiceURL, log)
 	presenceHandler := handler.NewPresenceHandler(presenceClient, log)
+	voiceHandler := handler.NewVoiceHandler(voiceClient, log)
 
 	// Create router
 	r := chi.NewRouter()
@@ -106,6 +153,14 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	// Swagger UI
+	r.Get("/swagger/*", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+		httpSwagger.DeepLinking(true),
+		httpSwagger.DocExpansion("none"),
+		httpSwagger.DomID("swagger-ui"),
+	))
 
 	// API routes
 	r.Route("/api", func(r chi.Router) {
@@ -148,6 +203,12 @@ func main() {
 		r.Route("/presence", func(r chi.Router) {
 			r.Use(authMiddleware.Authenticate)
 			r.Mount("/", presenceHandler.Routes())
+		})
+
+		// Voice routes (protected)
+		r.Route("/voice", func(r chi.Router) {
+			r.Use(authMiddleware.Authenticate)
+			r.Mount("/", voiceHandler.Routes())
 		})
 	})
 

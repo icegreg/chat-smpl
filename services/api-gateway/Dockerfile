@@ -12,20 +12,36 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git protobuf protobuf-dev
 
 COPY go.mod go.sum ./
+COPY proto/voice/go.mod proto/voice/go.sum* proto/voice/
 RUN go mod download
+
+# Install protoc plugins
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
 
 COPY . .
 
-# Add prometheus client for metrics and tidy
-RUN go get github.com/prometheus/client_golang/prometheus \
-    github.com/prometheus/client_golang/prometheus/promauto \
-    github.com/prometheus/client_golang/prometheus/promhttp && \
-    go mod tidy
+# Generate voice proto files
+RUN protoc -I /usr/include -I . \
+    --go_out=. --go_opt=paths=source_relative \
+    --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+    proto/voice/*.proto
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o api-gateway ./services/api-gateway/cmd/server
+# Install swag for swagger generation
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
+# Generate swagger docs
+RUN cd services/api-gateway && swag init -g cmd/server/main.go -o docs --parseDependency --parseInternal
+
+# Verify proto files were generated and add dependencies
+RUN ls -la proto/voice/ && \
+    go get github.com/swaggo/swag@latest github.com/swaggo/http-swagger/v2@latest
+
+# Build with GOPROXY=direct to skip module proxy
+RUN CGO_ENABLED=0 GOOS=linux GOPROXY=direct go build -a -installsuffix cgo -o api-gateway ./services/api-gateway/cmd/server
 
 FROM alpine:latest
 

@@ -1,4 +1,4 @@
-.PHONY: all build test clean docker-up docker-down docker-build migrate proto lint help
+.PHONY: all build test clean docker-up docker-down docker-build migrate proto proto-doc swagger lint help
 
 # Go parameters
 GOCMD=go
@@ -120,10 +120,31 @@ proto: ## Generate protobuf code
 	$(PROTOC) --go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		$(PROTO_DIR)/files/*.proto
+	$(PROTOC) --go_out=. --go_opt=paths=source_relative \
+		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+		$(PROTO_DIR)/voice/*.proto
 
 proto-install: ## Install protoc plugins
 	$(GOGET) google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	$(GOGET) google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+proto-doc: ## Generate HTML documentation from proto files
+	$(PROTOC) --doc_out=./docs --doc_opt=html,proto-docs.html \
+		$(PROTO_DIR)/chat/*.proto $(PROTO_DIR)/presence/*.proto $(PROTO_DIR)/files/*.proto $(PROTO_DIR)/voice/*.proto
+
+proto-doc-install: ## Install protoc-gen-doc plugin
+	$(GOCMD) install github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc@latest
+
+# ==================== Swagger ====================
+
+swagger: ## Generate Swagger documentation for API Gateway
+	cd $(SERVICES_DIR)/api-gateway && swag init -g cmd/server/main.go -o docs --parseDependency --parseInternal
+
+swagger-install: ## Install swag CLI tool
+	$(GOCMD) install github.com/swaggo/swag/cmd/swag@latest
+
+swagger-fmt: ## Format swagger annotations
+	cd $(SERVICES_DIR)/api-gateway && swag fmt
 
 # ==================== Database ====================
 

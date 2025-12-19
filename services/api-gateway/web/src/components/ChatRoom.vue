@@ -7,6 +7,9 @@ import MessageItem from './MessageItem.vue'
 import ParticipantsPanel from './ParticipantsPanel.vue'
 import ThreadList from './ThreadList.vue'
 import ThreadView from './ThreadView.vue'
+import ForwardMessageModal from './ForwardMessageModal.vue'
+import AdHocCallButton from './voice/AdHocCallButton.vue'
+import ScheduledEventWidget from './voice/ScheduledEventWidget.vue'
 
 const props = defineProps<{
   chat: Chat
@@ -26,7 +29,9 @@ const selectedThread = ref<Thread | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const pendingFiles = ref<{ file: File; linkId: string; uploading: boolean }[]>([])
 const isUploading = ref(false)
-const replyToMessage = ref<Message | null>(null)
+const replyToMessages = ref<Message[]>([])  // Support multiple replies
+const forwardMessage = ref<Message | null>(null)
+const showForwardModal = ref(false)
 
 const TYPING_SEND_INTERVAL = 5000 // Send typing indicator every 5 seconds
 
@@ -136,16 +141,16 @@ async function sendMessage() {
 
   const savedContent = messageInput.value
   const savedFiles = [...pendingFiles.value]
-  const savedReplyTo = replyToMessage.value
+  const savedReplyTo = [...replyToMessages.value]
   messageInput.value = ''
   pendingFiles.value = []
-  replyToMessage.value = null
+  replyToMessages.value = []
 
   try {
     await chatStore.sendMessage({
       content,
       file_link_ids: fileLinkIds.length > 0 ? fileLinkIds : undefined,
-      reply_to_id: savedReplyTo?.id
+      reply_to_ids: savedReplyTo.length > 0 ? savedReplyTo.map(m => m.id) : undefined
     })
     // Reset typing timestamp so next input will send typing immediately
     lastTypingSentAt.value = 0
@@ -153,16 +158,57 @@ async function sendMessage() {
     // Restore message and files on error
     messageInput.value = savedContent
     pendingFiles.value = savedFiles
-    replyToMessage.value = savedReplyTo
+    replyToMessages.value = savedReplyTo
   }
 }
 
 function handleReplyToMessage(message: Message) {
-  replyToMessage.value = message
+  // Toggle message in the reply list
+  const index = replyToMessages.value.findIndex(m => m.id === message.id)
+  if (index !== -1) {
+    // Remove if already selected
+    replyToMessages.value.splice(index, 1)
+  } else {
+    // Add to reply list
+    replyToMessages.value.push(message)
+  }
+}
+
+function removeReplyMessage(messageId: string) {
+  const index = replyToMessages.value.findIndex(m => m.id === messageId)
+  if (index !== -1) {
+    replyToMessages.value.splice(index, 1)
+  }
 }
 
 function cancelReply() {
-  replyToMessage.value = null
+  replyToMessages.value = []
+}
+
+function handleForwardMessage(message: Message) {
+  forwardMessage.value = message
+  showForwardModal.value = true
+}
+
+function closeForwardModal() {
+  showForwardModal.value = false
+  forwardMessage.value = null
+}
+
+async function handleForwardToChat(targetChatId: string, comment: string) {
+  if (!forwardMessage.value) return
+
+  try {
+    await chatStore.forwardMessage(
+      forwardMessage.value,
+      props.chat.id,
+      targetChatId,
+      comment
+    )
+    closeForwardModal()
+  } catch (e) {
+    console.error('Failed to forward message:', e)
+  }
 }
 
 function getReplyToSenderName(message: Message): string {
@@ -306,8 +352,12 @@ async function createThread() {
           <p class="text-xs text-gray-400">{{ participants.length }} participants</p>
         </div>
         <div class="flex items-center gap-2">
+          <!-- Voice call button with participant selection -->
+          <AdHocCallButton :chat-id="chat.id" />
+
           <button
             @click.stop="toggleThreads"
+            data-testid="threads-button"
             class="p-2 text-gray-500 hover:text-indigo-600 rounded-lg hover:bg-gray-100"
             :class="{ 'text-indigo-600 bg-indigo-50': showThreads }"
             title="View threads"
@@ -327,6 +377,11 @@ async function createThread() {
             </svg>
           </button>
         </div>
+      </div>
+
+      <!-- Scheduled Event Widget -->
+      <div class="px-4 py-2">
+        <ScheduledEventWidget :chat-id="chat.id" />
       </div>
 
       <!-- Messages -->
@@ -349,6 +404,7 @@ async function createThread() {
             :is-own="message.sender_id === currentUser.id"
             :current-user="currentUser"
             @reply="handleReplyToMessage"
+            @forward="handleForwardMessage"
           />
         </template>
 
@@ -368,26 +424,47 @@ async function createThread() {
           Guests cannot send messages. Contact an admin to upgrade your account.
         </div>
         <div v-else>
-          <!-- Reply preview -->
-          <div v-if="replyToMessage" data-testid="reply-preview" class="mb-2 flex items-start gap-2 p-2 bg-gray-50 rounded-lg border-l-4 border-indigo-500">
-            <div class="flex-1 min-w-0">
-              <div data-testid="reply-preview-sender" class="flex items-center gap-1 text-xs text-indigo-600 font-medium">
+          <!-- Reply preview - multiple replies -->
+          <div v-if="replyToMessages.length > 0" data-testid="reply-preview" class="mb-2 p-2 bg-gray-50 rounded-lg border-l-4 border-indigo-500">
+            <div class="flex items-center justify-between mb-1">
+              <span class="flex items-center gap-1 text-xs text-indigo-600 font-medium">
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                 </svg>
-                Replying to {{ getReplyToSenderName(replyToMessage) }}
-              </div>
-              <p data-testid="reply-preview-content" class="text-sm text-gray-600 truncate mt-0.5">{{ replyToMessage.content }}</p>
+                Replying to {{ replyToMessages.length }} message{{ replyToMessages.length > 1 ? 's' : '' }}
+              </span>
+              <button
+                @click="cancelReply"
+                data-testid="reply-preview-cancel"
+                class="p-1 text-gray-400 hover:text-gray-600 rounded flex-shrink-0"
+                title="Clear all replies"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            <button
-              @click="cancelReply"
-              data-testid="reply-preview-cancel"
-              class="p-1 text-gray-400 hover:text-gray-600 rounded flex-shrink-0"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div class="space-y-1 max-h-24 overflow-y-auto">
+              <div
+                v-for="reply in replyToMessages"
+                :key="reply.id"
+                class="flex items-start gap-2 text-sm"
+              >
+                <div class="flex-1 min-w-0">
+                  <span data-testid="reply-preview-sender" class="font-medium text-gray-700">{{ getReplyToSenderName(reply) }}:</span>
+                  <span data-testid="reply-preview-content" class="text-gray-600 truncate ml-1">{{ reply.content }}</span>
+                </div>
+                <button
+                  @click="removeReplyMessage(reply.id)"
+                  class="p-0.5 text-gray-400 hover:text-gray-600 rounded flex-shrink-0"
+                  title="Remove this reply"
+                >
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Pending files preview -->
@@ -500,5 +577,14 @@ async function createThread() {
         @create-thread="createThread"
       />
     </template>
+
+    <!-- Forward message modal -->
+    <ForwardMessageModal
+      v-if="showForwardModal && forwardMessage"
+      :message="forwardMessage"
+      :current-chat-id="chat.id"
+      @close="closeForwardModal"
+      @forward="handleForwardToChat"
+    />
   </div>
 </template>

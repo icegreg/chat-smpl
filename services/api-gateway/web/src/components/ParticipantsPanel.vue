@@ -71,8 +71,26 @@ function getRandomCatUrl(participantId: string): string {
   return `https://cataas.com/cat?width=64&height=64&${seed}`
 }
 
-function getRoleBadgeClass(role: string): string {
-  switch (role) {
+// Normalize role - handle both string names and numeric enum values from protobuf
+function normalizeRole(role: string | number): string {
+  // If it's a number (protobuf enum value), convert to string name
+  if (typeof role === 'number' || !isNaN(Number(role))) {
+    const numRole = Number(role)
+    switch (numRole) {
+      case 0: return 'unspecified'
+      case 1: return 'admin'
+      case 2: return 'member'
+      case 3: return 'readonly'
+      default: return 'member'
+    }
+  }
+  // Already a string
+  return role.toLowerCase()
+}
+
+function getRoleBadgeClass(role: string | number): string {
+  const normalizedRole = normalizeRole(role)
+  switch (normalizedRole) {
     case 'owner':
       return 'bg-purple-100 text-purple-800'
     case 'admin':
@@ -80,14 +98,16 @@ function getRoleBadgeClass(role: string): string {
     case 'member':
       return 'bg-gray-100 text-gray-800'
     case 'guest':
+    case 'readonly':
       return 'bg-yellow-100 text-yellow-800'
     default:
       return 'bg-gray-100 text-gray-800'
   }
 }
 
-function getRoleLabel(role: string): string {
-  switch (role) {
+function getRoleLabel(role: string | number): string {
+  const normalizedRole = normalizeRole(role)
+  switch (normalizedRole) {
     case 'owner':
       return 'Owner'
     case 'admin':
@@ -96,8 +116,10 @@ function getRoleLabel(role: string): string {
       return 'Member'
     case 'guest':
       return 'Guest'
+    case 'readonly':
+      return 'Read-only'
     default:
-      return role
+      return 'Member'
   }
 }
 </script>

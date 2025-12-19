@@ -13,7 +13,7 @@ import {
   generateTestUser,
   sleep,
   TestReport,
-} from '../helpers/apiTestClient'
+} from '../helpers/apiTestClient.js'
 
 const BASE_URL = process.env.API_URL || 'http://127.0.0.1:8888'
 

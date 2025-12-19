@@ -1,0 +1,12 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Микросервисное чат-приложение с JWT авторизацией, gRPC коммуникацией и real-time обновлениями",
+        "title": "Chat-SMPL API",
+        "contact": {},
+        "version": "1.0.0"
+    },
+    "host": "localhost:8888",
+    "basePath": "/api",
+    "paths": {}
+}

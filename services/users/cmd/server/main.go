@@ -26,6 +26,7 @@ type Config struct {
 	HTTPPort    string
 	DatabaseURL string
 	JWTSecret   string
+	AvatarsPath string
 }
 
 func loadConfig() Config {
@@ -33,6 +34,7 @@ func loadConfig() Config {
 		HTTPPort:    getEnv("HTTP_PORT", "8081"),
 		DatabaseURL: getEnv("DATABASE_URL", "postgres://chatapp:secret@localhost:5432/chatapp?sslmode=disable"),
 		JWTSecret:   getEnv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production"),
+		AvatarsPath: getEnv("AVATARS_PATH", "./avatars"),
 	}
 }
 
@@ -62,8 +64,19 @@ func main() {
 
 	// Initialize layers
 	userRepo := repository.NewUserRepository(pool)
-	userService := service.NewUserService(userRepo, jwtManager)
+	userService := service.NewUserService(userRepo, jwtManager, cfg.AvatarsPath)
 	h := handler.New(userService, jwtManager)
+
+	// Check and regenerate missing avatars on startup
+	logger.Info("checking for missing avatar files...")
+	regenerated, err := userService.RegenerateMissingAvatars(ctx)
+	if err != nil {
+		logger.Error("failed to regenerate missing avatars", zap.Error(err))
+	} else if regenerated > 0 {
+		logger.Info("regenerated missing avatars", zap.Int("count", regenerated))
+	} else {
+		logger.Info("all avatars present")
+	}
 
 	// Setup router
 	r := chi.NewRouter()
