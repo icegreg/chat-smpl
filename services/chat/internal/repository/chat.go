@@ -103,6 +103,17 @@ type ChatRepository interface {
 	GetMessageReplies(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error)
 	GetMessageRepliesBatch(ctx context.Context, messageIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
 	GetMessagesById(ctx context.Context, ids []uuid.UUID) ([]model.Message, error)
+
+	// Chat file group operations
+	CreateChatFileGroup(ctx context.Context, group *model.ChatFileGroup) error
+	GetChatFileGroup(ctx context.Context, chatID uuid.UUID, groupType model.ChatFileGroupType) (*model.ChatFileGroup, error)
+	GetChatFileGroups(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileGroup, error)
+	DeleteChatFileGroup(ctx context.Context, chatID uuid.UUID, groupType model.ChatFileGroupType) error
+
+	// Chat file link operations
+	CreateChatFileLink(ctx context.Context, link *model.ChatFileLink) error
+	GetChatFileLinks(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileLink, error)
+	DeleteChatFileLink(ctx context.Context, chatID uuid.UUID, fileLinkID uuid.UUID) error
 }
 
 type chatRepository struct {
@@ -573,6 +584,37 @@ func (r *chatRepository) ListMessages(ctx context.Context, chatID uuid.UUID, pag
 		messages = append(messages, msg)
 	}
 
+	// Load file attachments for all messages
+	if len(messages) > 0 {
+		messageIDs := make([]uuid.UUID, len(messages))
+		messageMap := make(map[uuid.UUID]*model.Message)
+		for i := range messages {
+			messageIDs[i] = messages[i].ID
+			messageMap[messages[i].ID] = &messages[i]
+		}
+
+		attachQuery := `
+			SELECT message_id, file_link_id FROM con_test.message_file_attachments
+			WHERE message_id = ANY($1)
+			ORDER BY message_id, sort_order
+		`
+		attachRows, err := r.pool.Query(ctx, attachQuery, messageIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to get file attachments: %w", err)
+		}
+		defer attachRows.Close()
+
+		for attachRows.Next() {
+			var messageID, linkID uuid.UUID
+			if err := attachRows.Scan(&messageID, &linkID); err != nil {
+				return nil, 0, fmt.Errorf("failed to scan file link ID: %w", err)
+			}
+			if msg, ok := messageMap[messageID]; ok {
+				msg.FileLinkIDs = append(msg.FileLinkIDs, linkID)
+			}
+		}
+	}
+
 	return messages, total, nil
 }
 
@@ -607,6 +649,37 @@ func (r *chatRepository) GetMessagesSince(ctx context.Context, chatID uuid.UUID,
 			return nil, fmt.Errorf("failed to scan message: %w", err)
 		}
 		messages = append(messages, msg)
+	}
+
+	// Load file attachments for all messages
+	if len(messages) > 0 {
+		messageIDs := make([]uuid.UUID, len(messages))
+		messageMap := make(map[uuid.UUID]*model.Message)
+		for i := range messages {
+			messageIDs[i] = messages[i].ID
+			messageMap[messages[i].ID] = &messages[i]
+		}
+
+		attachQuery := `
+			SELECT message_id, file_link_id FROM con_test.message_file_attachments
+			WHERE message_id = ANY($1)
+			ORDER BY message_id, sort_order
+		`
+		attachRows, err := r.pool.Query(ctx, attachQuery, messageIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get file attachments: %w", err)
+		}
+		defer attachRows.Close()
+
+		for attachRows.Next() {
+			var messageID, linkID uuid.UUID
+			if err := attachRows.Scan(&messageID, &linkID); err != nil {
+				return nil, fmt.Errorf("failed to scan file link ID: %w", err)
+			}
+			if msg, ok := messageMap[messageID]; ok {
+				msg.FileLinkIDs = append(msg.FileLinkIDs, linkID)
+			}
+		}
 	}
 
 	return messages, nil
@@ -674,6 +747,37 @@ func (r *chatRepository) GetThreadMessages(ctx context.Context, parentID uuid.UU
 			return nil, 0, fmt.Errorf("failed to scan message: %w", err)
 		}
 		messages = append(messages, msg)
+	}
+
+	// Load file attachments for all messages
+	if len(messages) > 0 {
+		messageIDs := make([]uuid.UUID, len(messages))
+		messageMap := make(map[uuid.UUID]*model.Message)
+		for i := range messages {
+			messageIDs[i] = messages[i].ID
+			messageMap[messages[i].ID] = &messages[i]
+		}
+
+		attachQuery := `
+			SELECT message_id, file_link_id FROM con_test.message_file_attachments
+			WHERE message_id = ANY($1)
+			ORDER BY message_id, sort_order
+		`
+		attachRows, err := r.pool.Query(ctx, attachQuery, messageIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to get file attachments: %w", err)
+		}
+		defer attachRows.Close()
+
+		for attachRows.Next() {
+			var messageID, linkID uuid.UUID
+			if err := attachRows.Scan(&messageID, &linkID); err != nil {
+				return nil, 0, fmt.Errorf("failed to scan file link ID: %w", err)
+			}
+			if msg, ok := messageMap[messageID]; ok {
+				msg.FileLinkIDs = append(msg.FileLinkIDs, linkID)
+			}
+		}
 	}
 
 	return messages, total, nil
@@ -1468,4 +1572,140 @@ func (r *chatRepository) GetMessagesById(ctx context.Context, ids []uuid.UUID) (
 	}
 
 	return messages, nil
+}
+
+// Chat file group operations
+
+var ErrChatFileGroupNotFound = errors.New("chat file group not found")
+
+func (r *chatRepository) CreateChatFileGroup(ctx context.Context, group *model.ChatFileGroup) error {
+	query := `
+		INSERT INTO con_test.chat_file_groups (id, chat_id, group_id, group_type, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (chat_id, group_type) DO UPDATE SET group_id = EXCLUDED.group_id
+	`
+
+	group.ID = uuid.New()
+	group.CreatedAt = time.Now()
+
+	_, err := r.pool.Exec(ctx, query, group.ID, group.ChatID, group.GroupID, group.GroupType, group.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to create chat file group: %w", err)
+	}
+	return nil
+}
+
+func (r *chatRepository) GetChatFileGroup(ctx context.Context, chatID uuid.UUID, groupType model.ChatFileGroupType) (*model.ChatFileGroup, error) {
+	query := `
+		SELECT id, chat_id, group_id, group_type, created_at
+		FROM con_test.chat_file_groups
+		WHERE chat_id = $1 AND group_type = $2
+	`
+
+	var group model.ChatFileGroup
+	err := r.pool.QueryRow(ctx, query, chatID, groupType).Scan(
+		&group.ID, &group.ChatID, &group.GroupID, &group.GroupType, &group.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrChatFileGroupNotFound
+		}
+		return nil, fmt.Errorf("failed to get chat file group: %w", err)
+	}
+	return &group, nil
+}
+
+func (r *chatRepository) GetChatFileGroups(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileGroup, error) {
+	query := `
+		SELECT id, chat_id, group_id, group_type, created_at
+		FROM con_test.chat_file_groups
+		WHERE chat_id = $1
+		ORDER BY created_at
+	`
+
+	rows, err := r.pool.Query(ctx, query, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chat file groups: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []model.ChatFileGroup
+	for rows.Next() {
+		var group model.ChatFileGroup
+		if err := rows.Scan(&group.ID, &group.ChatID, &group.GroupID, &group.GroupType, &group.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan chat file group: %w", err)
+		}
+		groups = append(groups, group)
+	}
+	return groups, nil
+}
+
+func (r *chatRepository) DeleteChatFileGroup(ctx context.Context, chatID uuid.UUID, groupType model.ChatFileGroupType) error {
+	query := `DELETE FROM con_test.chat_file_groups WHERE chat_id = $1 AND group_type = $2`
+	result, err := r.pool.Exec(ctx, query, chatID, groupType)
+	if err != nil {
+		return fmt.Errorf("failed to delete chat file group: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrChatFileGroupNotFound
+	}
+	return nil
+}
+
+// Chat file link operations
+
+var ErrChatFileLinkNotFound = errors.New("chat file link not found")
+
+func (r *chatRepository) CreateChatFileLink(ctx context.Context, link *model.ChatFileLink) error {
+	query := `
+		INSERT INTO con_test.chat_file_links (id, chat_id, file_link_id, attached_by, attached_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (chat_id, file_link_id) DO NOTHING
+	`
+
+	link.ID = uuid.New()
+	link.AttachedAt = time.Now()
+
+	_, err := r.pool.Exec(ctx, query, link.ID, link.ChatID, link.FileLinkID, link.AttachedBy, link.AttachedAt)
+	if err != nil {
+		return fmt.Errorf("failed to create chat file link: %w", err)
+	}
+	return nil
+}
+
+func (r *chatRepository) GetChatFileLinks(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileLink, error) {
+	query := `
+		SELECT id, chat_id, file_link_id, attached_by, attached_at
+		FROM con_test.chat_file_links
+		WHERE chat_id = $1
+		ORDER BY attached_at DESC
+	`
+
+	rows, err := r.pool.Query(ctx, query, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chat file links: %w", err)
+	}
+	defer rows.Close()
+
+	var links []model.ChatFileLink
+	for rows.Next() {
+		var link model.ChatFileLink
+		if err := rows.Scan(&link.ID, &link.ChatID, &link.FileLinkID, &link.AttachedBy, &link.AttachedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan chat file link: %w", err)
+		}
+		links = append(links, link)
+	}
+	return links, nil
+}
+
+func (r *chatRepository) DeleteChatFileLink(ctx context.Context, chatID uuid.UUID, fileLinkID uuid.UUID) error {
+	query := `DELETE FROM con_test.chat_file_links WHERE chat_id = $1 AND file_link_id = $2`
+	result, err := r.pool.Exec(ctx, query, chatID, fileLinkID)
+	if err != nil {
+		return fmt.Errorf("failed to delete chat file link: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrChatFileLinkNotFound
+	}
+	return nil
 }

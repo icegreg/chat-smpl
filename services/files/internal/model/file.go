@@ -35,6 +35,40 @@ type FileLink struct {
 	IsDeleted  bool      `json:"is_deleted" db:"is_deleted"`
 }
 
+// FileAccessLevel represents the level of access a user has to a file
+type FileAccessLevel string
+
+const (
+	FileAccessNone     FileAccessLevel = "none"
+	FileAccessRead     FileAccessLevel = "read"     // Can view/download
+	FileAccessDelete   FileAccessLevel = "delete"   // Can read + delete
+	FileAccessTransfer FileAccessLevel = "transfer" // Can read + delete + transfer ownership
+)
+
+// FileGroup represents a group with specific permissions
+type FileGroup struct {
+	ID          uuid.UUID `json:"id" db:"id"`
+	Name        string    `json:"name" db:"name"`
+	CanRead     bool      `json:"can_read" db:"can_read"`
+	CanDelete   bool      `json:"can_delete" db:"can_delete"`
+	CanTransfer bool      `json:"can_transfer" db:"can_transfer"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+}
+
+// FileGroupMember represents membership in a file group
+type FileGroupMember struct {
+	GroupID uuid.UUID `json:"group_id" db:"group_id"`
+	UserID  uuid.UUID `json:"user_id" db:"user_id"`
+	AddedAt time.Time `json:"added_at" db:"added_at"`
+}
+
+// FileLinkGroup links a file_link to a group
+type FileLinkGroup struct {
+	FileLinkID uuid.UUID `json:"file_link_id" db:"file_link_id"`
+	GroupID    uuid.UUID `json:"group_id" db:"group_id"`
+	AddedAt    time.Time `json:"added_at" db:"added_at"`
+}
+
 type FileLinkPermission struct {
 	ID          uuid.UUID `json:"id" db:"id"`
 	FileLinkID  uuid.UUID `json:"file_link_id" db:"file_link_id"`

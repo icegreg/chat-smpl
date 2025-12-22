@@ -1492,4 +1492,99 @@ export class ChatPage extends BasePage {
   async hasReplyQuote(): Promise<boolean> {
     return this.hasMessageWithQuote()
   }
+
+  // ========== Participant Management ==========
+
+  /**
+   * Add a participant to the current chat via API
+   * @param userId - UUID of the user to add
+   */
+  async addParticipantToChat(userId: string): Promise<void> {
+    const chatId = await this.getCurrentChatId()
+    if (!chatId) {
+      throw new Error('Cannot add participant - not in a chat room')
+    }
+
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/chats/${chatId}/participants', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              user_id: '${userId}',
+              role: 'member'
+            })
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          resolve({ success: true });
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `)
+
+    if (!result) {
+      throw new Error('Failed to add participant')
+    }
+
+    // Wait for the change to propagate
+    await this.sleep(1000)
+  }
+
+  /**
+   * Remove a participant from the current chat via API
+   * @param userId - UUID of the user to remove
+   */
+  async removeParticipantFromChat(userId: string): Promise<void> {
+    const chatId = await this.getCurrentChatId()
+    if (!chatId) {
+      throw new Error('Cannot remove participant - not in a chat room')
+    }
+
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/chats/${chatId}/participants/${userId}', {
+            method: 'DELETE',
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          resolve({ success: true });
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `)
+
+    if (!result) {
+      throw new Error('Failed to remove participant')
+    }
+
+    // Wait for the change to propagate
+    await this.sleep(1000)
+  }
 }

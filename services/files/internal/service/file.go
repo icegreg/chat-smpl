@@ -23,6 +23,7 @@ var (
 )
 
 type FileService interface {
+	// Core file operations
 	Upload(ctx context.Context, filename, contentType string, size int64, reader io.Reader, uploadedBy uuid.UUID) (*model.UploadFileResponse, error)
 	Download(ctx context.Context, fileLinkID, userID uuid.UUID) (io.ReadCloser, *model.File, error)
 	DownloadByShareToken(ctx context.Context, token, password string) (io.ReadCloser, *model.File, error)
@@ -31,6 +32,8 @@ type FileService interface {
 	GetFileInfo(ctx context.Context, fileLinkID, userID uuid.UUID) (*model.FileDTO, error)
 	GetAvatar(ctx context.Context, userID string) (io.ReadCloser, string, error)
 	GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID) ([]model.FileAttachmentDTO, error)
+
+	// Individual permissions (for standalone files)
 	GrantPermissions(ctx context.Context, linkIDs []uuid.UUID, userIDs []uuid.UUID, uploaderID uuid.UUID) error
 
 	// gRPC methods for inter-service communication
@@ -38,6 +41,15 @@ type FileService interface {
 	CreateFileLink(ctx context.Context, fileID, createdBy uuid.UUID) (uuid.UUID, error)
 	RevokePermissions(ctx context.Context, linkIDs []uuid.UUID, userID uuid.UUID) error
 	GetFileIDByLinkID(ctx context.Context, linkID uuid.UUID) (uuid.UUID, error)
+
+	// File groups management (Chat Service calls these)
+	CreateFileGroup(ctx context.Context, name string, canRead, canDelete, canTransfer bool) (*model.FileGroup, error)
+	DeleteFileGroup(ctx context.Context, groupID uuid.UUID) error
+	AddUserToGroup(ctx context.Context, groupID, userID uuid.UUID) error
+	RemoveUserFromGroup(ctx context.Context, groupID, userID uuid.UUID) error
+	AddFileLinkToGroups(ctx context.Context, fileLinkID uuid.UUID, groupIDs []uuid.UUID) error
+	GetFilesByGroup(ctx context.Context, groupID uuid.UUID) ([]model.FileLink, error)
+	RemoveUserFromAllGroupFiles(ctx context.Context, groupIDs []uuid.UUID, userID uuid.UUID) error
 }
 
 type fileService struct {
@@ -122,13 +134,18 @@ func (s *fileService) Download(ctx context.Context, fileLinkID, userID uuid.UUID
 		return nil, nil, repository.ErrFileLinkNotFound
 	}
 
-	// Check permission
-	perm, err := s.repo.GetFileLinkPermission(ctx, fileLinkID, userID)
+	// Check permission using the group-based access check
+	accessLevel, err := s.repo.CheckFileAccess(ctx, fileLinkID, userID)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	if !perm.CanDownload {
+		// Fall back to individual permissions if check_file_access function is not available
+		perm, permErr := s.repo.GetFileLinkPermission(ctx, fileLinkID, userID)
+		if permErr != nil {
+			return nil, nil, permErr
+		}
+		if !perm.CanDownload {
+			return nil, nil, repository.ErrAccessDenied
+		}
+	} else if accessLevel == model.FileAccessNone {
 		return nil, nil, repository.ErrAccessDenied
 	}
 
@@ -188,13 +205,18 @@ func (s *fileService) Delete(ctx context.Context, fileLinkID, userID uuid.UUID) 
 		return err
 	}
 
-	// Check permission
-	perm, err := s.repo.GetFileLinkPermission(ctx, fileLinkID, userID)
+	// Check permission using the group-based access check
+	accessLevel, err := s.repo.CheckFileAccess(ctx, fileLinkID, userID)
 	if err != nil {
-		return err
-	}
-
-	if !perm.CanDelete {
+		// Fall back to individual permissions if check_file_access function is not available
+		perm, permErr := s.repo.GetFileLinkPermission(ctx, fileLinkID, userID)
+		if permErr != nil {
+			return permErr
+		}
+		if !perm.CanDelete {
+			return repository.ErrAccessDenied
+		}
+	} else if accessLevel != model.FileAccessDelete && accessLevel != model.FileAccessTransfer {
 		return repository.ErrAccessDenied
 	}
 
@@ -256,13 +278,18 @@ func (s *fileService) GetFileInfo(ctx context.Context, fileLinkID, userID uuid.U
 		return nil, repository.ErrFileLinkNotFound
 	}
 
-	// Check permission
-	perm, err := s.repo.GetFileLinkPermission(ctx, fileLinkID, userID)
+	// Check permission using the new group-based access check
+	accessLevel, err := s.repo.CheckFileAccess(ctx, fileLinkID, userID)
 	if err != nil {
-		return nil, err
-	}
-
-	if !perm.CanView {
+		// Fall back to individual permissions if check_file_access function is not available
+		perm, permErr := s.repo.GetFileLinkPermission(ctx, fileLinkID, userID)
+		if permErr != nil {
+			return nil, permErr
+		}
+		if !perm.CanView {
+			return nil, repository.ErrAccessDenied
+		}
+	} else if accessLevel == model.FileAccessNone {
 		return nil, repository.ErrAccessDenied
 	}
 
@@ -313,6 +340,7 @@ func (s *fileService) GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID
 	return result, nil
 }
 
+// GrantPermissions grants individual permissions on files to multiple users
 func (s *fileService) GrantPermissions(ctx context.Context, linkIDs []uuid.UUID, userIDs []uuid.UUID, uploaderID uuid.UUID) error {
 	for _, linkID := range linkIDs {
 		// Verify the uploader owns this file link
@@ -327,13 +355,23 @@ func (s *fileService) GrantPermissions(ctx context.Context, linkIDs []uuid.UUID,
 		}
 
 		// Create permissions for all users
-		if err := s.repo.CreatePermissionsForParticipants(ctx, linkID, userIDs, uploaderID); err != nil {
-			return fmt.Errorf("failed to create permissions for link %s: %w", linkID, err)
+		for _, userID := range userIDs {
+			perm := &model.FileLinkPermission{
+				FileLinkID:  linkID,
+				UserID:      userID,
+				CanView:     true,
+				CanDownload: true,
+				CanDelete:   userID == uploaderID,
+			}
+			if err := s.repo.CreateFileLinkPermission(ctx, perm); err != nil {
+				return fmt.Errorf("failed to create permission for link %s, user %s: %w", linkID, userID, err)
+			}
 		}
 	}
 
 	return nil
 }
+
 
 // AddLocalFile adds a file from the server's local filesystem
 func (s *fileService) AddLocalFile(ctx context.Context, serverPath, originalFilename, contentType string, uploadedBy uuid.UUID) (*model.UploadFileResponse, error) {
@@ -420,4 +458,79 @@ func (s *fileService) GetFileIDByLinkID(ctx context.Context, linkID uuid.UUID) (
 		return uuid.Nil, err
 	}
 	return link.FileID, nil
+}
+
+// CreateFileGroup creates a new file group with specified permissions
+func (s *fileService) CreateFileGroup(ctx context.Context, name string, canRead, canDelete, canTransfer bool) (*model.FileGroup, error) {
+	group := &model.FileGroup{
+		Name:        name,
+		CanRead:     canRead,
+		CanDelete:   canDelete,
+		CanTransfer: canTransfer,
+	}
+
+	if err := s.repo.CreateFileGroup(ctx, group); err != nil {
+		return nil, fmt.Errorf("failed to create file group: %w", err)
+	}
+
+	return group, nil
+}
+
+// DeleteFileGroup deletes a file group and all its associations
+func (s *fileService) DeleteFileGroup(ctx context.Context, groupID uuid.UUID) error {
+	return s.repo.DeleteFileGroup(ctx, groupID)
+}
+
+// AddUserToGroup adds a user to a file group
+func (s *fileService) AddUserToGroup(ctx context.Context, groupID, userID uuid.UUID) error {
+	return s.repo.AddUserToGroup(ctx, groupID, userID)
+}
+
+// RemoveUserFromGroup removes a user from a file group
+func (s *fileService) RemoveUserFromGroup(ctx context.Context, groupID, userID uuid.UUID) error {
+	return s.repo.RemoveUserFromGroup(ctx, groupID, userID)
+}
+
+// AddFileLinkToGroups associates a file link with multiple groups
+func (s *fileService) AddFileLinkToGroups(ctx context.Context, fileLinkID uuid.UUID, groupIDs []uuid.UUID) error {
+	for _, groupID := range groupIDs {
+		if err := s.repo.AddFileLinkToGroup(ctx, fileLinkID, groupID); err != nil {
+			return fmt.Errorf("failed to add file link to group %s: %w", groupID, err)
+		}
+	}
+	return nil
+}
+
+// GetFilesByGroup returns all file links associated with a group
+func (s *fileService) GetFilesByGroup(ctx context.Context, groupID uuid.UUID) ([]model.FileLink, error) {
+	return s.repo.GetFilesByGroup(ctx, groupID)
+}
+
+// RemoveUserFromAllGroupFiles removes user from groups and revokes individual permissions on group files
+func (s *fileService) RemoveUserFromAllGroupFiles(ctx context.Context, groupIDs []uuid.UUID, userID uuid.UUID) error {
+	// First, collect all file link IDs from all groups
+	var allLinkIDs []uuid.UUID
+	for _, groupID := range groupIDs {
+		links, err := s.repo.GetFilesByGroup(ctx, groupID)
+		if err != nil {
+			return fmt.Errorf("failed to get files by group %s: %w", groupID, err)
+		}
+		for _, link := range links {
+			allLinkIDs = append(allLinkIDs, link.ID)
+		}
+
+		// Remove user from the group
+		if err := s.repo.RemoveUserFromGroup(ctx, groupID, userID); err != nil {
+			return fmt.Errorf("failed to remove user from group %s: %w", groupID, err)
+		}
+	}
+
+	// Revoke individual permissions on all files
+	if len(allLinkIDs) > 0 {
+		if err := s.repo.DeletePermissionsForUser(ctx, allLinkIDs, userID); err != nil {
+			return fmt.Errorf("failed to revoke permissions: %w", err)
+		}
+	}
+
+	return nil
 }

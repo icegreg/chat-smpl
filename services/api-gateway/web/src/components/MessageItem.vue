@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import type { Message, User } from '@/types'
 import { useChatStore } from '@/stores/chat'
 
@@ -9,6 +9,9 @@ const props = defineProps<{
   currentUser: User
   compact?: boolean // For thread view - smaller styling
 }>()
+
+// Store blob URLs for authenticated file access
+const blobUrls = ref<Map<string, string>>(new Map())
 
 const emit = defineEmits<{
   reply: [message: Message]
@@ -119,6 +122,101 @@ function isImage(contentType: string): boolean {
 
 function getFileDownloadUrl(linkId: string): string {
   return `/api/files/${linkId}`
+}
+
+// Fetch file with auth and return blob URL
+async function fetchFileAsBlobUrl(linkId: string): Promise<string | null> {
+  const token = localStorage.getItem('access_token')
+  if (!token) return null
+
+  try {
+    const response = await fetch(`/api/files/${linkId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (!response.ok) return null
+
+    const blob = await response.blob()
+    return URL.createObjectURL(blob)
+  } catch {
+    return null
+  }
+}
+
+// Get blob URL for file (for images that need auth)
+function getFileBlobUrl(linkId: string): string | undefined {
+  return blobUrls.value.get(linkId)
+}
+
+// Load blob URLs for image attachments
+async function loadImageBlobUrls() {
+  const attachments = props.message.file_attachments
+  if (!attachments?.length) return
+
+  for (const attachment of attachments) {
+    if (isImage(attachment.content_type) && !blobUrls.value.has(attachment.link_id)) {
+      const blobUrl = await fetchFileAsBlobUrl(attachment.link_id)
+      if (blobUrl) {
+        blobUrls.value.set(attachment.link_id, blobUrl)
+      }
+    }
+  }
+}
+
+// Clean up blob URLs on unmount
+function cleanupBlobUrls() {
+  blobUrls.value.forEach((url) => {
+    URL.revokeObjectURL(url)
+  })
+  blobUrls.value.clear()
+}
+
+// Load images on mount and when attachments change
+onMounted(() => {
+  loadImageBlobUrls()
+})
+
+onUnmounted(() => {
+  cleanupBlobUrls()
+})
+
+watch(() => props.message.file_attachments, () => {
+  loadImageBlobUrls()
+}, { deep: true })
+
+// Download file with authentication
+async function downloadFile(linkId: string, filename: string) {
+  const token = localStorage.getItem('access_token')
+  if (!token) return
+
+  try {
+    const response = await fetch(`/api/files/${linkId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (!response.ok) {
+      console.error('Failed to download file:', response.status)
+      return
+    }
+
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+
+    // Create temporary link and trigger download
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Failed to download file:', error)
+  }
 }
 
 function handleReply() {
@@ -303,19 +401,30 @@ function getReplyToMessages(): Message[] {
               :href="getFileDownloadUrl(attachment.link_id)"
               target="_blank"
               class="block"
+              @click.prevent="downloadFile(attachment.link_id, attachment.original_filename)"
             >
               <img
-                :src="getFileDownloadUrl(attachment.link_id)"
+                v-if="getFileBlobUrl(attachment.link_id)"
+                :src="getFileBlobUrl(attachment.link_id)"
                 :alt="attachment.original_filename"
                 class="max-w-full max-h-64 rounded cursor-pointer hover:opacity-90 transition-opacity"
               />
+              <!-- Loading placeholder while fetching image -->
+              <div
+                v-else
+                class="w-32 h-32 bg-gray-200 rounded flex items-center justify-center animate-pulse"
+              >
+                <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
             </a>
             <!-- Other file types -->
             <a
               v-else
-              :href="getFileDownloadUrl(attachment.link_id)"
-              target="_blank"
-              class="flex items-center gap-2 p-2 rounded hover:bg-gray-100 transition-colors"
+              href="#"
+              @click.prevent="downloadFile(attachment.link_id, attachment.original_filename)"
+              class="flex items-center gap-2 p-2 rounded hover:bg-gray-100 transition-colors cursor-pointer"
               :class="isOwn ? 'bg-indigo-400/30 hover:bg-indigo-400/50' : 'bg-gray-50'"
             >
               <svg class="w-8 h-8 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

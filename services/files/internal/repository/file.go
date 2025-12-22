@@ -39,11 +39,28 @@ type FileRepository interface {
 	DeleteFileLink(ctx context.Context, id uuid.UUID) error
 	SoftDeleteFileLink(ctx context.Context, id uuid.UUID) error
 
-	// Permissions
+	// Individual permissions
 	CreateFileLinkPermission(ctx context.Context, perm *model.FileLinkPermission) error
 	GetFileLinkPermission(ctx context.Context, fileLinkID, userID uuid.UUID) (*model.FileLinkPermission, error)
-	CreatePermissionsForParticipants(ctx context.Context, fileLinkID uuid.UUID, participantIDs []uuid.UUID, uploaderID uuid.UUID) error
+	CheckFileAccess(ctx context.Context, fileLinkID, userID uuid.UUID) (model.FileAccessLevel, error)
 	DeletePermissionsForUser(ctx context.Context, linkIDs []uuid.UUID, userID uuid.UUID) error
+
+	// File groups (Files Service owns groups)
+	CreateFileGroup(ctx context.Context, group *model.FileGroup) error
+	GetFileGroup(ctx context.Context, id uuid.UUID) (*model.FileGroup, error)
+	DeleteFileGroup(ctx context.Context, id uuid.UUID) error
+
+	// Group membership
+	AddUserToGroup(ctx context.Context, groupID, userID uuid.UUID) error
+	RemoveUserFromGroup(ctx context.Context, groupID, userID uuid.UUID) error
+	GetGroupMembers(ctx context.Context, groupID uuid.UUID) ([]uuid.UUID, error)
+	GetUserGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+
+	// File-group links
+	AddFileLinkToGroup(ctx context.Context, fileLinkID, groupID uuid.UUID) error
+	RemoveFileLinkFromGroup(ctx context.Context, fileLinkID, groupID uuid.UUID) error
+	GetFileLinkGroups(ctx context.Context, fileLinkID uuid.UUID) ([]uuid.UUID, error)
+	GetFilesByGroup(ctx context.Context, groupID uuid.UUID) ([]model.FileLink, error)
 
 	// Share links
 	CreateShareLink(ctx context.Context, link *model.FileShareLink) error
@@ -265,22 +282,6 @@ func (r *fileRepository) GetFileLinkPermission(ctx context.Context, fileLinkID, 
 	return &perm, nil
 }
 
-func (r *fileRepository) CreatePermissionsForParticipants(ctx context.Context, fileLinkID uuid.UUID, participantIDs []uuid.UUID, uploaderID uuid.UUID) error {
-	for _, userID := range participantIDs {
-		perm := &model.FileLinkPermission{
-			FileLinkID:  fileLinkID,
-			UserID:      userID,
-			CanView:     true,
-			CanDownload: true,
-			CanDelete:   userID == uploaderID,
-		}
-		if err := r.CreateFileLinkPermission(ctx, perm); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *fileRepository) DeletePermissionsForUser(ctx context.Context, linkIDs []uuid.UUID, userID uuid.UUID) error {
 	if len(linkIDs) == 0 {
 		return nil
@@ -296,6 +297,202 @@ func (r *fileRepository) DeletePermissionsForUser(ctx context.Context, linkIDs [
 		return fmt.Errorf("failed to delete permissions: %w", err)
 	}
 	return nil
+}
+
+// CheckFileAccess uses the PostgreSQL function to check user's access level to a file
+func (r *fileRepository) CheckFileAccess(ctx context.Context, fileLinkID, userID uuid.UUID) (model.FileAccessLevel, error) {
+	query := `SELECT con_test.check_file_access($1, $2)`
+
+	var accessLevel string
+	err := r.pool.QueryRow(ctx, query, fileLinkID, userID).Scan(&accessLevel)
+	if err != nil {
+		return model.FileAccessNone, fmt.Errorf("failed to check file access: %w", err)
+	}
+
+	return model.FileAccessLevel(accessLevel), nil
+}
+
+// File groups
+
+func (r *fileRepository) CreateFileGroup(ctx context.Context, group *model.FileGroup) error {
+	query := `
+		INSERT INTO con_test.file_groups (id, name, can_read, can_delete, can_transfer, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`
+
+	group.ID = uuid.New()
+	group.CreatedAt = time.Now()
+
+	_, err := r.pool.Exec(ctx, query, group.ID, group.Name, group.CanRead, group.CanDelete, group.CanTransfer, group.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to create file group: %w", err)
+	}
+	return nil
+}
+
+func (r *fileRepository) GetFileGroup(ctx context.Context, id uuid.UUID) (*model.FileGroup, error) {
+	query := `
+		SELECT id, name, can_read, can_delete, can_transfer, created_at
+		FROM con_test.file_groups
+		WHERE id = $1
+	`
+
+	var group model.FileGroup
+	err := r.pool.QueryRow(ctx, query, id).Scan(&group.ID, &group.Name, &group.CanRead, &group.CanDelete, &group.CanTransfer, &group.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("file group not found: %s", id)
+		}
+		return nil, fmt.Errorf("failed to get file group: %w", err)
+	}
+	return &group, nil
+}
+
+func (r *fileRepository) DeleteFileGroup(ctx context.Context, id uuid.UUID) error {
+	query := `DELETE FROM con_test.file_groups WHERE id = $1`
+	result, err := r.pool.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete file group: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("file group not found: %s", id)
+	}
+	return nil
+}
+
+// Group membership
+
+func (r *fileRepository) AddUserToGroup(ctx context.Context, groupID, userID uuid.UUID) error {
+	query := `
+		INSERT INTO con_test.file_group_members (group_id, user_id, added_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (group_id, user_id) DO NOTHING
+	`
+
+	_, err := r.pool.Exec(ctx, query, groupID, userID, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to add user to group: %w", err)
+	}
+	return nil
+}
+
+func (r *fileRepository) RemoveUserFromGroup(ctx context.Context, groupID, userID uuid.UUID) error {
+	query := `DELETE FROM con_test.file_group_members WHERE group_id = $1 AND user_id = $2`
+	_, err := r.pool.Exec(ctx, query, groupID, userID)
+	if err != nil {
+		return fmt.Errorf("failed to remove user from group: %w", err)
+	}
+	return nil
+}
+
+func (r *fileRepository) GetGroupMembers(ctx context.Context, groupID uuid.UUID) ([]uuid.UUID, error) {
+	query := `SELECT user_id FROM con_test.file_group_members WHERE group_id = $1`
+
+	rows, err := r.pool.Query(ctx, query, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group members: %w", err)
+	}
+	defer rows.Close()
+
+	var members []uuid.UUID
+	for rows.Next() {
+		var userID uuid.UUID
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("failed to scan user ID: %w", err)
+		}
+		members = append(members, userID)
+	}
+	return members, nil
+}
+
+func (r *fileRepository) GetUserGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	query := `SELECT group_id FROM con_test.file_group_members WHERE user_id = $1`
+
+	rows, err := r.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user groups: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []uuid.UUID
+	for rows.Next() {
+		var groupID uuid.UUID
+		if err := rows.Scan(&groupID); err != nil {
+			return nil, fmt.Errorf("failed to scan group ID: %w", err)
+		}
+		groups = append(groups, groupID)
+	}
+	return groups, nil
+}
+
+// File-group links
+
+func (r *fileRepository) AddFileLinkToGroup(ctx context.Context, fileLinkID, groupID uuid.UUID) error {
+	query := `
+		INSERT INTO con_test.file_link_groups (file_link_id, group_id, added_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (file_link_id, group_id) DO NOTHING
+	`
+
+	_, err := r.pool.Exec(ctx, query, fileLinkID, groupID, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to add file link to group: %w", err)
+	}
+	return nil
+}
+
+func (r *fileRepository) RemoveFileLinkFromGroup(ctx context.Context, fileLinkID, groupID uuid.UUID) error {
+	query := `DELETE FROM con_test.file_link_groups WHERE file_link_id = $1 AND group_id = $2`
+	_, err := r.pool.Exec(ctx, query, fileLinkID, groupID)
+	if err != nil {
+		return fmt.Errorf("failed to remove file link from group: %w", err)
+	}
+	return nil
+}
+
+func (r *fileRepository) GetFileLinkGroups(ctx context.Context, fileLinkID uuid.UUID) ([]uuid.UUID, error) {
+	query := `SELECT group_id FROM con_test.file_link_groups WHERE file_link_id = $1`
+
+	rows, err := r.pool.Query(ctx, query, fileLinkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file link groups: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []uuid.UUID
+	for rows.Next() {
+		var groupID uuid.UUID
+		if err := rows.Scan(&groupID); err != nil {
+			return nil, fmt.Errorf("failed to scan group ID: %w", err)
+		}
+		groups = append(groups, groupID)
+	}
+	return groups, nil
+}
+
+func (r *fileRepository) GetFilesByGroup(ctx context.Context, groupID uuid.UUID) ([]model.FileLink, error) {
+	query := `
+		SELECT fl.id, fl.file_id, fl.uploaded_by, fl.uploaded_at, fl.is_deleted
+		FROM con_test.file_link_groups flg
+		JOIN con_test.file_links fl ON fl.id = flg.file_link_id
+		WHERE flg.group_id = $1 AND fl.is_deleted = FALSE
+	`
+
+	rows, err := r.pool.Query(ctx, query, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get files by group: %w", err)
+	}
+	defer rows.Close()
+
+	var links []model.FileLink
+	for rows.Next() {
+		var link model.FileLink
+		if err := rows.Scan(&link.ID, &link.FileID, &link.UploadedBy, &link.UploadedAt, &link.IsDeleted); err != nil {
+			return nil, fmt.Errorf("failed to scan file link: %w", err)
+		}
+		links = append(links, link)
+	}
+	return links, nil
 }
 
 // Share links

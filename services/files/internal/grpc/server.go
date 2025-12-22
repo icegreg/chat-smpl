@@ -198,3 +198,139 @@ func (s *FilesServer) GetFilesByLinkIDs(ctx context.Context, req *pb.GetFilesByL
 		Files: protoFiles,
 	}, nil
 }
+
+// ============ File Groups Management ============
+
+// CreateFileGroup creates a new file group with permissions
+func (s *FilesServer) CreateFileGroup(ctx context.Context, req *pb.CreateFileGroupRequest) (*pb.CreateFileGroupResponse, error) {
+	group, err := s.fileService.CreateFileGroup(ctx, req.Name, req.CanRead, req.CanDelete, req.CanTransfer)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return &pb.CreateFileGroupResponse{
+		Group: &pb.FileGroup{
+			Id:          group.ID.String(),
+			Name:        group.Name,
+			CanRead:     group.CanRead,
+			CanDelete:   group.CanDelete,
+			CanTransfer: group.CanTransfer,
+		},
+	}, nil
+}
+
+// DeleteFileGroup deletes a file group
+func (s *FilesServer) DeleteFileGroup(ctx context.Context, req *pb.DeleteFileGroupRequest) (*emptypb.Empty, error) {
+	groupID, err := parseUUID(req.GroupId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid group_id")
+	}
+
+	if err := s.fileService.DeleteFileGroup(ctx, groupID); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// AddUserToGroup adds a user to a file group
+func (s *FilesServer) AddUserToGroup(ctx context.Context, req *pb.AddUserToGroupRequest) (*emptypb.Empty, error) {
+	groupID, err := parseUUID(req.GroupId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid group_id")
+	}
+
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	if err := s.fileService.AddUserToGroup(ctx, groupID, userID); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// RemoveUserFromGroup removes a user from a file group
+func (s *FilesServer) RemoveUserFromGroup(ctx context.Context, req *pb.RemoveUserFromGroupRequest) (*emptypb.Empty, error) {
+	groupID, err := parseUUID(req.GroupId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid group_id")
+	}
+
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	if err := s.fileService.RemoveUserFromGroup(ctx, groupID, userID); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// AddFileLinkToGroups associates a file link with multiple groups
+func (s *FilesServer) AddFileLinkToGroups(ctx context.Context, req *pb.AddFileLinkToGroupsRequest) (*emptypb.Empty, error) {
+	fileLinkID, err := parseUUID(req.FileLinkId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid file_link_id")
+	}
+
+	groupIDs, err := parseUUIDs(req.GroupIds)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid group_id")
+	}
+
+	if err := s.fileService.AddFileLinkToGroups(ctx, fileLinkID, groupIDs); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// GetFilesByGroup returns all file links in a group
+func (s *FilesServer) GetFilesByGroup(ctx context.Context, req *pb.GetFilesByGroupRequest) (*pb.GetFilesByGroupResponse, error) {
+	groupID, err := parseUUID(req.GroupId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid group_id")
+	}
+
+	links, err := s.fileService.GetFilesByGroup(ctx, groupID)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	protoLinks := make([]*pb.FileLinkInfo, 0, len(links))
+	for _, link := range links {
+		protoLinks = append(protoLinks, &pb.FileLinkInfo{
+			Id:         link.ID.String(),
+			FileId:     link.FileID.String(),
+			UploadedBy: link.UploadedBy.String(),
+		})
+	}
+
+	return &pb.GetFilesByGroupResponse{
+		FileLinks: protoLinks,
+	}, nil
+}
+
+// RemoveUserFromAllGroupFiles removes user from multiple groups and revokes permissions
+func (s *FilesServer) RemoveUserFromAllGroupFiles(ctx context.Context, req *pb.RemoveUserFromAllGroupFilesRequest) (*emptypb.Empty, error) {
+	groupIDs, err := parseUUIDs(req.GroupIds)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid group_id")
+	}
+
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	if err := s.fileService.RemoveUserFromAllGroupFiles(ctx, groupIDs, userID); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}

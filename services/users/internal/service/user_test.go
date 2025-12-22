@@ -95,7 +95,7 @@ func (m *MockUserRepository) DeleteExpiredTokens(ctx context.Context) error {
 func TestUserService_Create(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	jwtManager := jwt.NewManager(jwt.DefaultConfig("test-secret"))
-	svc := NewUserService(mockRepo, jwtManager)
+	svc := NewUserService(mockRepo, jwtManager, "/tmp/avatars")
 
 	ctx := context.Background()
 	req := model.CreateUserRequest{
@@ -106,6 +106,7 @@ func TestUserService_Create(t *testing.T) {
 	}
 
 	mockRepo.On("Create", ctx, mock.AnythingOfType("*model.User")).Return(nil)
+	mockRepo.On("Update", ctx, mock.AnythingOfType("*model.User")).Return(nil)
 
 	user, err := svc.Create(ctx, req)
 
@@ -121,7 +122,7 @@ func TestUserService_Create(t *testing.T) {
 func TestUserService_Login_Success(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	jwtManager := jwt.NewManager(jwt.DefaultConfig("test-secret"))
-	svc := NewUserService(mockRepo, jwtManager)
+	svc := NewUserService(mockRepo, jwtManager, "/tmp/avatars")
 
 	ctx := context.Background()
 	password := "password123"
@@ -159,7 +160,7 @@ func TestUserService_Login_Success(t *testing.T) {
 func TestUserService_Login_InvalidCredentials(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	jwtManager := jwt.NewManager(jwt.DefaultConfig("test-secret"))
-	svc := NewUserService(mockRepo, jwtManager)
+	svc := NewUserService(mockRepo, jwtManager, "/tmp/avatars")
 
 	ctx := context.Background()
 
@@ -181,7 +182,7 @@ func TestUserService_Login_InvalidCredentials(t *testing.T) {
 func TestUserService_GetByID(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	jwtManager := jwt.NewManager(jwt.DefaultConfig("test-secret"))
-	svc := NewUserService(mockRepo, jwtManager)
+	svc := NewUserService(mockRepo, jwtManager, "/tmp/avatars")
 
 	ctx := context.Background()
 	userID := uuid.New()
@@ -210,7 +211,7 @@ func TestUserService_GetByID(t *testing.T) {
 func TestUserService_List(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	jwtManager := jwt.NewManager(jwt.DefaultConfig("test-secret"))
-	svc := NewUserService(mockRepo, jwtManager)
+	svc := NewUserService(mockRepo, jwtManager, "/tmp/avatars")
 
 	ctx := context.Background()
 
@@ -234,7 +235,7 @@ func TestUserService_List(t *testing.T) {
 func TestUserService_UpdateRole(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	jwtManager := jwt.NewManager(jwt.DefaultConfig("test-secret"))
-	svc := NewUserService(mockRepo, jwtManager)
+	svc := NewUserService(mockRepo, jwtManager, "/tmp/avatars")
 
 	ctx := context.Background()
 	userID := uuid.New()
@@ -261,7 +262,7 @@ func TestUserService_UpdateRole(t *testing.T) {
 func TestUserService_Delete(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	jwtManager := jwt.NewManager(jwt.DefaultConfig("test-secret"))
-	svc := NewUserService(mockRepo, jwtManager)
+	svc := NewUserService(mockRepo, jwtManager, "/tmp/avatars")
 
 	ctx := context.Background()
 	userID := uuid.New()

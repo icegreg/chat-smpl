@@ -29,6 +29,8 @@ func (h *FilesHandler) Routes() chi.Router {
 
 	r.Post("/upload", h.Upload)
 	r.Get("/{linkId}", h.Download)
+	r.Get("/{linkId}/info", h.GetFileInfo)
+	r.Delete("/{linkId}", h.Delete)
 
 	return r
 }
@@ -133,6 +135,105 @@ func (h *FilesHandler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+// GetFileInfo godoc
+// @Summary Get file information
+// @Description Returns file metadata by its link ID
+// @Tags files
+// @Produce json
+// @Security Bearer
+// @Param linkId path string true "File link ID"
+// @Success 200 {object} map[string]interface{} "File information"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "File not found"
+// @Failure 502 {object} ErrorResponse "Files service unavailable"
+// @Router /files/{linkId}/info [get]
+func (h *FilesHandler) GetFileInfo(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	linkId := chi.URLParam(r, "linkId")
+
+	userID, _ := middleware.GetUserID(ctx)
+
+	// Create proxy request
+	proxyURL := h.filesServiceURL + "/files/" + linkId + "/info"
+	proxyReq, err := http.NewRequestWithContext(ctx, http.MethodGet, proxyURL, nil)
+	if err != nil {
+		h.log.Error("failed to create proxy request", "error", err)
+		h.respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	if userID != uuid.Nil {
+		proxyReq.Header.Set("X-User-ID", userID.String())
+	}
+
+	// Send request
+	client := &http.Client{}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		h.log.Error("failed to proxy file info request", "error", err)
+		h.respondError(w, http.StatusBadGateway, "files service unavailable")
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
+// Delete godoc
+// @Summary Delete a file
+// @Description Deletes a file by its link ID
+// @Tags files
+// @Security Bearer
+// @Param linkId path string true "File link ID"
+// @Success 204 "File deleted"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Failure 404 {object} ErrorResponse "File not found"
+// @Failure 502 {object} ErrorResponse "Files service unavailable"
+// @Router /files/{linkId} [delete]
+func (h *FilesHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	linkId := chi.URLParam(r, "linkId")
+
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	// Create proxy request
+	proxyURL := h.filesServiceURL + "/files/" + linkId
+	proxyReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, proxyURL, nil)
+	if err != nil {
+		h.log.Error("failed to create proxy request", "error", err)
+		h.respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	proxyReq.Header.Set("X-User-ID", userID.String())
+
+	// Send request
+	client := &http.Client{}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		h.log.Error("failed to proxy delete request", "error", err)
+		h.respondError(w, http.StatusBadGateway, "files service unavailable")
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response
+	w.WriteHeader(resp.StatusCode)
+	if resp.StatusCode != http.StatusNoContent {
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		io.Copy(w, resp.Body)
+	}
 }
 
 func (h *FilesHandler) respondError(w http.ResponseWriter, status int, message string) {

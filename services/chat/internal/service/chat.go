@@ -89,6 +89,14 @@ type ChatService interface {
 	// Subthread operations
 	ListSubthreads(ctx context.Context, parentThreadID, userID uuid.UUID, page, count int) ([]model.Thread, int, error)
 	CreateSubthread(ctx context.Context, parentThreadID uuid.UUID, title string, threadType model.ThreadType, createdBy uuid.UUID) (*model.Thread, error)
+
+	// Chat file group operations
+	InitChatFileGroups(ctx context.Context, chatID uuid.UUID) error
+	GetChatFileGroups(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileGroup, error)
+	SyncParticipantToFileGroups(ctx context.Context, chatID, userID uuid.UUID, role model.ParticipantRole) error
+	RemoveParticipantFromFileGroups(ctx context.Context, chatID, userID uuid.UUID) error
+	AttachFileLinkToChat(ctx context.Context, chatID, fileLinkID, attachedBy uuid.UUID) error
+	GetChatFileLinks(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileLink, error)
 }
 
 type chatService struct {
@@ -118,6 +126,12 @@ func (s *chatService) CreateChat(ctx context.Context, name string, chatType mode
 		return nil, fmt.Errorf("failed to create chat: %w", err)
 	}
 
+	// Initialize file groups for the chat
+	if err := s.InitChatFileGroups(ctx, chat.ID); err != nil {
+		// Log error but don't fail chat creation - file groups can be initialized later
+		_ = err
+	}
+
 	// Add creator as admin
 	if err := s.repo.AddParticipant(ctx, &model.ChatParticipant{
 		ChatID: chat.ID,
@@ -126,6 +140,8 @@ func (s *chatService) CreateChat(ctx context.Context, name string, chatType mode
 	}); err != nil {
 		return nil, fmt.Errorf("failed to add creator as participant: %w", err)
 	}
+	// Sync creator to file groups
+	_ = s.SyncParticipantToFileGroups(ctx, chat.ID, createdBy, model.ParticipantRoleAdmin)
 
 	// Add other participants
 	for _, userID := range participantIDs {
@@ -139,6 +155,8 @@ func (s *chatService) CreateChat(ctx context.Context, name string, chatType mode
 		}); err != nil {
 			return nil, fmt.Errorf("failed to add participant: %w", err)
 		}
+		// Sync participant to file groups
+		_ = s.SyncParticipantToFileGroups(ctx, chat.ID, userID, model.ParticipantRoleMember)
 	}
 
 	// Get all participants for event
@@ -263,21 +281,8 @@ func (s *chatService) AddParticipant(ctx context.Context, chatID, userID, addedB
 		return nil, err
 	}
 
-	// Grant permissions to all file links in the chat
-	if s.filesClient != nil {
-		linkIDs, err := s.repo.GetAllFileLinkIDsForChat(ctx, chatID)
-		if err == nil && len(linkIDs) > 0 {
-			linkIDStrs := make([]string, len(linkIDs))
-			for i, id := range linkIDs {
-				linkIDStrs[i] = id.String()
-			}
-			_, _ = s.filesClient.GrantPermissions(ctx, &filesPb.GrantPermissionsRequest{
-				LinkIds:   linkIDStrs,
-				UserIds:   []string{userID.String()},
-				GranterId: addedBy.String(),
-			})
-		}
-	}
+	// Sync participant to file groups (this grants access to all files in the chat)
+	_ = s.SyncParticipantToFileGroups(ctx, chatID, userID, role)
 
 	// Send system message to Activity thread
 	username := userID.String()[:8] // Fallback to short UUID if no username
@@ -313,20 +318,8 @@ func (s *chatService) RemoveParticipant(ctx context.Context, chatID, userID, rem
 		}
 	}
 
-	// Revoke permissions to all file links in the chat BEFORE removing participant
-	if s.filesClient != nil {
-		linkIDs, err := s.repo.GetAllFileLinkIDsForChat(ctx, chatID)
-		if err == nil && len(linkIDs) > 0 {
-			linkIDStrs := make([]string, len(linkIDs))
-			for i, id := range linkIDs {
-				linkIDStrs[i] = id.String()
-			}
-			_, _ = s.filesClient.RevokePermissions(ctx, &filesPb.RevokePermissionsRequest{
-				LinkIds: linkIDStrs,
-				UserId:  userID.String(),
-			})
-		}
-	}
+	// Remove participant from file groups (this revokes access to all files in the chat)
+	_ = s.RemoveParticipantFromFileGroups(ctx, chatID, userID)
 
 	if err := s.repo.RemoveParticipant(ctx, chatID, userID); err != nil {
 		return err
@@ -396,6 +389,11 @@ func (s *chatService) SendMessage(ctx context.Context, chatID, senderID uuid.UUI
 
 	if err := s.repo.CreateMessage(ctx, message); err != nil {
 		return nil, err
+	}
+
+	// Attach file links to chat (adds them to file groups)
+	for _, linkID := range fileLinkIDs {
+		_ = s.AttachFileLinkToChat(ctx, chatID, linkID, senderID)
 	}
 
 	// Add sender info to message for event
@@ -734,24 +732,9 @@ func (s *chatService) ForwardMessage(ctx context.Context, messageID, targetChatI
 		return nil, fmt.Errorf("failed to create forwarded message: %w", err)
 	}
 
-	// 6. Grant permissions to target chat participants for new file links
-	if len(newFileLinkIDs) > 0 && s.filesClient != nil {
-		targetParticipants, err := s.repo.GetParticipantIDs(ctx, targetChatID)
-		if err == nil && len(targetParticipants) > 0 {
-			linkIDStrs := make([]string, len(newFileLinkIDs))
-			for i, id := range newFileLinkIDs {
-				linkIDStrs[i] = id.String()
-			}
-			userIDStrs := make([]string, len(targetParticipants))
-			for i, id := range targetParticipants {
-				userIDStrs[i] = id.String()
-			}
-			_, _ = s.filesClient.GrantPermissions(ctx, &filesPb.GrantPermissionsRequest{
-				LinkIds:   linkIDStrs,
-				UserIds:   userIDStrs,
-				GranterId: senderID.String(),
-			})
-		}
+	// 6. Attach new file links to target chat (adds them to file groups)
+	for _, linkID := range newFileLinkIDs {
+		_ = s.AttachFileLinkToChat(ctx, targetChatID, linkID, senderID)
 	}
 
 	// 7. Add sender info
@@ -1044,6 +1027,11 @@ func (s *chatService) SendMessageToThread(ctx context.Context, chatID, senderID 
 		return nil, err
 	}
 
+	// Attach file links to chat (adds them to file groups)
+	for _, linkID := range fileLinkIDs {
+		_ = s.AttachFileLinkToChat(ctx, chatID, linkID, senderID)
+	}
+
 	// Add sender info to message for event (for non-system messages)
 	if participant != nil {
 		message.SenderUsername = participant.Username
@@ -1169,4 +1157,192 @@ func (s *chatService) CreateSubthread(ctx context.Context, parentThreadID uuid.U
 	_ = s.publisher.PublishThreadCreated(ctx, thread, participants)
 
 	return thread, nil
+}
+
+// Chat file group operations
+
+// InitChatFileGroups creates file groups for a chat in the Files Service
+// Called when a new chat is created
+func (s *chatService) InitChatFileGroups(ctx context.Context, chatID uuid.UUID) error {
+	if s.filesClient == nil {
+		return nil // No files client, skip
+	}
+
+	chat, err := s.repo.GetChat(ctx, chatID)
+	if err != nil {
+		return fmt.Errorf("failed to get chat: %w", err)
+	}
+
+	// Create "moderate" group (can_read, can_delete, can_transfer) for admins
+	moderateResp, err := s.filesClient.CreateFileGroup(ctx, &filesPb.CreateFileGroupRequest{
+		Name:        fmt.Sprintf("chat_%s_moderate", chatID.String()),
+		CanRead:     true,
+		CanDelete:   true,
+		CanTransfer: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create moderate file group: %w", err)
+	}
+
+	moderateGroupID, err := uuid.Parse(moderateResp.Group.Id)
+	if err != nil {
+		return fmt.Errorf("failed to parse moderate group ID: %w", err)
+	}
+
+	// Save mapping in chat_file_groups
+	if err := s.repo.CreateChatFileGroup(ctx, &model.ChatFileGroup{
+		ChatID:    chatID,
+		GroupID:   moderateGroupID,
+		GroupType: model.ChatFileGroupTypeModerate,
+	}); err != nil {
+		return fmt.Errorf("failed to save moderate file group mapping: %w", err)
+	}
+
+	// Create "read" group (can_read only) for regular members
+	readResp, err := s.filesClient.CreateFileGroup(ctx, &filesPb.CreateFileGroupRequest{
+		Name:        fmt.Sprintf("chat_%s_read", chat.ID.String()),
+		CanRead:     true,
+		CanDelete:   false,
+		CanTransfer: false,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create read file group: %w", err)
+	}
+
+	readGroupID, err := uuid.Parse(readResp.Group.Id)
+	if err != nil {
+		return fmt.Errorf("failed to parse read group ID: %w", err)
+	}
+
+	// Save mapping in chat_file_groups
+	if err := s.repo.CreateChatFileGroup(ctx, &model.ChatFileGroup{
+		ChatID:    chatID,
+		GroupID:   readGroupID,
+		GroupType: model.ChatFileGroupTypeRead,
+	}); err != nil {
+		return fmt.Errorf("failed to save read file group mapping: %w", err)
+	}
+
+	return nil
+}
+
+// GetChatFileGroups returns file group mappings for a chat
+func (s *chatService) GetChatFileGroups(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileGroup, error) {
+	return s.repo.GetChatFileGroups(ctx, chatID)
+}
+
+// SyncParticipantToFileGroups adds a participant to appropriate file groups based on role
+func (s *chatService) SyncParticipantToFileGroups(ctx context.Context, chatID, userID uuid.UUID, role model.ParticipantRole) error {
+	if s.filesClient == nil {
+		return nil
+	}
+
+	groups, err := s.repo.GetChatFileGroups(ctx, chatID)
+	if err != nil {
+		// If no groups exist yet, initialize them
+		if errors.Is(err, repository.ErrChatFileGroupNotFound) {
+			if initErr := s.InitChatFileGroups(ctx, chatID); initErr != nil {
+				return initErr
+			}
+			groups, err = s.repo.GetChatFileGroups(ctx, chatID)
+			if err != nil {
+				return fmt.Errorf("failed to get file groups after init: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to get file groups: %w", err)
+		}
+	}
+
+	// Determine which group to add user to based on role
+	for _, group := range groups {
+		shouldBeInGroup := false
+
+		switch group.GroupType {
+		case model.ChatFileGroupTypeModerate:
+			// Only admins in moderate group
+			shouldBeInGroup = role.CanModerate()
+		case model.ChatFileGroupTypeRead:
+			// All members (including admins) in read group
+			shouldBeInGroup = true
+		}
+
+		if shouldBeInGroup {
+			_, err := s.filesClient.AddUserToGroup(ctx, &filesPb.AddUserToGroupRequest{
+				GroupId: group.GroupID.String(),
+				UserId:  userID.String(),
+			})
+			if err != nil {
+				// Log but don't fail - user might already be in group
+				_ = err
+			}
+		}
+	}
+
+	return nil
+}
+
+// RemoveParticipantFromFileGroups removes a participant from all file groups of a chat
+func (s *chatService) RemoveParticipantFromFileGroups(ctx context.Context, chatID, userID uuid.UUID) error {
+	if s.filesClient == nil {
+		return nil
+	}
+
+	groups, err := s.repo.GetChatFileGroups(ctx, chatID)
+	if err != nil {
+		if errors.Is(err, repository.ErrChatFileGroupNotFound) {
+			return nil // No groups, nothing to do
+		}
+		return fmt.Errorf("failed to get file groups: %w", err)
+	}
+
+	// Collect group IDs
+	groupIDs := make([]string, len(groups))
+	for i, group := range groups {
+		groupIDs[i] = group.GroupID.String()
+	}
+
+	// Remove user from all groups and revoke permissions
+	_, err = s.filesClient.RemoveUserFromAllGroupFiles(ctx, &filesPb.RemoveUserFromAllGroupFilesRequest{
+		GroupIds: groupIDs,
+		UserId:   userID.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to remove user from file groups: %w", err)
+	}
+
+	return nil
+}
+
+// AttachFileLinkToChat tracks a file link as attached to a chat and adds it to chat file groups
+func (s *chatService) AttachFileLinkToChat(ctx context.Context, chatID, fileLinkID, attachedBy uuid.UUID) error {
+	// Save the link to chat_file_links
+	if err := s.repo.CreateChatFileLink(ctx, &model.ChatFileLink{
+		ChatID:     chatID,
+		FileLinkID: fileLinkID,
+		AttachedBy: attachedBy,
+	}); err != nil {
+		return fmt.Errorf("failed to create chat file link: %w", err)
+	}
+
+	// Add the file link to all chat file groups
+	if s.filesClient != nil {
+		groups, err := s.repo.GetChatFileGroups(ctx, chatID)
+		if err == nil && len(groups) > 0 {
+			groupIDs := make([]string, len(groups))
+			for i, g := range groups {
+				groupIDs[i] = g.GroupID.String()
+			}
+			_, _ = s.filesClient.AddFileLinkToGroups(ctx, &filesPb.AddFileLinkToGroupsRequest{
+				FileLinkId: fileLinkID.String(),
+				GroupIds:   groupIDs,
+			})
+		}
+	}
+
+	return nil
+}
+
+// GetChatFileLinks returns all file links attached to a chat
+func (s *chatService) GetChatFileLinks(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileLink, error) {
+	return s.repo.GetChatFileLinks(ctx, chatID)
 }

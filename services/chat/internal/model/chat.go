@@ -193,3 +193,37 @@ type ThreadParticipant struct {
 	UserID   uuid.UUID `json:"user_id" db:"user_id"`
 	AddedAt  time.Time `json:"added_at" db:"added_at"`
 }
+
+// ChatFileGroupType represents the type of file group associated with a chat
+type ChatFileGroupType string
+
+const (
+	ChatFileGroupTypeModerate ChatFileGroupType = "moderate" // Admin/moderator access (can_read, can_delete, can_transfer)
+	ChatFileGroupTypeRead     ChatFileGroupType = "read"     // Member access (can_read only)
+)
+
+func (t ChatFileGroupType) IsValid() bool {
+	switch t {
+	case ChatFileGroupTypeModerate, ChatFileGroupTypeRead:
+		return true
+	}
+	return false
+}
+
+// ChatFileGroup links a chat to a file group in the Files Service
+type ChatFileGroup struct {
+	ID        uuid.UUID         `json:"id" db:"id"`
+	ChatID    uuid.UUID         `json:"chat_id" db:"chat_id"`
+	GroupID   uuid.UUID         `json:"group_id" db:"group_id"` // References file_groups in Files Service
+	GroupType ChatFileGroupType `json:"group_type" db:"group_type"`
+	CreatedAt time.Time         `json:"created_at" db:"created_at"`
+}
+
+// ChatFileLink tracks which file_links are attached to a chat
+type ChatFileLink struct {
+	ID         uuid.UUID `json:"id" db:"id"`
+	ChatID     uuid.UUID `json:"chat_id" db:"chat_id"`
+	FileLinkID uuid.UUID `json:"file_link_id" db:"file_link_id"`
+	AttachedBy uuid.UUID `json:"attached_by" db:"attached_by"`
+	AttachedAt time.Time `json:"attached_at" db:"attached_at"`
+}

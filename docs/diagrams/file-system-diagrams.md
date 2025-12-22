@@ -491,6 +491,269 @@ flowchart TB
     style Repository fill:#fce4ec
 ```
 
+## 8. Group-Based File Permissions (Новая архитектура)
+
+### Ключевые принципы
+
+1. **Files Service не знает о чатах** — он работает только с группами и правами
+2. **Chat Service владеет маппингом chat ↔ file_groups** — создаёт группы при создании чата
+3. **Две группы на чат**: `moderate` (полные права) и `read` (только чтение)
+4. **Роли чата маппятся на группы**: owner/moderator → moderate, member/guest → read
+
+### Диаграмма модели данных с группами
+
+```mermaid
+erDiagram
+    FILES ||--o{ FILE_LINKS : "имеет"
+    FILE_LINKS ||--o{ FILE_LINK_PERMISSIONS : "индивидуальные права"
+    FILE_LINKS ||--o{ FILE_LINK_GROUPS : "группы файла"
+    FILE_GROUPS ||--o{ FILE_LINK_GROUPS : "файлы группы"
+    FILE_GROUPS ||--o{ FILE_GROUP_MEMBERS : "члены группы"
+
+    CHATS ||--o{ CHAT_FILE_GROUPS : "группы чата"
+    FILE_GROUPS ||--o{ CHAT_FILE_GROUPS : "чат группы"
+    CHATS ||--o{ CHAT_FILE_LINKS : "файлы чата"
+    FILE_LINKS ||--o{ CHAT_FILE_LINKS : "чаты файла"
+
+    FILE_GROUPS {
+        uuid id PK "ID группы"
+        string name "Имя группы"
+        boolean can_read "Право чтения"
+        boolean can_delete "Право удаления"
+        boolean can_transfer "Право передачи"
+        timestamp created_at "Дата создания"
+    }
+
+    FILE_GROUP_MEMBERS {
+        uuid group_id PK,FK "ID группы"
+        uuid user_id PK,FK "ID пользователя"
+        timestamp added_at "Дата добавления"
+    }
+
+    FILE_LINK_GROUPS {
+        uuid file_link_id PK,FK "ID ссылки на файл"
+        uuid group_id PK,FK "ID группы"
+        timestamp added_at "Дата добавления"
+    }
+
+    CHAT_FILE_GROUPS {
+        uuid id PK "ID записи"
+        uuid chat_id FK "ID чата"
+        uuid group_id FK "ID группы"
+        enum group_type "moderate | read"
+        timestamp created_at "Дата создания"
+    }
+
+    CHAT_FILE_LINKS {
+        uuid id PK "ID записи"
+        uuid chat_id FK "ID чата"
+        uuid file_link_id FK "ID ссылки на файл"
+        uuid attached_by FK "Кто прикрепил"
+        timestamp attached_at "Дата прикрепления"
+    }
+```
+
+### Диаграмма: Создание чата с файловыми группами
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GW as API Gateway
+    participant CS as Chat Service
+    participant FS as Files Service (gRPC)
+    participant DB_C as БД Chat
+    participant DB_F as БД Files
+
+    Note over GW,DB_F: Создание чата инициализирует файловые группы
+
+    GW->>+CS: gRPC: CreateChat
+
+    CS->>+DB_C: INSERT chats
+    DB_C-->>-CS: chat_id
+
+    CS->>+DB_C: INSERT chat_participants (owner)
+    DB_C-->>-CS: OK
+
+    rect rgb(230, 255, 230)
+        Note right of CS: Создание файловых групп
+
+        CS->>+FS: gRPC: CreateFileGroup<br/>name="chat_{id}_moderate"<br/>can_read=true, can_delete=true
+        FS->>+DB_F: INSERT file_groups
+        DB_F-->>-FS: moderate_group_id
+        FS-->>-CS: {group_id}
+
+        CS->>+FS: gRPC: CreateFileGroup<br/>name="chat_{id}_read"<br/>can_read=true, can_delete=false
+        FS->>+DB_F: INSERT file_groups
+        DB_F-->>-FS: read_group_id
+        FS-->>-CS: {group_id}
+
+        CS->>+DB_C: INSERT chat_file_groups<br/>(chat_id, moderate_group_id, 'moderate')
+        DB_C-->>-CS: OK
+
+        CS->>+DB_C: INSERT chat_file_groups<br/>(chat_id, read_group_id, 'read')
+        DB_C-->>-CS: OK
+
+        CS->>+FS: gRPC: AddUserToGroup<br/>(moderate_group_id, owner_id)
+        FS->>+DB_F: INSERT file_group_members
+        DB_F-->>-FS: OK
+        FS-->>-CS: OK
+    end
+
+    CS-->>-GW: Chat created
+```
+
+### Диаграмма: Добавление участника с синхронизацией групп
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GW as API Gateway
+    participant CS as Chat Service
+    participant FS as Files Service (gRPC)
+    participant DB_C as БД Chat
+    participant DB_F as БД Files
+
+    Note over GW,DB_F: Добавление участника синхронизирует его в файловые группы
+
+    GW->>+CS: gRPC: AddParticipant<br/>(chat_id, user_id, role)
+
+    CS->>+DB_C: INSERT chat_participants
+    DB_C-->>-CS: OK
+
+    rect rgb(230, 255, 230)
+        Note right of CS: Определение группы по роли
+
+        CS->>+DB_C: SELECT * FROM chat_file_groups<br/>WHERE chat_id = chat_id
+        DB_C-->>-CS: {moderate_group_id, read_group_id}
+
+        alt role = owner | moderator
+            CS->>+FS: gRPC: AddUserToGroup<br/>(moderate_group_id, user_id)
+            FS->>+DB_F: INSERT file_group_members
+            DB_F-->>-FS: OK
+            FS-->>-CS: OK
+        else role = member | guest
+            CS->>+FS: gRPC: AddUserToGroup<br/>(read_group_id, user_id)
+            FS->>+DB_F: INSERT file_group_members
+            DB_F-->>-FS: OK
+            FS-->>-CS: OK
+        end
+    end
+
+    CS-->>-GW: Participant added
+```
+
+### Диаграмма: Удаление участника с отзывом прав
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GW as API Gateway
+    participant CS as Chat Service
+    participant FS as Files Service (gRPC)
+    participant DB_C as БД Chat
+    participant DB_F as БД Files
+
+    Note over GW,DB_F: Удаление участника отзывает все права на файлы чата
+
+    GW->>+CS: gRPC: RemoveParticipant<br/>(chat_id, user_id)
+
+    rect rgb(255, 230, 230)
+        Note right of CS: Отзыв прав через группы
+
+        CS->>+DB_C: SELECT group_id FROM chat_file_groups<br/>WHERE chat_id = chat_id
+        DB_C-->>-CS: [moderate_group_id, read_group_id]
+
+        CS->>+FS: gRPC: RemoveUserFromAllGroupFiles<br/>(group_ids, user_id)
+
+        loop Для каждой группы
+            FS->>+DB_F: SELECT file_link_id FROM file_link_groups<br/>WHERE group_id = group_id
+            DB_F-->>-FS: [link_id1, link_id2, ...]
+
+            FS->>+DB_F: DELETE FROM file_group_members<br/>WHERE group_id AND user_id
+            DB_F-->>-FS: OK
+        end
+
+        FS->>+DB_F: DELETE FROM file_link_permissions<br/>WHERE file_link_id IN (...) AND user_id
+        DB_F-->>-FS: OK
+
+        FS-->>-CS: OK
+    end
+
+    CS->>+DB_C: DELETE FROM chat_participants
+    DB_C-->>-CS: OK
+
+    CS-->>-GW: Participant removed
+```
+
+### Диаграмма: Проверка доступа через группы (SQL функция)
+
+```mermaid
+flowchart TB
+    subgraph CheckAccess["check_file_access(link_id, user_id)"]
+        A[Получить link_id, user_id] --> B{Есть индивидуальное<br/>разрешение?}
+
+        B -->|Да| C{can_view = true?}
+        C -->|Да, can_delete = true| D1[return 'delete']
+        C -->|Да, can_delete = false| D2[return 'read']
+        C -->|Нет| E[Продолжить проверку групп]
+        B -->|Нет| E
+
+        E --> F[Получить группы файла]
+        F --> G{Пользователь в<br/>группе с can_read?}
+
+        G -->|Нет| H[return 'none']
+        G -->|Да| I{Группа имеет<br/>can_delete?}
+
+        I -->|Да| J[return 'delete']
+        I -->|Нет| K{Группа имеет<br/>can_transfer?}
+
+        K -->|Да| L[return 'transfer']
+        K -->|Нет| M[return 'read']
+    end
+
+    style CheckAccess fill:#f5f5f5
+    style D1 fill:#90EE90
+    style D2 fill:#90EE90
+    style J fill:#90EE90
+    style L fill:#90EE90
+    style M fill:#90EE90
+    style H fill:#FFB6C1
+```
+
+### Новые gRPC методы Files Service
+
+```mermaid
+flowchart LR
+    subgraph FileGroups["File Groups gRPC API"]
+        G1["CreateFileGroup<br/>(name, can_read, can_delete, can_transfer)"]
+        G2["DeleteFileGroup<br/>(group_id)"]
+        G3["AddUserToGroup<br/>(group_id, user_id)"]
+        G4["RemoveUserFromGroup<br/>(group_id, user_id)"]
+        G5["AddFileLinkToGroups<br/>(file_link_id, group_ids[])"]
+        G6["GetFilesByGroup<br/>(group_id)"]
+        G7["RemoveUserFromAllGroupFiles<br/>(group_ids[], user_id)"]
+    end
+
+    CS["Chat Service"] --> G1
+    CS --> G2
+    CS --> G3
+    CS --> G4
+    CS --> G5
+    CS --> G6
+    CS --> G7
+
+    style FileGroups fill:#e8f5e9
+```
+
+### Таблица маппинга ролей
+
+| Роль в чате | Группа | Права |
+|-------------|--------|-------|
+| `owner` | moderate | read + delete + transfer |
+| `moderator` | moderate | read + delete + transfer |
+| `member` | read | read only |
+| `guest` | read | read only |
+
 ## Легенда
 
 | Цвет | Значение |

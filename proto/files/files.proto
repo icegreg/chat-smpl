@@ -13,7 +13,7 @@ service FilesService {
     // Create a new FileLink for an existing file (for message forwarding)
     rpc CreateFileLink(CreateFileLinkRequest) returns (CreateFileLinkResponse);
 
-    // Grant permissions to users for file links
+    // Grant permissions to users for file links (individual permissions)
     rpc GrantPermissions(GrantPermissionsRequest) returns (google.protobuf.Empty);
 
     // Revoke permissions from a user for file links
@@ -24,6 +24,28 @@ service FilesService {
 
     // Get file metadata by link IDs (batch)
     rpc GetFilesByLinkIDs(GetFilesByLinkIDsRequest) returns (GetFilesByLinkIDsResponse);
+
+    // ============ File Groups Management ============
+    // Create a new file group with permissions
+    rpc CreateFileGroup(CreateFileGroupRequest) returns (CreateFileGroupResponse);
+
+    // Delete a file group
+    rpc DeleteFileGroup(DeleteFileGroupRequest) returns (google.protobuf.Empty);
+
+    // Add a user to a file group
+    rpc AddUserToGroup(AddUserToGroupRequest) returns (google.protobuf.Empty);
+
+    // Remove a user from a file group
+    rpc RemoveUserFromGroup(RemoveUserFromGroupRequest) returns (google.protobuf.Empty);
+
+    // Associate file links with groups
+    rpc AddFileLinkToGroups(AddFileLinkToGroupsRequest) returns (google.protobuf.Empty);
+
+    // Get all file links in a group
+    rpc GetFilesByGroup(GetFilesByGroupRequest) returns (GetFilesByGroupResponse);
+
+    // Remove user from all groups and revoke permissions on group files
+    rpc RemoveUserFromAllGroupFiles(RemoveUserFromAllGroupFilesRequest) returns (google.protobuf.Empty);
 }
 
 // AddLocalFile - add a file from server's local filesystem
@@ -92,4 +114,71 @@ message FileAttachment {
 
 message GetFilesByLinkIDsResponse {
     repeated FileAttachment files = 1;
+}
+
+// ============ File Groups Messages ============
+
+// FileGroup represents a group with permissions
+message FileGroup {
+    string id = 1;
+    string name = 2;
+    bool can_read = 3;
+    bool can_delete = 4;
+    bool can_transfer = 5;
+}
+
+// CreateFileGroup - create a new file group
+message CreateFileGroupRequest {
+    string name = 1;
+    bool can_read = 2;
+    bool can_delete = 3;
+    bool can_transfer = 4;
+}
+
+message CreateFileGroupResponse {
+    FileGroup group = 1;
+}
+
+// DeleteFileGroup - delete a file group
+message DeleteFileGroupRequest {
+    string group_id = 1;
+}
+
+// AddUserToGroup - add user to a group
+message AddUserToGroupRequest {
+    string group_id = 1;
+    string user_id = 2;
+}
+
+// RemoveUserFromGroup - remove user from a group
+message RemoveUserFromGroupRequest {
+    string group_id = 1;
+    string user_id = 2;
+}
+
+// AddFileLinkToGroups - associate file link with groups
+message AddFileLinkToGroupsRequest {
+    string file_link_id = 1;
+    repeated string group_ids = 2;
+}
+
+// GetFilesByGroup - get all files in a group
+message GetFilesByGroupRequest {
+    string group_id = 1;
+}
+
+message FileLinkInfo {
+    string id = 1;
+    string file_id = 2;
+    string uploaded_by = 3;
+}
+
+message GetFilesByGroupResponse {
+    repeated FileLinkInfo file_links = 1;
+}
+
+// RemoveUserFromAllGroupFiles - remove user from multiple groups
+message RemoveUserFromAllGroupFilesRequest {
+    repeated string group_ids = 1;
+    string user_id = 2;
 }
