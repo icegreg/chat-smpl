@@ -165,6 +165,11 @@ Always write tests. Run `make test` before committing. Use `testify` for asserti
 1. **После создания теста - запусти его!** Нельзя считать тест готовым, пока он не был запущен и не прошёл успешно.
 2. **После изменения Vue компонентов** - запусти `make web-build` или `npm run build` для проверки TypeScript.
 3. **Перед коммитом** - убедись что Docker образ собирается: `docker-compose build --no-cache <service>`
+4. **После изменений фронтенда** - ОБЯЗАТЕЛЬНО пересобрать и задеплоить в контейнер:
+   ```bash
+   docker-compose build --no-cache api-gateway && docker-compose up -d api-gateway
+   ```
+   Если кэш не сбрасывается, использовать: `docker builder prune -f` перед сборкой.
 
 ### Запуск команд на разных платформах
 

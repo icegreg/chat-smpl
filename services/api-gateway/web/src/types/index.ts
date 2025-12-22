@@ -42,6 +42,19 @@ export interface Chat {
   is_archived?: boolean
 }
 
+// Organization info for user profile enrichment
+export interface OrgInfo {
+  user_id: string
+  company_id?: string
+  company_name?: string
+  department_id?: string
+  department_name?: string
+  position_id?: string
+  position_name?: string
+  timezone: string
+  has_org_data: boolean
+}
+
 export interface Participant {
   user_id: string
   chat_id: string
@@ -52,6 +65,7 @@ export interface Participant {
   display_name?: string
   avatar_url?: string
   user?: User
+  org_info?: OrgInfo
 }
 
 // Protobuf timestamp format

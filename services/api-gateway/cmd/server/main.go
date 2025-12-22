@@ -103,6 +103,16 @@ func main() {
 
 	log.Info("connected to voice service", "addr", voiceServiceAddr)
 
+	// Initialize gRPC org client
+	orgServiceAddr := getEnv("ORG_SERVICE_ADDR", "localhost:50055")
+	orgClient, err := grpc.NewOrgClient(orgServiceAddr)
+	if err != nil {
+		log.Fatal("failed to connect to org service", "error", err)
+	}
+	defer orgClient.Close()
+
+	log.Info("connected to org service", "addr", orgServiceAddr)
+
 	// Initialize Centrifugo client
 	centrifugoAPIURL := getEnv("CENTRIFUGO_API_URL", "http://localhost:8000/api")
 	centrifugoAPIKey := getEnv("CENTRIFUGO_API_KEY", "your-api-key")
@@ -123,7 +133,7 @@ func main() {
 	// Initialize handlers
 	usersServiceURL := getEnv("USERS_SERVICE_URL", "http://localhost:8081")
 	authHandler := handler.NewAuthHandler(usersServiceURL, centrifugoClient, log)
-	chatHandler := handler.NewChatHandler(chatClient, filesClient, log)
+	chatHandler := handler.NewChatHandler(chatClient, filesClient, orgClient, log)
 	centrifugoHandler := handler.NewCentrifugoHandler(centrifugoClient, log)
 	filesHandler := handler.NewFilesHandler(filesServiceURL, log)
 	presenceHandler := handler.NewPresenceHandler(presenceClient, log)

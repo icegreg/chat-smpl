@@ -1,12 +1,24 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { Participant } from '@/types'
 import { usePresenceStore } from '@/stores/presence'
 import StatusIndicator from './StatusIndicator.vue'
+import ProfileCard from './ProfileCard.vue'
 
 const props = defineProps<{
   participants: Participant[]
 }>()
+
+// Selected participant for profile card modal
+const selectedParticipant = ref<Participant | null>(null)
+
+function openProfile(participant: Participant) {
+  selectedParticipant.value = participant
+}
+
+function closeProfile() {
+  selectedParticipant.value = null
+}
 
 const presenceStore = usePresenceStore()
 
@@ -32,6 +44,24 @@ onMounted(() => {
 defineEmits<{
   close: []
 }>()
+
+// Get sort key: display_name if exists, otherwise username
+function getSortKey(participant: Participant): string {
+  const displayName = participant.display_name || participant.user?.display_name
+  if (displayName) {
+    return displayName
+  }
+  return participant.username || participant.user?.username || ''
+}
+
+// Sorted participants by display_name, fallback to username (ASCII order)
+const sortedParticipants = computed(() => {
+  return [...props.participants].sort((a, b) => {
+    const keyA = getSortKey(a)
+    const keyB = getSortKey(b)
+    return keyA.localeCompare(keyB, undefined, { sensitivity: 'base' })
+  })
+})
 
 function getDisplayName(participant: Participant): string {
   // Priority: participant.display_name > user.display_name > participant.username > user.username
@@ -140,9 +170,10 @@ function getRoleLabel(role: string | number): string {
     <div class="flex-1 overflow-y-auto">
       <ul class="divide-y divide-gray-100">
         <li
-          v-for="participant in participants"
+          v-for="participant in sortedParticipants"
           :key="participant.user_id"
-          class="px-4 py-3 hover:bg-gray-50"
+          class="px-4 py-3 hover:bg-gray-50 cursor-pointer"
+          @click="openProfile(participant)"
         >
           <div class="flex items-center gap-3">
             <div class="relative">
@@ -185,5 +216,12 @@ function getRoleLabel(role: string | number): string {
         No participants
       </div>
     </div>
+
+    <!-- Profile Card Modal -->
+    <ProfileCard
+      v-if="selectedParticipant"
+      :participant="selectedParticipant"
+      @close="closeProfile"
+    />
   </div>
 </template>

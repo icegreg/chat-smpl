@@ -10,6 +10,7 @@ import (
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	pb "github.com/icegreg/chat-smpl/proto/chat"
+	orgpb "github.com/icegreg/chat-smpl/proto/org"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/files"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/api-gateway/internal/middleware"
@@ -18,15 +19,69 @@ import (
 type ChatHandler struct {
 	chatClient  *grpc.ChatClient
 	filesClient *files.Client
+	orgClient   *grpc.OrgClient
 	log         logger.Logger
 }
 
-func NewChatHandler(chatClient *grpc.ChatClient, filesClient *files.Client, log logger.Logger) *ChatHandler {
+func NewChatHandler(chatClient *grpc.ChatClient, filesClient *files.Client, orgClient *grpc.OrgClient, log logger.Logger) *ChatHandler {
 	return &ChatHandler{
 		chatClient:  chatClient,
 		filesClient: filesClient,
+		orgClient:   orgClient,
 		log:         log,
 	}
+}
+
+// ParticipantWithOrg represents a chat participant enriched with org info
+type ParticipantWithOrg struct {
+	*pb.ChatParticipant
+	OrgInfo *orgpb.UserOrgInfo `json:"org_info,omitempty"`
+}
+
+// enrichParticipantsWithOrg enriches participants with organization info
+func (h *ChatHandler) enrichParticipantsWithOrg(ctx context.Context, participants []*pb.ChatParticipant) []ParticipantWithOrg {
+	if h.orgClient == nil || len(participants) == 0 {
+		result := make([]ParticipantWithOrg, len(participants))
+		for i, p := range participants {
+			result[i] = ParticipantWithOrg{ChatParticipant: p}
+		}
+		return result
+	}
+
+	// Collect user IDs
+	userIDs := make([]string, len(participants))
+	for i, p := range participants {
+		userIDs[i] = p.UserId
+	}
+
+	// Get org info for all users in batch
+	orgInfos, err := h.orgClient.GetUsersOrgInfoBatch(ctx, userIDs)
+	if err != nil {
+		h.log.Warn("failed to get org info for participants", "error", err)
+		// Return participants without org info on error
+		result := make([]ParticipantWithOrg, len(participants))
+		for i, p := range participants {
+			result[i] = ParticipantWithOrg{ChatParticipant: p}
+		}
+		return result
+	}
+
+	// Create a map for quick lookup
+	orgInfoMap := make(map[string]*orgpb.UserOrgInfo)
+	for _, info := range orgInfos {
+		orgInfoMap[info.UserId] = info
+	}
+
+	// Enrich participants
+	result := make([]ParticipantWithOrg, len(participants))
+	for i, p := range participants {
+		result[i] = ParticipantWithOrg{
+			ChatParticipant: p,
+			OrgInfo:         orgInfoMap[p.UserId],
+		}
+	}
+
+	return result
 }
 
 func (h *ChatHandler) Routes() chi.Router {
@@ -318,8 +373,11 @@ func (h *ChatHandler) GetParticipants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enrich participants with org info
+	enrichedParticipants := h.enrichParticipantsWithOrg(ctx, resp.Participants)
+
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"participants": resp.Participants,
+		"participants": enrichedParticipants,
 		"pagination":   resp.Pagination,
 	})
 }

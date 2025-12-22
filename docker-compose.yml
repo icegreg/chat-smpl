@@ -179,6 +179,22 @@ services:
     networks:
       - chatapp-network
 
+  org-service:
+    build:
+      context: .
+      dockerfile: services/org/Dockerfile
+    container_name: chatapp-org
+    environment:
+      - DATABASE_URL=postgres://chatapp:secret@postgres:5432/chatapp?sslmode=disable
+      - GRPC_PORT=50055
+    ports:
+      - "50055:50055"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - chatapp-network
+
   # FreeSWITCH - VoIP/WebRTC media server
   freeswitch:
     build:
@@ -261,6 +277,7 @@ services:
       - CHAT_SERVICE_ADDR=chat-service:50051
       - PRESENCE_SERVICE_ADDR=presence-service:50052
       - VOICE_SERVICE_ADDR=voice-service:50054
+      - ORG_SERVICE_ADDR=org-service:50055
       - FILES_SERVICE_URL=http://files-service:8082
       - CENTRIFUGO_API_URL=http://centrifugo:8000/api
       - CENTRIFUGO_API_KEY=centrifugo-api-key
@@ -279,6 +296,7 @@ services:
       - files-service
       - presence-service
       - voice-service
+      - org-service
       - centrifugo
       - rabbitmq
     networks:

@@ -1,0 +1,317 @@
+syntax = "proto3";
+
+package org;
+
+option go_package = "github.com/icegreg/chat-smpl/proto/org";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// OrgService handles organization structure
+service OrgService {
+    // Company operations
+    rpc CreateCompany(CreateCompanyRequest) returns (Company);
+    rpc GetCompany(GetCompanyRequest) returns (Company);
+    rpc ListCompanies(ListCompaniesRequest) returns (ListCompaniesResponse);
+    rpc UpdateCompany(UpdateCompanyRequest) returns (Company);
+    rpc DeleteCompany(DeleteCompanyRequest) returns (google.protobuf.Empty);
+    rpc GetCompanyHierarchy(GetCompanyRequest) returns (CompanyHierarchy);
+
+    // Department operations
+    rpc CreateDepartment(CreateDepartmentRequest) returns (Department);
+    rpc GetDepartment(GetDepartmentRequest) returns (Department);
+    rpc ListDepartments(ListDepartmentsRequest) returns (ListDepartmentsResponse);
+    rpc UpdateDepartment(UpdateDepartmentRequest) returns (Department);
+    rpc DeleteDepartment(DeleteDepartmentRequest) returns (google.protobuf.Empty);
+    rpc GetDepartmentHierarchy(GetDepartmentRequest) returns (DepartmentHierarchy);
+
+    // Position operations
+    rpc CreatePosition(CreatePositionRequest) returns (Position);
+    rpc GetPosition(GetPositionRequest) returns (Position);
+    rpc ListPositions(ListPositionsRequest) returns (ListPositionsResponse);
+    rpc UpdatePosition(UpdatePositionRequest) returns (Position);
+    rpc DeletePosition(DeletePositionRequest) returns (google.protobuf.Empty);
+
+    // Employee operations
+    rpc CreateEmployee(CreateEmployeeRequest) returns (Employee);
+    rpc GetEmployee(GetEmployeeRequest) returns (Employee);
+    rpc GetEmployeeByUserId(GetEmployeeByUserIdRequest) returns (Employee);
+    rpc ListEmployees(ListEmployeesRequest) returns (ListEmployeesResponse);
+    rpc UpdateEmployee(UpdateEmployeeRequest) returns (Employee);
+    rpc DeleteEmployee(DeleteEmployeeRequest) returns (google.protobuf.Empty);
+
+    // Enrichment for profiles (main methods for API Gateway)
+    rpc GetUserOrgInfo(GetUserOrgInfoRequest) returns (UserOrgInfo);
+    rpc GetUsersOrgInfoBatch(GetUsersOrgInfoBatchRequest) returns (GetUsersOrgInfoBatchResponse);
+}
+
+// ============ Core Messages ============
+
+message Company {
+    string id = 1;
+    string parent_id = 2;  // empty for root companies
+    string name = 3;
+    string short_name = 4;
+    string description = 5;
+    string timezone = 6;
+    string instance_id = 7;  // for federation
+    bool is_active = 8;
+    google.protobuf.Timestamp created_at = 9;
+    google.protobuf.Timestamp updated_at = 10;
+}
+
+message CompanyHierarchy {
+    Company company = 1;
+    repeated CompanyHierarchy children = 2;
+}
+
+message Department {
+    string id = 1;
+    string company_id = 2;
+    string parent_department_id = 3;
+    string name = 4;
+    string short_name = 5;
+    string description = 6;
+    int32 sort_order = 7;
+    string instance_id = 8;
+    bool is_active = 9;
+    google.protobuf.Timestamp created_at = 10;
+    google.protobuf.Timestamp updated_at = 11;
+}
+
+message DepartmentHierarchy {
+    Department department = 1;
+    repeated DepartmentHierarchy children = 2;
+}
+
+message Position {
+    string id = 1;
+    string company_id = 2;
+    string name = 3;
+    string short_name = 4;
+    int32 level = 5;
+    string description = 6;
+    string instance_id = 7;
+    bool is_active = 8;
+    google.protobuf.Timestamp created_at = 9;
+    google.protobuf.Timestamp updated_at = 10;
+}
+
+message Employee {
+    string id = 1;
+    string user_id = 2;
+    string department_id = 3;
+    string position_id = 4;
+    string employee_number = 5;
+    string hire_date = 6;  // YYYY-MM-DD format
+    string instance_id = 7;
+    bool is_primary = 8;
+    bool is_active = 9;
+    google.protobuf.Timestamp created_at = 10;
+    google.protobuf.Timestamp updated_at = 11;
+
+    // Expanded fields (populated on read)
+    Department department = 12;
+    Position position = 13;
+    Company company = 14;
+}
+
+// User organization info for profile enrichment
+message UserOrgInfo {
+    string user_id = 1;
+    string company_id = 2;
+    string company_name = 3;
+    string department_id = 4;
+    string department_name = 5;
+    string position_id = 6;
+    string position_name = 7;
+    string timezone = 8;
+    bool has_org_data = 9;  // false if user is not linked to organization
+}
+
+message Pagination {
+    int32 page = 1;
+    int32 count = 2;
+    int32 total = 3;
+    int32 total_pages = 4;
+}
+
+// ============ Company Requests/Responses ============
+
+message CreateCompanyRequest {
+    string parent_id = 1;
+    string name = 2;
+    string short_name = 3;
+    string description = 4;
+    string timezone = 5;
+}
+
+message GetCompanyRequest {
+    string id = 1;
+}
+
+message ListCompaniesRequest {
+    int32 page = 1;
+    int32 count = 2;
+    string parent_id = 3;  // filter by parent (empty for root companies)
+    bool include_inactive = 4;
+}
+
+message ListCompaniesResponse {
+    repeated Company companies = 1;
+    Pagination pagination = 2;
+}
+
+message UpdateCompanyRequest {
+    string id = 1;
+    string name = 2;
+    string short_name = 3;
+    string description = 4;
+    string timezone = 5;
+    bool is_active = 6;
+}
+
+message DeleteCompanyRequest {
+    string id = 1;
+}
+
+// ============ Department Requests/Responses ============
+
+message CreateDepartmentRequest {
+    string company_id = 1;
+    string parent_department_id = 2;
+    string name = 3;
+    string short_name = 4;
+    string description = 5;
+    int32 sort_order = 6;
+}
+
+message GetDepartmentRequest {
+    string id = 1;
+}
+
+message ListDepartmentsRequest {
+    string company_id = 1;
+    string parent_department_id = 2;
+    int32 page = 3;
+    int32 count = 4;
+    bool include_inactive = 5;
+}
+
+message ListDepartmentsResponse {
+    repeated Department departments = 1;
+    Pagination pagination = 2;
+}
+
+message UpdateDepartmentRequest {
+    string id = 1;
+    string name = 2;
+    string short_name = 3;
+    string description = 4;
+    int32 sort_order = 5;
+    bool is_active = 6;
+}
+
+message DeleteDepartmentRequest {
+    string id = 1;
+}
+
+// ============ Position Requests/Responses ============
+
+message CreatePositionRequest {
+    string company_id = 1;
+    string name = 2;
+    string short_name = 3;
+    int32 level = 4;
+    string description = 5;
+}
+
+message GetPositionRequest {
+    string id = 1;
+}
+
+message ListPositionsRequest {
+    string company_id = 1;
+    int32 page = 2;
+    int32 count = 3;
+    bool include_inactive = 4;
+}
+
+message ListPositionsResponse {
+    repeated Position positions = 1;
+    Pagination pagination = 2;
+}
+
+message UpdatePositionRequest {
+    string id = 1;
+    string name = 2;
+    string short_name = 3;
+    int32 level = 4;
+    string description = 5;
+    bool is_active = 6;
+}
+
+message DeletePositionRequest {
+    string id = 1;
+}
+
+// ============ Employee Requests/Responses ============
+
+message CreateEmployeeRequest {
+    string user_id = 1;
+    string department_id = 2;
+    string position_id = 3;
+    string employee_number = 4;
+    string hire_date = 5;  // YYYY-MM-DD format
+    bool is_primary = 6;
+}
+
+message GetEmployeeRequest {
+    string id = 1;
+}
+
+message GetEmployeeByUserIdRequest {
+    string user_id = 1;
+    bool primary_only = 2;  // if true, only return primary employment
+}
+
+message ListEmployeesRequest {
+    string department_id = 1;
+    string company_id = 2;
+    int32 page = 3;
+    int32 count = 4;
+    bool include_inactive = 5;
+}
+
+message ListEmployeesResponse {
+    repeated Employee employees = 1;
+    Pagination pagination = 2;
+}
+
+message UpdateEmployeeRequest {
+    string id = 1;
+    string department_id = 2;
+    string position_id = 3;
+    string employee_number = 4;
+    string hire_date = 5;
+    bool is_primary = 6;
+    bool is_active = 7;
+}
+
+message DeleteEmployeeRequest {
+    string id = 1;
+}
+
+// ============ Enrichment Requests/Responses ============
+
+message GetUserOrgInfoRequest {
+    string user_id = 1;
+}
+
+message GetUsersOrgInfoBatchRequest {
+    repeated string user_ids = 1;
+}
+
+message GetUsersOrgInfoBatchResponse {
+    repeated UserOrgInfo users = 1;
+}

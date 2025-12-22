@@ -52,7 +52,7 @@ docker-clean: ## Remove all containers and volumes
 
 # ==================== Build ====================
 
-build: build-users build-chat build-files build-gateway ## Build all services
+build: build-users build-chat build-files build-gateway build-org ## Build all services
 
 build-users: ## Build users service
 	$(GOBUILD) -o bin/users-server ./$(SERVICES_DIR)/users/cmd/server
@@ -66,6 +66,10 @@ build-files: ## Build files service
 
 build-gateway: ## Build api-gateway service
 	$(GOBUILD) -o bin/api-gateway ./$(SERVICES_DIR)/api-gateway/cmd/server
+
+build-org: ## Build org service
+	$(GOBUILD) -o bin/org-server ./$(SERVICES_DIR)/org/cmd/server
+	$(GOBUILD) -o bin/org-cli ./$(SERVICES_DIR)/org/cmd/cli
 
 # ==================== Run locally ====================
 
@@ -123,6 +127,9 @@ proto: ## Generate protobuf code
 	$(PROTOC) --go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		$(PROTO_DIR)/voice/*.proto
+	$(PROTOC) --go_out=. --go_opt=paths=source_relative \
+		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+		$(PROTO_DIR)/org/*.proto
 
 proto-install: ## Install protoc plugins
 	$(GOGET) google.golang.org/protobuf/cmd/protoc-gen-go@latest
