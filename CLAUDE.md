@@ -62,6 +62,61 @@ make web-build
 - **Frontend**: Vue 3 + TypeScript + Pinia + Vite
 - **Infrastructure**: PostgreSQL, RabbitMQ, Centrifugo, Nginx
 
+## SSL/TLS Configuration
+
+Проект поддерживает три режима SSL через Docker Compose profiles:
+
+### Development (HTTP only)
+```bash
+make docker-up                    # HTTP на :8888
+```
+
+### Self-signed сертификаты (для тестирования)
+```bash
+# Генерация self-signed сертификата
+make ssl-generate-self-signed domain=192.168.1.100
+
+# Запуск с кастомными сертификатами
+make ssl-up-custom                # HTTPS на :443, HTTP редирект на :80
+```
+
+### Let's Encrypt (production)
+```bash
+# Первичное получение сертификата
+make ssl-init-letsencrypt domain=mydomain.com email=admin@mydomain.com
+
+# Тестовый режим (staging) - без лимитов
+make ssl-init-letsencrypt domain=mydomain.com email=admin@mydomain.com staging=--staging
+
+# Запуск с Let's Encrypt
+make ssl-up-letsencrypt           # HTTPS с автообновлением сертификатов
+```
+
+### Кастомные сертификаты
+```bash
+# Скопируйте свои сертификаты
+cp my-fullchain.pem deployments/nginx/certs/fullchain.pem
+cp my-privkey.pem deployments/nginx/certs/privkey.pem
+
+# Запуск
+make ssl-up-custom
+```
+
+### Настройка портов
+Через `.env` файл (скопируйте из `.env.example`):
+```env
+HTTP_PORT=80
+HTTPS_PORT=443
+DOMAIN=mydomain.com
+LETSENCRYPT_EMAIL=admin@mydomain.com
+```
+
+### FreeSWITCH SSL
+Сертификаты автоматически копируются в формат FreeSWITCH:
+- `deployments/freeswitch/certs/wss.pem` - комбинированный cert+key
+- `deployments/freeswitch/certs/wss.crt` - сертификат
+- `deployments/freeswitch/certs/wss.key` - ключ
+
 ## Database
 
 - Schema: `con_test`
@@ -120,12 +175,22 @@ make proto-doc          # сгенерировать docs/proto-docs.html
 
 ## Monitoring & Observability
 
+### Запуск мониторинга
+```bash
+# Запуск всех сервисов с мониторингом
+docker compose --profile monitoring up -d
+
+# Остановка мониторинга
+docker compose --profile monitoring down
+```
+
 ### Endpoints
 | Service | URL | Description |
 |---------|-----|-------------|
 | Prometheus | http://localhost:9090 | Metrics storage & queries |
 | Grafana | http://localhost:3000 | Dashboards (admin/admin) |
 | RabbitMQ | http://localhost:15672 | Queue management (guest/guest) |
+| cAdvisor | http://localhost:8088 | Container metrics |
 
 ### Prometheus Metrics
 Каждый сервис экспортирует метрики на `/metrics`:
@@ -162,10 +227,11 @@ Always write tests. Run `make test` before committing. Use `testify` for asserti
 
 ### Important Rules for Claude
 
-1. **После создания теста - запусти его!** Нельзя считать тест готовым, пока он не был запущен и не прошёл успешно.
-2. **После изменения Vue компонентов** - запусти `make web-build` или `npm run build` для проверки TypeScript.
-3. **Перед коммитом** - убедись что Docker образ собирается: `docker-compose build --no-cache <service>`
-4. **После изменений фронтенда** - ОБЯЗАТЕЛЬНО пересобрать и задеплоить в контейнер:
+1. **Коммиты на русском языке!** Все commit messages и tag descriptions пишем на русском языке.
+2. **После создания теста - запусти его!** Нельзя считать тест готовым, пока он не был запущен и не прошёл успешно.
+3. **После изменения Vue компонентов** - запусти `make web-build` или `npm run build` для проверки TypeScript.
+4. **Перед коммитом** - убедись что Docker образ собирается: `docker-compose build --no-cache <service>`
+5. **После изменений фронтенда** - ОБЯЗАТЕЛЬНО пересобрать и задеплоить в контейнер:
    ```bash
    docker-compose build --no-cache api-gateway && docker-compose up -d api-gateway
    ```

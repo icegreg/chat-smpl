@@ -4,6 +4,15 @@
 
 ## Быстрый старт
 
+```bash
+# Запуск мониторинга (через Docker Compose profile)
+docker compose --profile monitoring up -d
+
+# Остановка мониторинга
+docker compose --profile monitoring down
+```
+
+Альтернативный способ (через PowerShell скрипт):
 ```powershell
 # Запуск мониторинга
 .\deployments\monitoring\start-monitoring.ps1
@@ -81,14 +90,14 @@ cd load-tests
 # 5. Наблюдать метрики в реальном времени в Grafana
 ```
 
-## Ручной запуск через Docker Compose
+## Запуск через Docker Compose
 
-```powershell
-# Запуск всего стека
-docker compose -f docker-compose.yml -f deployments/monitoring/docker-compose.monitoring.yml up -d
+```bash
+# Запуск всего стека с мониторингом
+docker compose --profile monitoring up -d
 
-# Только мониторинг (без cAdvisor на Windows)
-docker compose -f docker-compose.yml -f deployments/monitoring/docker-compose.monitoring.yml up -d prometheus grafana redis-exporter postgres-exporter
+# Только определённые сервисы мониторинга (без cAdvisor на Windows)
+docker compose --profile monitoring up -d prometheus grafana redis-exporter postgres-exporter
 ```
 
 ## Prometheus Targets
