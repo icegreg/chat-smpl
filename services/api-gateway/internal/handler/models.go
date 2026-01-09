@@ -138,6 +138,7 @@ type MessageResponse struct {
 	SenderID        string                 `json:"sender_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	SenderUsername  string                 `json:"sender_username" example:"johndoe"`
 	Content         string                 `json:"content" example:"Hello, world!"`
+	Type            string                 `json:"type,omitempty" example:"text"`
 	CreatedAt       string                 `json:"created_at" example:"2024-01-15T10:30:00Z"`
 	UpdatedAt       string                 `json:"updated_at" example:"2024-01-15T10:30:00Z"`
 	ReplyTo         []ReplyToMessage       `json:"reply_to,omitempty"`
@@ -145,6 +146,7 @@ type MessageResponse struct {
 	Reactions       map[string]int         `json:"reactions,omitempty"`
 	ThreadID        string                 `json:"thread_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	ForwardedFrom   *ForwardedFromResponse `json:"forwarded_from,omitempty"`
+	IsSystem        bool                   `json:"is_system,omitempty" example:"false"`
 }
 
 // ReplyToMessage represents a reply reference
@@ -319,6 +321,7 @@ type CreateConferenceRequest struct {
 type ConferenceResponse struct {
 	ID               string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	Name             string `json:"name" example:"Team Standup"`
+	FreeSwitchName   string `json:"freeswitch_name" example:"adhoc_chat_abc123"`
 	ChatID           string `json:"chat_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	CreatedBy        string `json:"created_by" example:"550e8400-e29b-41d4-a716-446655440000"`
 	Status           string `json:"status" example:"active"`
@@ -339,7 +342,8 @@ type ListConferencesResponse struct {
 
 // JoinConferenceRequest represents join conference options
 type JoinConferenceRequest struct {
-	Muted bool `json:"muted" example:"false"`
+	Muted       bool   `json:"muted" example:"false"`
+	DisplayName string `json:"display_name" example:"John Doe"`
 }
 
 // ParticipantResponse represents a conference participant
@@ -420,6 +424,11 @@ type ChatCallResponse struct {
 	Credentials VertoCredentialsResponse `json:"credentials"`
 }
 
+// StartChatCallRequest represents request to start call from chat
+type StartChatCallRequest struct {
+	Name string `json:"name,omitempty" example:"Team Meeting"`
+}
+
 // Scheduled Events Models
 
 // RecurrenceRuleRequest represents recurrence rule for scheduled events
@@ -482,6 +491,7 @@ type RecurrenceRuleResponse struct {
 type ScheduledConferenceResponse struct {
 	ID               string                        `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	Name             string                        `json:"name" example:"Weekly Standup"`
+	FreeSwitchName   string                        `json:"freeswitch_name" example:"adhoc_chat_abc123"`
 	ChatID           string                        `json:"chat_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	CreatedBy        string                        `json:"created_by" example:"550e8400-e29b-41d4-a716-446655440000"`
 	Status           string                        `json:"status" example:"scheduled"`
@@ -521,4 +531,98 @@ type ListScheduledConferencesResponse struct {
 // ChatConferencesResponse represents conferences for a chat
 type ChatConferencesResponse struct {
 	Conferences []ScheduledConferenceResponse `json:"conferences"`
+}
+
+// Conference History Models
+
+// ConferenceHistoryResponse represents conference history with participants
+type ConferenceHistoryResponse struct {
+	ID               string                      `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Name             string                      `json:"name" example:"Team Standup"`
+	ChatID           string                      `json:"chat_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Status           string                      `json:"status" example:"ended"`
+	StartedAt        string                      `json:"started_at,omitempty" example:"2024-01-15T10:30:00Z"`
+	EndedAt          string                      `json:"ended_at,omitempty" example:"2024-01-15T11:30:00Z"`
+	CreatedAt        string                      `json:"created_at" example:"2024-01-15T10:30:00Z"`
+	ParticipantCount int                         `json:"participant_count" example:"5"`
+	ThreadID         string                      `json:"thread_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	AllParticipants  []ParticipantHistoryResponse `json:"all_participants,omitempty"`
+}
+
+// ListConferenceHistoryResponse represents list of conference history
+type ListConferenceHistoryResponse struct {
+	Conferences []ConferenceHistoryResponse `json:"conferences"`
+	Total       int                         `json:"total" example:"10"`
+}
+
+// ParticipantHistoryResponse represents participant with all sessions
+type ParticipantHistoryResponse struct {
+	UserID      string                     `json:"user_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Username    string                     `json:"username,omitempty" example:"johndoe"`
+	DisplayName string                     `json:"display_name,omitempty" example:"John Doe"`
+	Sessions    []ParticipantSessionResponse `json:"sessions"`
+}
+
+// ParticipantSessionResponse represents a single join/leave session
+type ParticipantSessionResponse struct {
+	JoinedAt string `json:"joined_at" example:"2024-01-15T10:30:00Z"`
+	LeftAt   string `json:"left_at,omitempty" example:"2024-01-15T11:00:00Z"`
+	Status   string `json:"status" example:"left"`
+	Role     string `json:"role" example:"participant"`
+}
+
+// ConferenceMessageResponse represents a message during a conference
+type ConferenceMessageResponse struct {
+	ID                string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ChatID            string `json:"chat_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	SenderID          string `json:"sender_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	SenderUsername    string `json:"sender_username,omitempty" example:"johndoe"`
+	SenderDisplayName string `json:"sender_display_name,omitempty" example:"John Doe"`
+	Content           string `json:"content" example:"Hello everyone!"`
+	CreatedAt         string `json:"created_at" example:"2024-01-15T10:30:00Z"`
+}
+
+// ConferenceMessagesResponse represents messages during a conference
+type ConferenceMessagesResponse struct {
+	Messages []ConferenceMessageResponse `json:"messages"`
+}
+
+// ModeratorActionResponse represents a moderator action
+type ModeratorActionResponse struct {
+	ID                string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ConferenceID      string `json:"conference_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ActorID           string `json:"actor_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	TargetUserID      string `json:"target_user_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ActionType        string `json:"action_type" example:"mute"`
+	Details           string `json:"details,omitempty" example:"{}"`
+	ActorUsername     string `json:"actor_username,omitempty" example:"moderator"`
+	ActorDisplayName  string `json:"actor_display_name,omitempty" example:"Moderator User"`
+	TargetUsername    string `json:"target_username,omitempty" example:"participant"`
+	TargetDisplayName string `json:"target_display_name,omitempty" example:"Participant User"`
+	CreatedAt         string `json:"created_at" example:"2024-01-15T10:35:00Z"`
+}
+
+// ModeratorActionsResponse represents list of moderator actions
+type ModeratorActionsResponse struct {
+	Actions []ModeratorActionResponse `json:"actions"`
+}
+
+// Chat Files Models
+
+// ChatFileResponse represents a file in a chat
+type ChatFileResponse struct {
+	ID           string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	LinkID       string `json:"link_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Filename     string `json:"filename" example:"document.pdf"`
+	Size         int64  `json:"size" example:"102400"`
+	MimeType     string `json:"mime_type,omitempty" example:"application/pdf"`
+	UploadedBy   string `json:"uploaded_by" example:"550e8400-e29b-41d4-a716-446655440000"`
+	UploaderName string `json:"uploader_name,omitempty" example:"John Doe"`
+	UploadedAt   string `json:"uploaded_at" example:"2024-01-15T10:30:00Z"`
+}
+
+// ChatFilesResponse represents list of files in a chat
+type ChatFilesResponse struct {
+	Files []ChatFileResponse `json:"files"`
+	Total int                `json:"total" example:"25"`
 }

@@ -182,6 +182,12 @@ func messageToProto(m *model.Message) *pb.Message {
 	for _, replyMsg := range m.ReplyToMessages {
 		msg.ReplyToMessages = append(msg.ReplyToMessages, messageToProto(&replyMsg))
 	}
+	// Add thread_id
+	if m.ThreadID != nil {
+		msg.ThreadId = m.ThreadID.String()
+	}
+	// Add is_system flag
+	msg.IsSystem = m.IsSystem
 	return msg
 }
 
@@ -512,6 +518,20 @@ func (s *ChatServer) SendMessage(ctx context.Context, req *pb.SendMessageRequest
 	}
 
 	message, err := s.chatService.SendMessage(ctx, chatID, senderID, req.Content, parseUUIDPtr(req.ParentId), fileLinkIDs, replyToIDs)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return messageToProto(message), nil
+}
+
+func (s *ChatServer) SendSystemMessage(ctx context.Context, req *pb.SendSystemMessageRequest) (*pb.Message, error) {
+	chatID, err := parseUUID(req.ChatId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid chat_id")
+	}
+
+	message, err := s.chatService.SendSystemMessage(ctx, chatID, req.Content, req.ToMainChat)
 	if err != nil {
 		return nil, handleError(err)
 	}

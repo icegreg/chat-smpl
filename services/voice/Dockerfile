@@ -14,15 +14,15 @@ COPY proto/ ./proto/
 # Download root module dependencies
 RUN go mod download
 
-# Generate proto files (use versions compatible with grpc v1.62.1)
+# Copy source code
+COPY services/voice/ ./services/voice/
+
+# Generate proto files (use versions compatible with grpc v1.62.1) - AFTER copying source
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0 && \
     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
 RUN protoc --go_out=. --go_opt=paths=source_relative \
     --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-    proto/voice/*.proto
-
-# Copy source code
-COPY services/voice/ ./services/voice/
+    proto/voice/*.proto proto/chat/*.proto
 
 # Download voice module dependencies and tidy
 WORKDIR /app/services/voice

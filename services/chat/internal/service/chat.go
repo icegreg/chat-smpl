@@ -84,7 +84,7 @@ type ChatService interface {
 
 	// System thread helpers
 	GetSystemThread(ctx context.Context, chatID uuid.UUID) (*model.Thread, error)
-	SendSystemMessage(ctx context.Context, chatID uuid.UUID, content string) (*model.Message, error)
+	SendSystemMessage(ctx context.Context, chatID uuid.UUID, content string, toMainChat bool) (*model.Message, error)
 
 	// Subthread operations
 	ListSubthreads(ctx context.Context, parentThreadID, userID uuid.UUID, page, count int) ([]model.Thread, int, error)
@@ -289,7 +289,7 @@ func (s *chatService) AddParticipant(ctx context.Context, chatID, userID, addedB
 	if newParticipant.Username != nil {
 		username = *newParticipant.Username
 	}
-	_, _ = s.SendSystemMessage(ctx, chatID, fmt.Sprintf("%s joined the chat", username))
+	_, _ = s.SendSystemMessage(ctx, chatID, fmt.Sprintf("%s joined the chat", username), false)
 
 	return newParticipant, nil
 }
@@ -331,9 +331,9 @@ func (s *chatService) RemoveParticipant(ctx context.Context, chatID, userID, rem
 		username = *leavingParticipant.Username
 	}
 	if userID == removedBy {
-		_, _ = s.SendSystemMessage(ctx, chatID, fmt.Sprintf("%s left the chat", username))
+		_, _ = s.SendSystemMessage(ctx, chatID, fmt.Sprintf("%s left the chat", username), false)
 	} else {
-		_, _ = s.SendSystemMessage(ctx, chatID, fmt.Sprintf("%s was removed from the chat", username))
+		_, _ = s.SendSystemMessage(ctx, chatID, fmt.Sprintf("%s was removed from the chat", username), false)
 	}
 
 	return nil
@@ -1060,8 +1060,13 @@ func (s *chatService) GetSystemThread(ctx context.Context, chatID uuid.UUID) (*m
 	return s.repo.GetSystemThread(ctx, chatID)
 }
 
-func (s *chatService) SendSystemMessage(ctx context.Context, chatID uuid.UUID, content string) (*model.Message, error) {
-	// Get system thread
+func (s *chatService) SendSystemMessage(ctx context.Context, chatID uuid.UUID, content string, toMainChat bool) (*model.Message, error) {
+	// If toMainChat is true, send directly to main chat (no thread)
+	if toMainChat {
+		return s.SendMessageToThread(ctx, chatID, uuid.Nil, content, nil, nil, nil, nil, true)
+	}
+
+	// Otherwise, send to system (Activity) thread
 	systemThread, err := s.repo.GetSystemThread(ctx, chatID)
 	if err != nil {
 		// If no system thread exists, create one
