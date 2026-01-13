@@ -15,7 +15,9 @@ WORKDIR /app
 RUN apk add --no-cache git protobuf protobuf-dev
 
 COPY go.mod go.sum ./
-COPY proto/voice/go.mod proto/voice/go.sum* proto/voice/
+COPY proto/chat ./proto/chat
+COPY proto/voice ./proto/voice
+COPY pkg/metrics ./pkg/metrics
 RUN go mod download
 
 # Install protoc plugins

@@ -5,7 +5,9 @@ WORKDIR /app
 RUN apk add --no-cache git
 
 COPY go.mod go.sum ./
+COPY proto/chat ./proto/chat
 COPY proto/voice ./proto/voice
+COPY pkg/metrics ./pkg/metrics
 RUN go mod download
 
 COPY . .

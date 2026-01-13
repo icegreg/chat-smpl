@@ -6,8 +6,11 @@ WORKDIR /app
 # Install git for go mod
 RUN apk add --no-cache git
 
-# Copy go mod files
+# Copy go mod files and local modules required by replace directives
 COPY go.mod go.sum ./
+COPY proto/chat ./proto/chat
+COPY proto/voice ./proto/voice
+COPY pkg/metrics ./pkg/metrics
 RUN go mod download
 
 # Copy source code
