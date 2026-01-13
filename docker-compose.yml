@@ -443,6 +443,35 @@ services:
   # SSL Profiles
   # =============================================================================
 
+  # Generate self-signed SSL certificates (for Windows or when openssl is not available)
+  # Usage: docker-compose --profile ssl-gen run --rm ssl-gen
+  # With custom domain: DOMAIN=192.168.1.100 docker-compose --profile ssl-gen run --rm ssl-gen
+  ssl-gen:
+    image: alpine/openssl
+    profiles:
+      - ssl-gen
+    volumes:
+      - ./deployments/nginx/certs:/certs
+      - ./deployments/freeswitch/certs:/freeswitch-certs
+    entrypoint: /bin/sh -c
+    command:
+      - |
+        mkdir -p /certs /freeswitch-certs && \
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /certs/privkey.pem -out /certs/fullchain.pem \
+          -subj "/CN=$${DOMAIN:-localhost}" && \
+        cp /certs/privkey.pem /certs/wss.key && \
+        cp /certs/fullchain.pem /certs/wss.crt && \
+        cat /certs/fullchain.pem /certs/privkey.pem > /certs/wss.pem && \
+        cp /certs/wss.key /freeswitch-certs/wss.key && \
+        cp /certs/wss.crt /freeswitch-certs/wss.crt && \
+        cp /certs/wss.pem /freeswitch-certs/wss.pem && \
+        echo "========================================" && \
+        echo "SSL certificates generated successfully!" && \
+        echo "========================================" && \
+        echo "Nginx:      fullchain.pem, privkey.pem, wss.crt, wss.key" && \
+        echo "FreeSWITCH: wss.key, wss.crt, wss.pem"
+
   # NGINX with SSL (for ssl-custom and ssl-letsencrypt profiles)
   nginx-ssl:
     image: nginx:alpine

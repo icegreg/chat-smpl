@@ -6,6 +6,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Микросервисное чат-приложение с JWT авторизацией, gRPC коммуникацией и real-time обновлениями через Centrifugo.
 
+## Quick Start (первый запуск)
+
+При первом клонировании проекта выполните:
+
+```bash
+# 1. Скопировать пример конфигурации
+cp .env.example .env
+
+# 2. Сгенерировать SSL сертификаты (обязательно для nginx и FreeSWITCH)
+docker-compose --profile ssl-gen run --rm ssl-gen
+
+# 3. Запустить все сервисы
+make docker-up
+```
+
+**Для Windows (PowerShell):**
+```powershell
+# 1. Скопировать конфигурацию
+Copy-Item .env.example .env
+
+# 2. Сгенерировать SSL сертификаты
+docker-compose --profile ssl-gen run --rm ssl-gen
+
+# 3. Запустить сервисы
+docker-compose up -d
+```
+
+После запуска приложение доступно на http://localhost:8888
+
 ## Build & Run Commands
 
 ```bash
@@ -73,8 +102,17 @@ make docker-up                    # HTTP на :8888
 
 ### Self-signed сертификаты (для тестирования)
 ```bash
-# Генерация self-signed сертификата
+# Linux/Mac: через make
 make ssl-generate-self-signed domain=192.168.1.100
+
+# Windows/любая ОС: через Docker (рекомендуется)
+docker-compose --profile ssl-gen run --rm ssl-gen
+
+# С указанием домена/IP:
+DOMAIN=192.168.1.100 docker-compose --profile ssl-gen run --rm ssl-gen
+
+# PowerShell (Windows):
+$env:DOMAIN="192.168.1.100"; docker-compose --profile ssl-gen run --rm ssl-gen
 
 # Запуск с кастомными сертификатами
 make ssl-up-custom                # HTTPS на :443, HTTP редирект на :80
