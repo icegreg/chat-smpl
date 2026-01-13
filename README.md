@@ -115,6 +115,11 @@ make run-files
 make run-gateway
 ```
 
+### Генерация сертификатов
+```bash
+# Сгенерировать SSL сертификаты (обязательно для nginx и FreeSWITCH)
+docker-compose --profile ssl-gen run --rm ssl-gen
+```
 ### Vue SPA разработка
 
 ```bash
