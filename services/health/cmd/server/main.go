@@ -60,7 +60,8 @@ func main() {
 
 	// Routes
 	r.Get("/health", h.Health)
-	r.Get("/api/health/system", h.SystemHealth)
+	r.Get("/api/health/system", h.SystemHealth)           // Always 200, status in body
+	r.Get("/api/health/system/check", h.SystemHealthCheck) // HTTP status reflects health
 	r.Handle("/metrics", promhttp.Handler())
 
 	// Create HTTP server
