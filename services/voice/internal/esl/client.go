@@ -45,6 +45,7 @@ type Client interface {
 	KickMember(ctx context.Context, confName, memberID string) error
 	MuteMember(ctx context.Context, confName, memberID string, mute bool) error
 	DeafMember(ctx context.Context, confName, memberID string, deaf bool) error
+	InviteToConference(ctx context.Context, confName, extension, domain, callerName string) error
 
 	// Call operations
 	Originate(ctx context.Context, dest string, vars map[string]string) (string, error)
@@ -89,11 +90,16 @@ type eslClient struct {
 	logger     *zap.Logger
 	done       chan struct{}
 	reconnectC chan struct{}
+
+	// Command synchronization: when sending a command, we need exclusive access to the connection
+	// commandMode is set to true when a command is being sent, readEvents should pause
+	commandMode     bool
+	commandModeCond *sync.Cond
 }
 
 // NewClient creates a new ESL client
 func NewClient(host string, port int, password string, logger *zap.Logger) Client {
-	return &eslClient{
+	client := &eslClient{
 		host:       host,
 		port:       port,
 		password:   password,
@@ -102,6 +108,8 @@ func NewClient(host string, port int, password string, logger *zap.Logger) Clien
 		done:       make(chan struct{}),
 		reconnectC: make(chan struct{}, 1),
 	}
+	client.commandModeCond = sync.NewCond(&client.mu)
+	return client
 }
 
 // Connect establishes connection to FreeSWITCH
@@ -122,7 +130,8 @@ func (c *eslClient) Connect(ctx context.Context) error {
 	}
 
 	c.conn = conn
-	c.reader = textproto.NewReader(bufio.NewReader(conn))
+	// Use larger buffer size (64KB) to handle large FreeSWITCH events
+	c.reader = textproto.NewReader(bufio.NewReaderSize(conn, 65536))
 
 	// Read the initial Content-Type header
 	if err := c.readInitialResponse(); err != nil {
@@ -217,18 +226,27 @@ func (c *eslClient) readEvents() {
 		default:
 		}
 
-		c.mu.RLock()
+		// Acquire lock and wait if command mode is active
+		c.mu.Lock()
+		for c.commandMode {
+			c.commandModeCond.Wait()
+		}
 		connected := c.connected
-		c.mu.RUnlock()
+		conn := c.conn
+		c.mu.Unlock()
 
-		if !connected {
+		if !connected || conn == nil {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
+		// Set a short read timeout so we regularly check commandMode
+		conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+
 		event, err := c.readEvent()
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Timeout is expected, just continue
 				continue
 			}
 			c.logger.Error("error reading event", zap.Error(err))
@@ -352,7 +370,8 @@ func (c *eslClient) handleReconnect() {
 
 				c.mu.Lock()
 				c.conn = conn
-				c.reader = textproto.NewReader(bufio.NewReader(conn))
+				// Use larger buffer size (64KB) to handle large FreeSWITCH events
+				c.reader = textproto.NewReader(bufio.NewReaderSize(conn, 65536))
 				c.mu.Unlock()
 
 				// Re-authenticate
@@ -396,11 +415,34 @@ func (c *eslClient) handleEvent(event *Event) {
 
 // sendCommand sends a command to FreeSWITCH and returns the response
 func (c *eslClient) sendCommand(cmd string) (*Event, error) {
+	return c.sendCommandWithTimeout(cmd, 5*time.Second)
+}
+
+// sendCommandWithTimeout sends a command to FreeSWITCH with a custom timeout
+func (c *eslClient) sendCommandWithTimeout(cmd string, timeout time.Duration) (*Event, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+
+	// Set command mode to pause readEvents goroutine
+	c.commandMode = true
+
+	// Release lock briefly to let readEvents finish its current iteration and wait
+	c.mu.Unlock()
+	time.Sleep(150 * time.Millisecond) // Wait for readEvents to see commandMode and pause
+
+	c.mu.Lock()
+	defer func() {
+		c.commandMode = false
+		c.commandModeCond.Broadcast()
+		c.mu.Unlock()
+	}()
 
 	if c.conn == nil {
 		return nil, fmt.Errorf("not connected to FreeSWITCH")
+	}
+
+	// Set read deadline for this operation
+	if err := c.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, fmt.Errorf("failed to set read deadline: %w", err)
 	}
 
 	// Send command
@@ -413,13 +455,36 @@ func (c *eslClient) sendCommand(cmd string) (*Event, error) {
 	return c.readEvent()
 }
 
-// sendAPI sends an API command to FreeSWITCH
+// sendAPI sends an API command to FreeSWITCH with a timeout
 func (c *eslClient) sendAPI(cmd string) (string, error) {
+	return c.sendAPIWithTimeout(cmd, 5*time.Second)
+}
+
+// sendAPIWithTimeout sends an API command to FreeSWITCH with a custom timeout
+func (c *eslClient) sendAPIWithTimeout(cmd string, timeout time.Duration) (string, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+
+	// Set command mode to pause readEvents goroutine
+	c.commandMode = true
+
+	// Release lock briefly to let readEvents finish its current iteration and wait
+	c.mu.Unlock()
+	time.Sleep(150 * time.Millisecond) // Wait for readEvents to see commandMode and pause
+
+	c.mu.Lock()
+	defer func() {
+		c.commandMode = false
+		c.commandModeCond.Broadcast()
+		c.mu.Unlock()
+	}()
 
 	if c.conn == nil {
 		return "", fmt.Errorf("not connected to FreeSWITCH")
+	}
+
+	// Set read deadline for this operation
+	if err := c.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return "", fmt.Errorf("failed to set read deadline: %w", err)
 	}
 
 	// Send API command
@@ -431,6 +496,9 @@ func (c *eslClient) sendAPI(cmd string) (string, error) {
 	// Read response
 	event, err := c.readEvent()
 	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return "", fmt.Errorf("ESL command timed out after %v: %s", timeout, cmd)
+		}
 		return "", err
 	}
 
@@ -439,6 +507,26 @@ func (c *eslClient) sendAPI(cmd string) (string, error) {
 	}
 
 	return event.Body, nil
+}
+
+// sendBgAPIFireAndForget sends a background API command to FreeSWITCH without waiting for response
+// This is truly non-blocking and doesn't wait for any acknowledgment
+func (c *eslClient) sendBgAPIFireAndForget(cmd string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn == nil {
+		return fmt.Errorf("not connected to FreeSWITCH")
+	}
+
+	// Send bgapi command (fire and forget)
+	// The readEvents goroutine will receive the Reply-Text response
+	fullCmd := fmt.Sprintf("bgapi %s\n\n", cmd)
+	if _, err := c.conn.Write([]byte(fullCmd)); err != nil {
+		return fmt.Errorf("failed to send bgapi command: %w", err)
+	}
+
+	return nil
 }
 
 // SubscribeEvents subscribes to specific FreeSWITCH events
@@ -589,6 +677,42 @@ func (c *eslClient) DeafMember(ctx context.Context, confName, memberID string, d
 	if err != nil {
 		return fmt.Errorf("failed to %s member: %w", action, err)
 	}
+	return nil
+}
+
+// InviteToConference invites a Verto user to join a conference
+// Uses loopback through dialplan to resolve verto_contact and bridge to conference
+// This is a fire-and-forget operation - we don't wait for the call to be answered
+func (c *eslClient) InviteToConference(ctx context.Context, confName, extension, domain, callerName string) error {
+	// Use loopback endpoint which goes through dialplan where ${verto_contact(...)} is expanded
+	// The dialplan extension "invite_to_conference" matches pattern invite_EXTENSION_CONFNAME
+	// and bridges to ${verto_contact(EXTENSION@chatapp.local)}
+	// Format: originate {vars}loopback/invite_EXTENSION_CONFNAME/default &conference(CONFNAME)
+	cmd := fmt.Sprintf(
+		"originate {origination_caller_id_name='%s',origination_caller_id_number='%s',ignore_early_media=true,originate_timeout=60}loopback/invite_%s_%s/default &conference(%s)",
+		callerName, confName, extension, confName, confName,
+	)
+
+	c.logger.Info("sending invite to conference via loopback (fire-and-forget)",
+		zap.String("confName", confName),
+		zap.String("extension", extension),
+		zap.String("cmd", cmd))
+
+	// Use fire-and-forget bgapi - we don't need to wait for the call result
+	// The call will ring on the user's browser independently
+	err := c.sendBgAPIFireAndForget(cmd)
+	if err != nil {
+		c.logger.Error("invite bgapi command failed",
+			zap.String("confName", confName),
+			zap.String("extension", extension),
+			zap.Error(err))
+		return fmt.Errorf("failed to send invite command: %w", err)
+	}
+
+	c.logger.Info("invite command sent (fire-and-forget)",
+		zap.String("confName", confName),
+		zap.String("extension", extension))
+
 	return nil
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	"github.com/icegreg/chat-smpl/pkg/rabbitmq"
+	pb "github.com/icegreg/chat-smpl/proto/chat"
 	"github.com/icegreg/chat-smpl/services/websocket/internal/centrifugo"
 	"go.uber.org/zap"
 )
@@ -57,12 +58,14 @@ type VoiceEvent struct {
 type VoiceConsumer struct {
 	rmqConn    *rabbitmq.Connection
 	centrifugo *centrifugo.Client
+	chatClient pb.ChatServiceClient
 }
 
-func NewVoiceConsumer(rmqConn *rabbitmq.Connection, centrifugoClient *centrifugo.Client) *VoiceConsumer {
+func NewVoiceConsumer(rmqConn *rabbitmq.Connection, centrifugoClient *centrifugo.Client, chatClient pb.ChatServiceClient) *VoiceConsumer {
 	return &VoiceConsumer{
 		rmqConn:    rmqConn,
 		centrifugo: centrifugoClient,
+		chatClient: chatClient,
 	}
 }
 
@@ -70,7 +73,7 @@ func (c *VoiceConsumer) Setup() error {
 	// Declare exchange if not exists
 	if err := c.rmqConn.DeclareExchange(rabbitmq.Exchange{
 		Name:       VoiceExchangeName,
-		Type:       "topic",
+		Kind:       "topic",
 		Durable:    true,
 		AutoDelete: false,
 	}); err != nil {
@@ -231,6 +234,44 @@ func (c *VoiceConsumer) handleParticipantEvent(ctx context.Context, eventType st
 				zap.String("user_id", event.UserID),
 			)
 			return err
+		}
+	}
+
+	// Send system message to chat when user joins/leaves conference
+	if c.chatClient != nil && event.ChatID != "" {
+		userName := event.DisplayName
+		if userName == "" {
+			userName = event.Username
+		}
+		if userName == "" {
+			userName = "User"
+		}
+
+		var content string
+		switch eventType {
+		case "participant.joined":
+			content = fmt.Sprintf("%s joined the conference", userName)
+		case "participant.left":
+			content = fmt.Sprintf("%s left the conference", userName)
+		}
+
+		if content != "" {
+			_, err := c.chatClient.SendSystemMessage(ctx, &pb.SendSystemMessageRequest{
+				ChatId:  event.ChatID,
+				Content: content,
+			})
+			if err != nil {
+				logger.Warn("failed to send system message to chat",
+					zap.Error(err),
+					zap.String("chat_id", event.ChatID),
+					zap.String("content", content),
+				)
+			} else {
+				logger.Debug("system message sent to chat",
+					zap.String("chat_id", event.ChatID),
+					zap.String("content", content),
+				)
+			}
 		}
 	}
 

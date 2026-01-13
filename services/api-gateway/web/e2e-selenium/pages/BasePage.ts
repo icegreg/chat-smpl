@@ -11,6 +11,16 @@ export class BasePage {
   }
 
   async navigate(path: string): Promise<void> {
+    // Try to get base URL from current URL if available
+    try {
+      const currentUrl = await this.driver.getCurrentUrl()
+      if (currentUrl && currentUrl.startsWith('http')) {
+        const url = new URL(currentUrl)
+        this.baseUrl = `${url.protocol}//${url.host}`
+      }
+    } catch {
+      // Ignore errors, use default BASE_URL
+    }
     await this.driver.get(`${this.baseUrl}${path}`)
   }
 

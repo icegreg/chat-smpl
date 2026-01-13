@@ -82,6 +82,24 @@ func (s *Server) GetConference(ctx context.Context, req *pb.GetConferenceRequest
 	return conferenceToProto(conf), nil
 }
 
+// GetConferenceByFSName retrieves a conference by FreeSWITCH name
+func (s *Server) GetConferenceByFSName(ctx context.Context, req *pb.GetConferenceByFSNameRequest) (*pb.Conference, error) {
+	fsName := req.GetFreeswitchName()
+	if fsName == "" {
+		return nil, status.Error(codes.InvalidArgument, "freeswitch_name is required")
+	}
+
+	conf, err := s.voiceService.GetConferenceByFSName(ctx, fsName)
+	if err != nil {
+		if errors.Is(err, repository.ErrConferenceNotFound) {
+			return nil, status.Error(codes.NotFound, "conference not found")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to get conference: %v", err)
+	}
+
+	return conferenceToProto(conf), nil
+}
+
 // ListConferences lists conferences for a user
 func (s *Server) ListConferences(ctx context.Context, req *pb.ListConferencesRequest) (*pb.ListConferencesResponse, error) {
 	userID, err := uuid.Parse(req.GetUserId())
@@ -110,6 +128,24 @@ func (s *Server) ListConferences(ctx context.Context, req *pb.ListConferencesReq
 	}, nil
 }
 
+// ListAllActiveConferences returns all active conferences with chat_id (for UI indicators)
+func (s *Server) ListAllActiveConferences(ctx context.Context, req *emptypb.Empty) (*pb.ListConferencesResponse, error) {
+	conferences, err := s.voiceService.ListAllActiveConferences(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list active conferences: %v", err)
+	}
+
+	protoConfs := make([]*pb.Conference, len(conferences))
+	for i, conf := range conferences {
+		protoConfs[i] = conferenceToProto(conf)
+	}
+
+	return &pb.ListConferencesResponse{
+		Conferences: protoConfs,
+		Total:       int32(len(conferences)),
+	}, nil
+}
+
 // JoinConference joins a user to a conference
 func (s *Server) JoinConference(ctx context.Context, req *pb.JoinConferenceRequest) (*pb.Participant, error) {
 	confID, err := uuid.Parse(req.GetConferenceId())
@@ -123,7 +159,8 @@ func (s *Server) JoinConference(ctx context.Context, req *pb.JoinConferenceReque
 	}
 
 	participant, err := s.voiceService.JoinConference(ctx, confID, userID, model.JoinOptions{
-		Muted: req.GetMuted(),
+		Muted:       req.GetMuted(),
+		DisplayName: req.GetDisplayName(),
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrConferenceNotFound) {
@@ -377,7 +414,7 @@ func (s *Server) StartChatCall(ctx context.Context, req *pb.StartChatCallRequest
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user_id: %v", err)
 	}
 
-	conf, creds, err := s.voiceService.StartChatCall(ctx, chatID, userID)
+	conf, creds, err := s.voiceService.StartChatCall(ctx, chatID, userID, req.GetName())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to start chat call: %v", err)
 	}
@@ -671,12 +708,125 @@ func (s *Server) CancelConference(ctx context.Context, req *pb.CancelConferenceR
 	return &emptypb.Empty{}, nil
 }
 
+// ======== Conference History ========
+
+// GetConferenceHistory retrieves detailed history for a specific conference
+func (s *Server) GetConferenceHistory(ctx context.Context, req *pb.GetConferenceHistoryRequest) (*pb.ConferenceHistoryResponse, error) {
+	confID, err := uuid.Parse(req.GetConferenceId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid conference_id: %v", err)
+	}
+
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user_id: %v", err)
+	}
+
+	history, err := s.voiceService.GetConferenceHistory(ctx, confID, userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrConferenceNotFound) {
+			return nil, status.Error(codes.NotFound, "conference not found")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to get conference history: %v", err)
+	}
+
+	return conferenceHistoryToProto(history), nil
+}
+
+// ListChatConferenceHistory lists conference history for a chat
+func (s *Server) ListChatConferenceHistory(ctx context.Context, req *pb.ListChatConferenceHistoryRequest) (*pb.ListChatConferenceHistoryResponse, error) {
+	chatID, err := uuid.Parse(req.GetChatId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid chat_id: %v", err)
+	}
+
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user_id: %v", err)
+	}
+
+	limit := int(req.GetLimit())
+	if limit == 0 {
+		limit = 20
+	}
+
+	conferences, total, err := s.voiceService.ListChatConferenceHistory(ctx, chatID, userID, limit, int(req.GetOffset()))
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list conference history: %v", err)
+	}
+
+	protoConfs := make([]*pb.ConferenceHistoryResponse, len(conferences))
+	for i, conf := range conferences {
+		protoConfs[i] = conferenceHistoryToProto(conf)
+	}
+
+	return &pb.ListChatConferenceHistoryResponse{
+		Conferences: protoConfs,
+		Total:       int32(total),
+	}, nil
+}
+
+// GetConferenceMessages retrieves messages sent during a conference
+func (s *Server) GetConferenceMessages(ctx context.Context, req *pb.GetConferenceMessagesRequest) (*pb.GetConferenceMessagesResponse, error) {
+	confID, err := uuid.Parse(req.GetConferenceId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid conference_id: %v", err)
+	}
+
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user_id: %v", err)
+	}
+
+	messages, err := s.voiceService.GetConferenceMessages(ctx, confID, userID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get conference messages: %v", err)
+	}
+
+	protoMessages := make([]*pb.ConferenceMessage, len(messages))
+	for i, msg := range messages {
+		protoMessages[i] = conferenceMessageToProto(msg)
+	}
+
+	return &pb.GetConferenceMessagesResponse{
+		Messages: protoMessages,
+	}, nil
+}
+
+// GetModeratorActions retrieves moderator actions for a conference
+func (s *Server) GetModeratorActions(ctx context.Context, req *pb.GetModeratorActionsRequest) (*pb.GetModeratorActionsResponse, error) {
+	confID, err := uuid.Parse(req.GetConferenceId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid conference_id: %v", err)
+	}
+
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user_id: %v", err)
+	}
+
+	actions, err := s.voiceService.GetModeratorActions(ctx, confID, userID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get moderator actions: %v", err)
+	}
+
+	protoActions := make([]*pb.ModeratorAction, len(actions))
+	for i, action := range actions {
+		protoActions[i] = moderatorActionToProto(action)
+	}
+
+	return &pb.GetModeratorActionsResponse{
+		Actions: protoActions,
+	}, nil
+}
+
 // Helper functions to convert models to protobuf
 
 func conferenceToProto(conf *model.Conference) *pb.Conference {
 	proto := &pb.Conference{
 		Id:               conf.ID.String(),
 		Name:             conf.Name,
+		FreeswitchName:   conf.FreeSwitchName,
 		CreatedBy:        conf.CreatedBy.String(),
 		Status:           conferenceStatusToProto(conf.Status),
 		MaxMembers:       int32(conf.MaxMembers),
@@ -1036,4 +1186,123 @@ func recurrenceFrequencyFromProto(freq pb.RecurrenceFrequency) model.RecurrenceF
 	default:
 		return model.RecurrenceWeekly
 	}
+}
+
+// ======== Conference History Helpers ========
+
+func conferenceHistoryToProto(history *model.ConferenceHistory) *pb.ConferenceHistoryResponse {
+	proto := &pb.ConferenceHistoryResponse{
+		Id:               history.ID.String(),
+		Name:             history.Name,
+		Status:           conferenceStatusToProto(history.Status),
+		ParticipantCount: int32(history.ParticipantCount),
+		CreatedAt:        timestamppb.New(history.CreatedAt),
+	}
+
+	if history.ChatID != nil {
+		proto.ChatId = history.ChatID.String()
+	}
+	if history.StartedAt != nil {
+		proto.StartedAt = timestamppb.New(*history.StartedAt)
+	}
+	if history.EndedAt != nil {
+		proto.EndedAt = timestamppb.New(*history.EndedAt)
+	}
+	if history.ThreadID != nil {
+		proto.ThreadId = history.ThreadID.String()
+	}
+
+	// Convert all participants with their sessions
+	if len(history.AllParticipants) > 0 {
+		proto.AllParticipants = make([]*pb.ParticipantHistory, len(history.AllParticipants))
+		for i, p := range history.AllParticipants {
+			proto.AllParticipants[i] = participantHistoryToProto(&p)
+		}
+	}
+
+	return proto
+}
+
+func participantHistoryToProto(p *model.ParticipantHistory) *pb.ParticipantHistory {
+	proto := &pb.ParticipantHistory{
+		UserId: p.UserID.String(),
+	}
+
+	if p.Username != nil {
+		proto.Username = *p.Username
+	}
+	if p.DisplayName != nil {
+		proto.DisplayName = *p.DisplayName
+	}
+
+	if len(p.Sessions) > 0 {
+		proto.Sessions = make([]*pb.ParticipantSession, len(p.Sessions))
+		for i, s := range p.Sessions {
+			proto.Sessions[i] = participantSessionToProto(&s)
+		}
+	}
+
+	return proto
+}
+
+func participantSessionToProto(s *model.ParticipantSession) *pb.ParticipantSession {
+	proto := &pb.ParticipantSession{
+		JoinedAt: timestamppb.New(s.JoinedAt),
+		Status:   participantStatusToProto(s.Status),
+		Role:     conferenceRoleToProto(s.Role),
+	}
+
+	if s.LeftAt != nil {
+		proto.LeftAt = timestamppb.New(*s.LeftAt)
+	}
+
+	return proto
+}
+
+func conferenceMessageToProto(msg *model.ConferenceMessage) *pb.ConferenceMessage {
+	proto := &pb.ConferenceMessage{
+		Id:        msg.ID.String(),
+		ChatId:    msg.ChatID.String(),
+		SenderId:  msg.SenderID.String(),
+		Content:   msg.Content,
+		CreatedAt: timestamppb.New(msg.CreatedAt),
+	}
+
+	if msg.SenderUsername != nil {
+		proto.SenderUsername = *msg.SenderUsername
+	}
+	if msg.SenderDisplayName != nil {
+		proto.SenderDisplayName = *msg.SenderDisplayName
+	}
+
+	return proto
+}
+
+func moderatorActionToProto(action *model.ModeratorAction) *pb.ModeratorAction {
+	proto := &pb.ModeratorAction{
+		Id:           action.ID.String(),
+		ConferenceId: action.ConferenceID.String(),
+		ActorId:      action.ActorID.String(),
+		ActionType:   string(action.ActionType),
+		Details:      string(action.Details),
+		CreatedAt:    timestamppb.New(action.CreatedAt),
+	}
+
+	if action.TargetUserID != nil {
+		proto.TargetUserId = action.TargetUserID.String()
+	}
+	if action.ActorUsername != nil {
+		proto.ActorUsername = *action.ActorUsername
+	}
+	if action.ActorDisplayName != nil {
+		proto.ActorDisplayName = *action.ActorDisplayName
+	}
+	if action.TargetUsername != nil {
+		proto.TargetUsername = *action.TargetUsername
+	}
+	if action.TargetDisplayName != nil {
+		proto.TargetDisplayName = *action.TargetDisplayName
+	}
+
+	return proto
 }

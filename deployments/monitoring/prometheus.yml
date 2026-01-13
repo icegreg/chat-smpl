@@ -54,6 +54,18 @@ scrape_configs:
       - targets: ['presence-service:9092']
     metrics_path: /metrics
 
+  # Voice Service metrics
+  - job_name: 'voice-service'
+    static_configs:
+      - targets: ['voice-service:8084']
+    metrics_path: /metrics
+
+  # Admin Service metrics
+  - job_name: 'admin-service'
+    static_configs:
+      - targets: ['admin-service:8086']
+    metrics_path: /metrics
+
   # Redis metrics (via redis-exporter)
   - job_name: 'redis'
     static_configs:

@@ -12,7 +12,9 @@ service VoiceService {
     // Conference management
     rpc CreateConference(CreateConferenceRequest) returns (Conference);
     rpc GetConference(GetConferenceRequest) returns (Conference);
+    rpc GetConferenceByFSName(GetConferenceByFSNameRequest) returns (Conference);
     rpc ListConferences(ListConferencesRequest) returns (ListConferencesResponse);
+    rpc ListAllActiveConferences(google.protobuf.Empty) returns (ListConferencesResponse);
     rpc EndConference(EndConferenceRequest) returns (google.protobuf.Empty);
 
     // Participant management
@@ -43,6 +45,12 @@ service VoiceService {
     rpc ListScheduledConferences(ListScheduledConferencesRequest) returns (ListScheduledConferencesResponse);
     rpc GetChatConferences(GetChatConferencesRequest) returns (GetChatConferencesResponse);
     rpc CancelConference(CancelConferenceRequest) returns (google.protobuf.Empty);
+
+    // Conference history
+    rpc GetConferenceHistory(GetConferenceHistoryRequest) returns (ConferenceHistoryResponse);
+    rpc ListChatConferenceHistory(ListChatConferenceHistoryRequest) returns (ListChatConferenceHistoryResponse);
+    rpc GetConferenceMessages(GetConferenceMessagesRequest) returns (GetConferenceMessagesResponse);
+    rpc GetModeratorActions(GetModeratorActionsRequest) returns (GetModeratorActionsResponse);
 }
 
 // Enums
@@ -217,6 +225,10 @@ message GetConferenceRequest {
     string user_id = 2;  // For access check
 }
 
+message GetConferenceByFSNameRequest {
+    string freeswitch_name = 1;
+}
+
 message ListConferencesRequest {
     string user_id = 1;
     bool active_only = 2;
@@ -239,6 +251,7 @@ message JoinConferenceRequest {
     string conference_id = 1;
     string user_id = 2;
     bool muted = 3;
+    string display_name = 4;  // User's display name for system messages
 }
 
 message LeaveConferenceRequest {
@@ -307,6 +320,7 @@ message GetVertoCredentialsRequest {
 message StartChatCallRequest {
     string chat_id = 1;
     string user_id = 2;
+    string name = 3; // Optional: chat name to use as conference name
 }
 
 message StartChatCallResponse {
@@ -384,4 +398,93 @@ message CancelConferenceRequest {
     string conference_id = 1;
     string user_id = 2;  // Actor
     bool cancel_series = 3;  // For recurring - cancel all future
+}
+
+// Conference History messages
+
+message ModeratorAction {
+    string id = 1;
+    string conference_id = 2;
+    string actor_id = 3;
+    string target_user_id = 4;
+    string action_type = 5;  // mute, unmute, kick, role_change
+    string details = 6;  // JSON string
+    google.protobuf.Timestamp created_at = 7;
+    // Joined user info
+    string actor_username = 8;
+    string actor_display_name = 9;
+    string target_username = 10;
+    string target_display_name = 11;
+}
+
+message ParticipantSession {
+    google.protobuf.Timestamp joined_at = 1;
+    google.protobuf.Timestamp left_at = 2;
+    ParticipantStatus status = 3;
+    ConferenceRole role = 4;
+}
+
+message ParticipantHistory {
+    string user_id = 1;
+    string username = 2;
+    string display_name = 3;
+    repeated ParticipantSession sessions = 4;
+}
+
+message ConferenceHistoryResponse {
+    string id = 1;
+    string name = 2;
+    string chat_id = 3;
+    ConferenceStatus status = 4;
+    google.protobuf.Timestamp started_at = 5;
+    google.protobuf.Timestamp ended_at = 6;
+    google.protobuf.Timestamp created_at = 7;
+    int32 participant_count = 8;
+    string thread_id = 9;
+    repeated ParticipantHistory all_participants = 10;
+}
+
+message GetConferenceHistoryRequest {
+    string conference_id = 1;
+    string user_id = 2;  // For access check
+}
+
+message ListChatConferenceHistoryRequest {
+    string chat_id = 1;
+    string user_id = 2;
+    int32 limit = 3;
+    int32 offset = 4;
+}
+
+message ListChatConferenceHistoryResponse {
+    repeated ConferenceHistoryResponse conferences = 1;
+    int32 total = 2;
+}
+
+message ConferenceMessage {
+    string id = 1;
+    string chat_id = 2;
+    string sender_id = 3;
+    string sender_username = 4;
+    string sender_display_name = 5;
+    string content = 6;
+    google.protobuf.Timestamp created_at = 7;
+}
+
+message GetConferenceMessagesRequest {
+    string conference_id = 1;
+    string user_id = 2;
+}
+
+message GetConferenceMessagesResponse {
+    repeated ConferenceMessage messages = 1;
+}
+
+message GetModeratorActionsRequest {
+    string conference_id = 1;
+    string user_id = 2;  // Must be moderator/owner
+}
+
+message GetModeratorActionsResponse {
+    repeated ModeratorAction actions = 1;
 }

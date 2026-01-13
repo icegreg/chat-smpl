@@ -50,6 +50,9 @@ type FileService interface {
 	AddFileLinkToGroups(ctx context.Context, fileLinkID uuid.UUID, groupIDs []uuid.UUID) error
 	GetFilesByGroup(ctx context.Context, groupID uuid.UUID) ([]model.FileLink, error)
 	RemoveUserFromAllGroupFiles(ctx context.Context, groupIDs []uuid.UUID, userID uuid.UUID) error
+
+	// Chat files
+	GetChatFiles(ctx context.Context, chatID uuid.UUID, limit, offset int) ([]*model.ChatFileDTO, int, error)
 }
 
 type fileService struct {
@@ -533,4 +536,9 @@ func (s *fileService) RemoveUserFromAllGroupFiles(ctx context.Context, groupIDs 
 	}
 
 	return nil
+}
+
+// GetChatFiles returns files that were attached to messages in a specific chat
+func (s *fileService) GetChatFiles(ctx context.Context, chatID uuid.UUID, limit, offset int) ([]*model.ChatFileDTO, int, error) {
+	return s.repo.GetChatFiles(ctx, chatID, limit, offset)
 }

@@ -135,11 +135,14 @@ services:
       - CENTRIFUGO_API_URL=http://centrifugo:8000/api
       - CENTRIFUGO_API_KEY=centrifugo-api-key
       - CENTRIFUGO_SECRET=your-centrifugo-secret-key-change-in-production
+      - CHAT_SERVICE_ADDR=chat-service:50051
     depends_on:
       rabbitmq:
         condition: service_healthy
       centrifugo:
         condition: service_healthy
+      chat-service:
+        condition: service_started
     networks:
       - chatapp-network
 

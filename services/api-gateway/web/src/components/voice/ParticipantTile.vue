@@ -25,8 +25,8 @@
       <span class="participant-name">
         {{ displayName }}
         <span v-if="isCurrentUser" class="you-badge">(You)</span>
-        <span v-if="isHost" class="host-badge">Host</span>
       </span>
+      <span class="participant-role" :class="roleClass">{{ roleLabel }}</span>
     </div>
 
     <!-- Status icons -->
@@ -86,6 +86,25 @@ const displayName = computed(() => {
 
 const initial = computed(() => {
   return displayName.value.charAt(0).toUpperCase()
+})
+
+const roleLabel = computed(() => {
+  const role = props.participant.role
+  if (props.isHost) return 'Organizer'
+  switch (role) {
+    case 'originator': return 'Organizer'
+    case 'moderator': return 'Moderator'
+    case 'speaker': return 'Speaker'
+    case 'assistant': return 'Assistant'
+    case 'participant': return 'Participant'
+    default: return 'Participant'
+  }
+})
+
+const roleClass = computed(() => {
+  const role = props.participant.role
+  if (props.isHost) return 'role-originator'
+  return role ? `role-${role}` : 'role-participant'
 })
 
 function toggleMute() {
@@ -193,24 +212,49 @@ function kickParticipant() {
   color: #fff;
 }
 
-.you-badge,
-.host-badge {
+.you-badge {
   display: inline-block;
   margin-left: 4px;
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 10px;
   font-weight: 600;
-}
-
-.you-badge {
   background: rgba(59, 130, 246, 0.3);
   color: #60a5fa;
 }
 
-.host-badge {
-  background: rgba(251, 191, 36, 0.3);
+.participant-role {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.role-originator {
+  background: rgba(251, 191, 36, 0.25);
   color: #fbbf24;
+}
+
+.role-moderator {
+  background: rgba(168, 85, 247, 0.25);
+  color: #c084fc;
+}
+
+.role-speaker {
+  background: rgba(34, 197, 94, 0.25);
+  color: #4ade80;
+}
+
+.role-assistant {
+  background: rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
+}
+
+.role-participant {
+  background: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
 }
 
 .status-icons {

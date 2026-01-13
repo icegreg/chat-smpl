@@ -54,6 +54,13 @@ func (c *VoiceClient) GetConference(ctx context.Context, conferenceID string) (*
 	})
 }
 
+// GetConferenceByFSName retrieves a conference by its FreeSWITCH name
+func (c *VoiceClient) GetConferenceByFSName(ctx context.Context, fsName string) (*pb.Conference, error) {
+	return c.client.GetConferenceByFSName(ctx, &pb.GetConferenceByFSNameRequest{
+		FreeswitchName: fsName,
+	})
+}
+
 // ListConferences lists conferences for a user
 func (c *VoiceClient) ListConferences(ctx context.Context, userID string, activeOnly bool, limit, offset int32) (*pb.ListConferencesResponse, error) {
 	return c.client.ListConferences(ctx, &pb.ListConferencesRequest{
@@ -64,12 +71,18 @@ func (c *VoiceClient) ListConferences(ctx context.Context, userID string, active
 	})
 }
 
+// ListAllActiveConferences returns all active conferences with chat_id (for UI indicators)
+func (c *VoiceClient) ListAllActiveConferences(ctx context.Context) (*pb.ListConferencesResponse, error) {
+	return c.client.ListAllActiveConferences(ctx, &emptypb.Empty{})
+}
+
 // JoinConference joins a user to a conference
-func (c *VoiceClient) JoinConference(ctx context.Context, conferenceID, userID string, muted bool) (*pb.Participant, error) {
+func (c *VoiceClient) JoinConference(ctx context.Context, conferenceID, userID string, muted bool, displayName string) (*pb.Participant, error) {
 	return c.client.JoinConference(ctx, &pb.JoinConferenceRequest{
 		ConferenceId: conferenceID,
 		UserId:       userID,
 		Muted:        muted,
+		DisplayName:  displayName,
 	})
 }
 
@@ -163,10 +176,11 @@ func (c *VoiceClient) GetVertoCredentials(ctx context.Context, userID string) (*
 }
 
 // StartChatCall starts a call from a chat room
-func (c *VoiceClient) StartChatCall(ctx context.Context, chatID, userID string) (*pb.StartChatCallResponse, error) {
+func (c *VoiceClient) StartChatCall(ctx context.Context, chatID, userID, name string) (*pb.StartChatCallResponse, error) {
 	return c.client.StartChatCall(ctx, &pb.StartChatCallRequest{
 		ChatId: chatID,
 		UserId: userID,
+		Name:   name,
 	})
 }
 
@@ -215,4 +229,40 @@ func (c *VoiceClient) GetChatConferences(ctx context.Context, req *pb.GetChatCon
 // CancelConference cancels a scheduled conference
 func (c *VoiceClient) CancelConference(ctx context.Context, req *pb.CancelConferenceRequest) (*emptypb.Empty, error) {
 	return c.client.CancelConference(ctx, req)
+}
+
+// ======== Conference History ========
+
+// GetConferenceHistory retrieves detailed history for a specific conference
+func (c *VoiceClient) GetConferenceHistory(ctx context.Context, conferenceID, userID string) (*pb.ConferenceHistoryResponse, error) {
+	return c.client.GetConferenceHistory(ctx, &pb.GetConferenceHistoryRequest{
+		ConferenceId: conferenceID,
+		UserId:       userID,
+	})
+}
+
+// ListChatConferenceHistory lists conference history for a chat
+func (c *VoiceClient) ListChatConferenceHistory(ctx context.Context, chatID, userID string, limit, offset int32) (*pb.ListChatConferenceHistoryResponse, error) {
+	return c.client.ListChatConferenceHistory(ctx, &pb.ListChatConferenceHistoryRequest{
+		ChatId: chatID,
+		UserId: userID,
+		Limit:  limit,
+		Offset: offset,
+	})
+}
+
+// GetConferenceMessages retrieves messages sent during a conference
+func (c *VoiceClient) GetConferenceMessages(ctx context.Context, conferenceID, userID string) (*pb.GetConferenceMessagesResponse, error) {
+	return c.client.GetConferenceMessages(ctx, &pb.GetConferenceMessagesRequest{
+		ConferenceId: conferenceID,
+		UserId:       userID,
+	})
+}
+
+// GetModeratorActions retrieves moderator actions for a conference (moderators/owners only)
+func (c *VoiceClient) GetModeratorActions(ctx context.Context, conferenceID, userID string) (*pb.GetModeratorActionsResponse, error) {
+	return c.client.GetModeratorActions(ctx, &pb.GetModeratorActionsRequest{
+		ConferenceId: conferenceID,
+		UserId:       userID,
+	})
 }

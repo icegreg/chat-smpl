@@ -4,8 +4,11 @@ go 1.22
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/icegreg/chat-smpl/pkg/metrics v0.0.0
+	github.com/icegreg/chat-smpl/proto/chat v0.0.0
 	github.com/icegreg/chat-smpl/proto/voice v0.0.0
 	github.com/jackc/pgx/v5 v5.5.5
+	github.com/prometheus/client_golang v1.19.0
 	github.com/rabbitmq/amqp091-go v1.9.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.62.1
@@ -27,3 +30,7 @@ require (
 )
 
 replace github.com/icegreg/chat-smpl/proto/voice => ../../proto/voice
+
+replace github.com/icegreg/chat-smpl/proto/chat => ../../proto/chat
+
+replace github.com/icegreg/chat-smpl/pkg/metrics => ../../pkg/metrics

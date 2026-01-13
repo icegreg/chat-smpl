@@ -28,21 +28,30 @@ func NewAuthMiddleware(jwtManager *jwt.Manager) *AuthMiddleware {
 }
 
 // Authenticate validates JWT token and sets user info in context
+// Supports both Authorization header and _token query param (for sendBeacon)
 func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var token string
+
+		// First try Authorization header
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				token = parts[1]
+			}
+		}
+
+		// Fallback to _token query param (for sendBeacon which can't set headers)
+		if token == "" {
+			token = r.URL.Query().Get("_token")
+		}
+
+		if token == "" {
 			http.Error(w, `{"error":"authorization header required"}`, http.StatusUnauthorized)
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			http.Error(w, `{"error":"invalid authorization header format"}`, http.StatusUnauthorized)
-			return
-		}
-
-		token := parts[1]
 		claims, err := m.jwtManager.ValidateAccessToken(token)
 		if err != nil {
 			http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)

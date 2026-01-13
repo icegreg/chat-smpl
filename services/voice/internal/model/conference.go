@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -90,6 +91,9 @@ type Conference struct {
 	DeclinedCount int             `json:"declined_count" db:"declined_count"`
 	Recurrence    *RecurrenceRule `json:"recurrence,omitempty" db:"-"`
 
+	// Thread for conference activity logging
+	ThreadID *uuid.UUID `json:"thread_id,omitempty" db:"thread_id"`
+
 	// Computed/joined fields (not in DB)
 	ParticipantCount int           `json:"participant_count" db:"participant_count"`
 	Participants     []Participant `json:"participants,omitempty" db:"-"`
@@ -109,6 +113,7 @@ type Participant struct {
 	ConferenceID uuid.UUID         `json:"conference_id" db:"conference_id"`
 	UserID       uuid.UUID         `json:"user_id" db:"user_id"`
 	FSMemberID   *string           `json:"fs_member_id,omitempty" db:"fs_member_id"`
+	ChannelUUID  *string           `json:"channel_uuid,omitempty" db:"channel_uuid"`
 	Status       ParticipantStatus `json:"status" db:"status"`
 	IsMuted      bool              `json:"is_muted" db:"is_muted"`
 	IsDeaf       bool              `json:"is_deaf" db:"is_deaf"`
@@ -138,7 +143,8 @@ type CreateConferenceRequest struct {
 }
 
 type JoinOptions struct {
-	Muted bool
+	Muted       bool
+	DisplayName string // User's display name for system messages
 }
 
 type VertoCredentials struct {
@@ -250,4 +256,68 @@ func CanChangeRole(actorRole, targetRole, newRole ConferenceRole) bool {
 
 	// Others cannot change roles
 	return false
+}
+
+// ModeratorActionType represents types of moderator actions
+type ModeratorActionType string
+
+const (
+	ActionMute           ModeratorActionType = "mute"
+	ActionUnmute         ModeratorActionType = "unmute"
+	ActionKick           ModeratorActionType = "kick"
+	ActionRoleChange     ModeratorActionType = "role_change"
+	ActionStartRecording ModeratorActionType = "start_recording"
+	ActionStopRecording  ModeratorActionType = "stop_recording"
+)
+
+// ModeratorAction represents a logged moderator action in a conference
+type ModeratorAction struct {
+	ID           uuid.UUID           `json:"id" db:"id"`
+	ConferenceID uuid.UUID           `json:"conference_id" db:"conference_id"`
+	ActorID      uuid.UUID           `json:"actor_id" db:"actor_id"`
+	TargetUserID *uuid.UUID          `json:"target_user_id,omitempty" db:"target_user_id"`
+	ActionType   ModeratorActionType `json:"action_type" db:"action_type"`
+	Details      json.RawMessage     `json:"details,omitempty" db:"details"`
+	CreatedAt    time.Time           `json:"created_at" db:"created_at"`
+
+	// Joined fields for display
+	ActorUsername     *string `json:"actor_username,omitempty" db:"actor_username"`
+	ActorDisplayName  *string `json:"actor_display_name,omitempty" db:"actor_display_name"`
+	TargetUsername    *string `json:"target_username,omitempty" db:"target_username"`
+	TargetDisplayName *string `json:"target_display_name,omitempty" db:"target_display_name"`
+}
+
+// ParticipantSession represents one join/leave cycle of a participant
+type ParticipantSession struct {
+	JoinedAt time.Time         `json:"joined_at"`
+	LeftAt   *time.Time        `json:"left_at,omitempty"`
+	Status   ParticipantStatus `json:"status"`
+	Role     ConferenceRole    `json:"role"`
+}
+
+// ParticipantHistory contains all sessions of a participant in a conference
+type ParticipantHistory struct {
+	UserID      uuid.UUID            `json:"user_id"`
+	Username    *string              `json:"username,omitempty"`
+	DisplayName *string              `json:"display_name,omitempty"`
+	AvatarURL   *string              `json:"avatar_url,omitempty"`
+	Sessions    []ParticipantSession `json:"sessions"`
+}
+
+// ConferenceHistory represents a conference with full history data
+type ConferenceHistory struct {
+	Conference
+	AllParticipants  []ParticipantHistory `json:"all_participants"`
+	ModeratorActions []ModeratorAction    `json:"moderator_actions,omitempty"`
+}
+
+// ConferenceMessage represents a chat message sent during a conference
+type ConferenceMessage struct {
+	ID                uuid.UUID  `json:"id" db:"id"`
+	ChatID            uuid.UUID  `json:"chat_id" db:"chat_id"`
+	SenderID          uuid.UUID  `json:"sender_id" db:"sender_id"`
+	Content           string     `json:"content" db:"content"`
+	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
+	SenderUsername    *string    `json:"sender_username,omitempty" db:"sender_username"`
+	SenderDisplayName *string    `json:"sender_display_name,omitempty" db:"sender_display_name"`
 }

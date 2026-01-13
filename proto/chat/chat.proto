@@ -25,6 +25,7 @@ service ChatService {
 
     // Message operations
     rpc SendMessage(SendMessageRequest) returns (Message);
+    rpc SendSystemMessage(SendSystemMessageRequest) returns (Message);
     rpc GetMessage(GetMessageRequest) returns (Message);
     rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
     rpc SyncMessages(SyncMessagesRequest) returns (SyncMessagesResponse);
@@ -293,6 +294,13 @@ message SendMessageRequest {
     repeated string file_link_ids = 5;
     string thread_id = 6;  // Target thread (optional)
     repeated string reply_to_ids = 7;  // IDs of messages to reply to (optional)
+}
+
+// System message (sent to Activity thread by default, or main chat if to_main_chat=true)
+message SendSystemMessageRequest {
+    string chat_id = 1;
+    string content = 2;
+    bool to_main_chat = 3;  // If true, send to main chat instead of Activity thread
 }
 
 message GetMessageRequest {

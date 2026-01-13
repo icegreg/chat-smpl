@@ -33,6 +33,8 @@ func (h *VoiceHandler) Routes() http.Handler {
 	// Conferences
 	r.Post("/conferences", h.CreateConference)
 	r.Get("/conferences", h.ListConferences)
+	r.Get("/conferences/active", h.ListAllActiveConferences)
+	r.Get("/conferences/by-fs-name/{fsName}", h.GetConferenceByFSName)
 	r.Get("/conferences/{conferenceID}", h.GetConference)
 	r.Post("/conferences/{conferenceID}/join", h.JoinConference)
 	r.Post("/conferences/{conferenceID}/leave", h.LeaveConference)
@@ -54,6 +56,12 @@ func (h *VoiceHandler) Routes() http.Handler {
 
 	// Chat conferences
 	r.Get("/chats/{chatID}/conferences", h.GetChatConferences)
+	r.Get("/chats/{chatID}/conferences/history", h.ListChatConferenceHistory)
+
+	// Conference history
+	r.Get("/conferences/{conferenceID}/history", h.GetConferenceHistory)
+	r.Get("/conferences/{conferenceID}/messages", h.GetConferenceMessages)
+	r.Get("/conferences/{conferenceID}/moderator-actions", h.GetModeratorActions)
 
 	// Calls
 	r.Post("/calls", h.InitiateCall)
@@ -137,6 +145,30 @@ func (h *VoiceHandler) GetConference(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, conferenceToResponse(conf))
 }
 
+// GetConferenceByFSName godoc
+// @Summary Get conference by FreeSWITCH name
+// @Description Retrieves a conference by its FreeSWITCH conference name
+// @Tags voice
+// @Produce json
+// @Param fsName path string true "FreeSWITCH conference name"
+// @Success 200 {object} ConferenceResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security Bearer
+// @Router /voice/conferences/by-fs-name/{fsName} [get]
+func (h *VoiceHandler) GetConferenceByFSName(w http.ResponseWriter, r *http.Request) {
+	fsName := chi.URLParam(r, "fsName")
+
+	conf, err := h.voiceClient.GetConferenceByFSName(r.Context(), fsName)
+	if err != nil {
+		h.log.Error("failed to get conference by FS name", "error", err, "fsName", fsName)
+		h.writeError(w, http.StatusNotFound, "conference not found")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, conferenceToResponse(conf))
+}
+
 // ListConferences godoc
 // @Summary List conferences
 // @Description Lists conferences for the current user
@@ -182,6 +214,45 @@ func (h *VoiceHandler) ListConferences(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListAllActiveConferences godoc
+// @Summary List all active conferences with chat_id
+// @Description Returns all active conferences that have a chat_id (for UI indicators)
+// @Tags voice
+// @Produce json
+// @Success 200 {object} ListConferencesResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security Bearer
+// @Router /voice/conferences/active [get]
+func (h *VoiceHandler) ListAllActiveConferences(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	resp, err := h.voiceClient.ListAllActiveConferences(r.Context())
+	if err != nil {
+		// If voice service is unavailable, return empty list
+		h.log.Warn("voice service unavailable, returning empty active conferences", "error", err)
+		h.writeJSON(w, http.StatusOK, ListConferencesResponse{
+			Conferences: []ConferenceResponse{},
+			Total:       0,
+		})
+		return
+	}
+
+	conferences := make([]ConferenceResponse, len(resp.Conferences))
+	for i, conf := range resp.Conferences {
+		conferences[i] = conferenceToResponse(conf)
+	}
+
+	h.writeJSON(w, http.StatusOK, ListConferencesResponse{
+		Conferences: conferences,
+		Total:       int(resp.Total),
+	})
+}
+
 // JoinConference godoc
 // @Summary Join a conference
 // @Description Joins the current user to a conference
@@ -207,7 +278,7 @@ func (h *VoiceHandler) JoinConference(w http.ResponseWriter, r *http.Request) {
 	var req JoinConferenceRequest
 	json.NewDecoder(r.Body).Decode(&req) // Ignore errors - optional body
 
-	participant, err := h.voiceClient.JoinConference(r.Context(), conferenceID, userID.String(), req.Muted)
+	participant, err := h.voiceClient.JoinConference(r.Context(), conferenceID, userID.String(), req.Muted, req.DisplayName)
 	if err != nil {
 		h.log.Error("failed to join conference", "error", err, "conferenceID", conferenceID)
 		h.writeError(w, http.StatusInternalServerError, "failed to join conference")
@@ -554,8 +625,10 @@ func (h *VoiceHandler) GetVertoCredentials(w http.ResponseWriter, r *http.Reques
 // @Summary Start a chat call
 // @Description Starts a voice call from a chat room
 // @Tags voice
+// @Accept json
 // @Produce json
 // @Param chatID path string true "Chat ID"
+// @Param request body StartChatCallRequest false "Optional call parameters"
 // @Success 200 {object} ChatCallResponse
 // @Failure 500 {object} ErrorResponse
 // @Security Bearer
@@ -569,7 +642,16 @@ func (h *VoiceHandler) StartChatCall(w http.ResponseWriter, r *http.Request) {
 
 	chatID := chi.URLParam(r, "chatID")
 
-	resp, err := h.voiceClient.StartChatCall(r.Context(), chatID, userID.String())
+	// Parse optional request body
+	var req StartChatCallRequest
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			// Ignore decode errors - name is optional
+			h.log.Debug("could not decode start chat call request", "error", err)
+		}
+	}
+
+	resp, err := h.voiceClient.StartChatCall(r.Context(), chatID, userID.String(), req.Name)
 	if err != nil {
 		h.log.Error("failed to start chat call", "error", err, "chatID", chatID)
 		h.writeError(w, http.StatusInternalServerError, "failed to start chat call")
@@ -1074,6 +1156,177 @@ func (h *VoiceHandler) CancelConference(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ======== Conference History ========
+
+// ListChatConferenceHistory godoc
+// @Summary List conference history for a chat
+// @Description Returns history of all conferences in a chat
+// @Tags voice
+// @Produce json
+// @Param chatID path string true "Chat ID"
+// @Param limit query int false "Number of results to return" default(20)
+// @Param offset query int false "Offset for pagination" default(0)
+// @Success 200 {object} ListConferenceHistoryResponse
+// @Failure 500 {object} ErrorResponse
+// @Security Bearer
+// @Router /voice/chats/{chatID}/conferences/history [get]
+func (h *VoiceHandler) ListChatConferenceHistory(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	chatID := chi.URLParam(r, "chatID")
+	limit := h.parseIntParam(r, "limit", 20)
+	offset := h.parseIntParam(r, "offset", 0)
+
+	resp, err := h.voiceClient.ListChatConferenceHistory(r.Context(), chatID, userID.String(), int32(limit), int32(offset))
+	if err != nil {
+		h.log.Warn("voice service unavailable, returning empty conference history", "error", err, "chatID", chatID)
+		h.writeJSON(w, http.StatusOK, ListConferenceHistoryResponse{
+			Conferences: []ConferenceHistoryResponse{},
+			Total:       0,
+		})
+		return
+	}
+
+	conferences := make([]ConferenceHistoryResponse, len(resp.Conferences))
+	for i, conf := range resp.Conferences {
+		conferences[i] = conferenceHistoryToResponse(conf)
+	}
+
+	h.writeJSON(w, http.StatusOK, ListConferenceHistoryResponse{
+		Conferences: conferences,
+		Total:       int(resp.Total),
+	})
+}
+
+// GetConferenceHistory godoc
+// @Summary Get conference history details
+// @Description Returns detailed history for a specific conference including all participants
+// @Tags voice
+// @Produce json
+// @Param conferenceID path string true "Conference ID"
+// @Success 200 {object} ConferenceHistoryResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security Bearer
+// @Router /voice/conferences/{conferenceID}/history [get]
+func (h *VoiceHandler) GetConferenceHistory(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	conferenceID := chi.URLParam(r, "conferenceID")
+
+	resp, err := h.voiceClient.GetConferenceHistory(r.Context(), conferenceID, userID.String())
+	if err != nil {
+		h.log.Error("failed to get conference history", "error", err, "conferenceID", conferenceID)
+		h.writeError(w, http.StatusNotFound, "conference not found")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, conferenceHistoryToResponse(resp))
+}
+
+// GetConferenceMessages godoc
+// @Summary Get conference messages
+// @Description Returns messages sent during a conference
+// @Tags voice
+// @Produce json
+// @Param conferenceID path string true "Conference ID"
+// @Success 200 {object} ConferenceMessagesResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security Bearer
+// @Router /voice/conferences/{conferenceID}/messages [get]
+func (h *VoiceHandler) GetConferenceMessages(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	conferenceID := chi.URLParam(r, "conferenceID")
+
+	resp, err := h.voiceClient.GetConferenceMessages(r.Context(), conferenceID, userID.String())
+	if err != nil {
+		h.log.Error("failed to get conference messages", "error", err, "conferenceID", conferenceID)
+		h.writeError(w, http.StatusInternalServerError, "failed to get conference messages")
+		return
+	}
+
+	messages := make([]ConferenceMessageResponse, len(resp.Messages))
+	for i, msg := range resp.Messages {
+		messages[i] = ConferenceMessageResponse{
+			ID:                msg.Id,
+			ChatID:            msg.ChatId,
+			SenderID:          msg.SenderId,
+			SenderUsername:    msg.SenderUsername,
+			SenderDisplayName: msg.SenderDisplayName,
+			Content:           msg.Content,
+			CreatedAt:         protoTimestampToString(msg.CreatedAt),
+		}
+	}
+
+	h.writeJSON(w, http.StatusOK, ConferenceMessagesResponse{
+		Messages: messages,
+	})
+}
+
+// GetModeratorActions godoc
+// @Summary Get moderator actions
+// @Description Returns moderator actions for a conference (moderators/owners only)
+// @Tags voice
+// @Produce json
+// @Param conferenceID path string true "Conference ID"
+// @Success 200 {object} ModeratorActionsResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security Bearer
+// @Router /voice/conferences/{conferenceID}/moderator-actions [get]
+func (h *VoiceHandler) GetModeratorActions(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	conferenceID := chi.URLParam(r, "conferenceID")
+
+	resp, err := h.voiceClient.GetModeratorActions(r.Context(), conferenceID, userID.String())
+	if err != nil {
+		h.log.Error("failed to get moderator actions", "error", err, "conferenceID", conferenceID)
+		h.writeError(w, http.StatusForbidden, "access denied or conference not found")
+		return
+	}
+
+	actions := make([]ModeratorActionResponse, len(resp.Actions))
+	for i, action := range resp.Actions {
+		actions[i] = ModeratorActionResponse{
+			ID:                action.Id,
+			ConferenceID:      action.ConferenceId,
+			ActorID:           action.ActorId,
+			TargetUserID:      action.TargetUserId,
+			ActionType:        action.ActionType,
+			Details:           action.Details,
+			ActorUsername:     action.ActorUsername,
+			ActorDisplayName:  action.ActorDisplayName,
+			TargetUsername:    action.TargetUsername,
+			TargetDisplayName: action.TargetDisplayName,
+			CreatedAt:         protoTimestampToString(action.CreatedAt),
+		}
+	}
+
+	h.writeJSON(w, http.StatusOK, ModeratorActionsResponse{
+		Actions: actions,
+	})
+}
+
 // Helper methods
 
 func (h *VoiceHandler) writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -1104,6 +1357,7 @@ func conferenceToResponse(conf *pb.Conference) ConferenceResponse {
 	return ConferenceResponse{
 		ID:               conf.Id,
 		Name:             conf.Name,
+		FreeSwitchName:   conf.FreeswitchName,
 		ChatID:           conf.ChatId,
 		CreatedBy:        conf.CreatedBy,
 		Status:           conf.Status.String(),
@@ -1165,6 +1419,7 @@ func scheduledConferenceToResponse(conf *pb.Conference) ScheduledConferenceRespo
 	resp := ScheduledConferenceResponse{
 		ID:               conf.Id,
 		Name:             conf.Name,
+		FreeSwitchName:   conf.FreeswitchName,
 		ChatID:           conf.ChatId,
 		CreatedBy:        conf.CreatedBy,
 		Status:           conf.Status.String(),
@@ -1244,4 +1499,42 @@ func rsvpStatusToString(status pb.RSVPStatus) string {
 	default:
 		return "pending"
 	}
+}
+
+// conferenceHistoryToResponse converts proto ConferenceHistoryResponse to API response
+func conferenceHistoryToResponse(conf *pb.ConferenceHistoryResponse) ConferenceHistoryResponse {
+	resp := ConferenceHistoryResponse{
+		ID:               conf.Id,
+		Name:             conf.Name,
+		ChatID:           conf.ChatId,
+		Status:           conf.Status.String(),
+		StartedAt:        protoTimestampToString(conf.StartedAt),
+		EndedAt:          protoTimestampToString(conf.EndedAt),
+		CreatedAt:        protoTimestampToString(conf.CreatedAt),
+		ParticipantCount: int(conf.ParticipantCount),
+		ThreadID:         conf.ThreadId,
+	}
+
+	if len(conf.AllParticipants) > 0 {
+		resp.AllParticipants = make([]ParticipantHistoryResponse, len(conf.AllParticipants))
+		for i, p := range conf.AllParticipants {
+			sessions := make([]ParticipantSessionResponse, len(p.Sessions))
+			for j, s := range p.Sessions {
+				sessions[j] = ParticipantSessionResponse{
+					JoinedAt: protoTimestampToString(s.JoinedAt),
+					LeftAt:   protoTimestampToString(s.LeftAt),
+					Status:   s.Status.String(),
+					Role:     conferenceRoleToString(s.Role),
+				}
+			}
+			resp.AllParticipants[i] = ParticipantHistoryResponse{
+				UserID:      p.UserId,
+				Username:    p.Username,
+				DisplayName: p.DisplayName,
+				Sessions:    sessions,
+			}
+		}
+	}
+
+	return resp
 }

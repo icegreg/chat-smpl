@@ -12,9 +12,66 @@
     <!-- jQuery (required for Verto.js) -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 
-    <!-- Verto.js from FreeSWITCH - served by nginx from /verto/verto.min.js -->
-    <!-- In production, copy verto.min.js from FreeSWITCH source to public/ folder -->
+    <!-- WebSocket debugging wrapper - applied before Verto.js loads -->
+    <script>
+      (function() {
+        var OriginalWebSocket = window.WebSocket;
+        window.WebSocket = function(url, protocols) {
+          console.log('[WebSocket] Creating connection to:', url);
+          var ws = protocols ? new OriginalWebSocket(url, protocols) : new OriginalWebSocket(url);
+
+          ws.addEventListener('open', function() {
+            console.log('[WebSocket] Connection opened to:', url);
+          });
+          ws.addEventListener('error', function(e) {
+            console.error('[WebSocket] Error on:', url);
+          });
+          ws.addEventListener('close', function(e) {
+            console.warn('[WebSocket] Closed:', url, 'code:', e.code, 'reason:', e.reason, 'clean:', e.wasClean);
+          });
+
+          return ws;
+        };
+        window.WebSocket.prototype = OriginalWebSocket.prototype;
+        window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+        window.WebSocket.OPEN = OriginalWebSocket.OPEN;
+        window.WebSocket.CLOSING = OriginalWebSocket.CLOSING;
+        window.WebSocket.CLOSED = OriginalWebSocket.CLOSED;
+        console.log('[WebSocket] Wrapper installed');
+      })();
+    </script>
+
+    <!-- jQuery JSON polyfill ($.toJSON was removed in jQuery 3.x but required by jsonrpcclient) -->
+    <script>
+      if (window.jQuery && !window.jQuery.toJSON) {
+        window.jQuery.toJSON = function(obj) {
+          return JSON.stringify(obj);
+        };
+        window.jQuery.parseJSON = function(str) {
+          return JSON.parse(str);
+        };
+        window.jQuery.evalJSON = function(str) {
+          return JSON.parse(str);
+        };
+      }
+    </script>
+
+    <!-- Verto.js dependencies -->
+    <script src="/jquery.jsonrpcclient.js"></script>
+    <script src="/jquery.FSRTC.js"></script>
+
+    <!-- Verto.js from FreeSWITCH - jQuery plugin for WebRTC -->
     <script src="/verto.min.js" onerror="console.warn('Verto.js not found. Voice calls will not work.')"></script>
+
+    <!-- Expose $.verto as window.Verto for our Vue code -->
+    <script>
+      if (window.jQuery && window.jQuery.verto) {
+        window.Verto = window.jQuery.verto;
+        console.log('[Verto] Loaded successfully');
+      } else {
+        console.warn('[Verto] jQuery.verto not available');
+      }
+    </script>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

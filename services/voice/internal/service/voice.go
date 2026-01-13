@@ -2,14 +2,17 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
+	"github.com/icegreg/chat-smpl/pkg/metrics"
+	"github.com/icegreg/chat-smpl/services/voice/internal/chatclient"
 	"github.com/icegreg/chat-smpl/services/voice/internal/config"
 	"github.com/icegreg/chat-smpl/services/voice/internal/esl"
 	"github.com/icegreg/chat-smpl/services/voice/internal/events"
@@ -22,7 +25,9 @@ type VoiceService interface {
 	// Conferences
 	CreateConference(ctx context.Context, req *model.CreateConferenceRequest) (*model.Conference, error)
 	GetConference(ctx context.Context, confID uuid.UUID) (*model.Conference, error)
+	GetConferenceByFSName(ctx context.Context, fsName string) (*model.Conference, error)
 	ListConferences(ctx context.Context, userID uuid.UUID, activeOnly bool, limit, offset int) ([]*model.Conference, int, error)
+	ListAllActiveConferences(ctx context.Context) ([]*model.Conference, error)
 	JoinConference(ctx context.Context, confID, userID uuid.UUID, opts model.JoinOptions) (*model.Participant, error)
 	LeaveConference(ctx context.Context, confID, userID uuid.UUID) error
 	GetParticipants(ctx context.Context, confID uuid.UUID) ([]*model.Participant, error)
@@ -38,7 +43,7 @@ type VoiceService interface {
 
 	// Auth & Quick actions
 	GetVertoCredentials(ctx context.Context, userID uuid.UUID) (*model.VertoCredentials, error)
-	StartChatCall(ctx context.Context, chatID, userID uuid.UUID) (*model.Conference, *model.VertoCredentials, error)
+	StartChatCall(ctx context.Context, chatID, userID uuid.UUID, name string) (*model.Conference, *model.VertoCredentials, error)
 
 	// Scheduled events
 	ScheduleConference(ctx context.Context, req *model.ScheduleConferenceRequest) (*model.Conference, error)
@@ -51,32 +56,44 @@ type VoiceService interface {
 	ListScheduledConferences(ctx context.Context, userID uuid.UUID, upcomingOnly bool, limit, offset int) ([]*model.Conference, int, error)
 	GetChatConferences(ctx context.Context, chatID uuid.UUID, upcomingOnly bool) ([]*model.Conference, error)
 	CancelConference(ctx context.Context, confID, userID uuid.UUID, cancelSeries bool) error
+
+	// Conference history
+	GetConferenceHistory(ctx context.Context, confID, userID uuid.UUID) (*model.ConferenceHistory, error)
+	ListChatConferenceHistory(ctx context.Context, chatID, userID uuid.UUID, limit, offset int) ([]*model.ConferenceHistory, int, error)
+	GetConferenceMessages(ctx context.Context, confID, userID uuid.UUID) ([]*model.ConferenceMessage, error)
+	GetModeratorActions(ctx context.Context, confID, userID uuid.UUID) ([]*model.ModeratorAction, error)
 }
 
 type voiceService struct {
 	cfg            *config.Config
+	pool           *pgxpool.Pool
 	eslClient      esl.Client
 	confRepo       repository.ConferenceRepository
 	callRepo       repository.CallRepository
 	eventPublisher events.Publisher
+	chatClient     *chatclient.ChatClient
 	logger         *zap.Logger
 }
 
 // NewVoiceService creates a new voice service instance
 func NewVoiceService(
 	cfg *config.Config,
+	pool *pgxpool.Pool,
 	eslClient esl.Client,
 	confRepo repository.ConferenceRepository,
 	callRepo repository.CallRepository,
 	eventPublisher events.Publisher,
+	chatClient *chatclient.ChatClient,
 	logger *zap.Logger,
 ) VoiceService {
 	return &voiceService{
 		cfg:            cfg,
+		pool:           pool,
 		eslClient:      eslClient,
 		confRepo:       confRepo,
 		callRepo:       callRepo,
 		eventPublisher: eventPublisher,
+		chatClient:     chatClient,
 		logger:         logger,
 	}
 }
@@ -127,10 +144,33 @@ func (s *voiceService) CreateConference(ctx context.Context, req *model.CreateCo
 		s.logger.Error("failed to publish conference.created event", zap.Error(err))
 	}
 
+	// Track metrics
+	chatID := ""
+	if conf.ChatID != nil {
+		chatID = conf.ChatID.String()
+	}
+	metrics.VoiceActiveConferencesGauge.WithLabelValues(
+		conf.ID.String(),
+		conf.Name,
+		string(conf.EventType),
+		chatID,
+	).Set(1)
+	metrics.VoiceConferencesTotal.WithLabelValues(string(conf.EventType)).Inc()
+
 	s.logger.Info("conference created",
 		zap.String("id", conf.ID.String()),
 		zap.String("name", conf.Name),
 		zap.String("fsName", conf.FreeSwitchName))
+
+	// Send system message to chat if conference has a chat
+	if conf.ChatID != nil && s.chatClient != nil {
+		message := fmt.Sprintf("Event \"%s\" started", conf.Name)
+		if _, err := s.chatClient.SendEventMessage(ctx, conf.ChatID.String(), message); err != nil {
+			s.logger.Warn("failed to send system message for conference start",
+				zap.Error(err),
+				zap.String("chatId", conf.ChatID.String()))
+		}
+	}
 
 	return conf, nil
 }
@@ -153,9 +193,32 @@ func (s *voiceService) GetConference(ctx context.Context, confID uuid.UUID) (*mo
 	return conf, nil
 }
 
+// GetConferenceByFSName retrieves a conference by FreeSWITCH name
+func (s *voiceService) GetConferenceByFSName(ctx context.Context, fsName string) (*model.Conference, error) {
+	conf, err := s.confRepo.GetConferenceByFSName(ctx, fsName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get participant count from FreeSWITCH if active
+	if conf.Status == model.ConferenceStatusActive && s.eslClient.IsConnected() {
+		members, err := s.eslClient.GetConferenceMembers(ctx, conf.FreeSwitchName)
+		if err == nil {
+			conf.ParticipantCount = len(members)
+		}
+	}
+
+	return conf, nil
+}
+
 // ListConferences lists conferences for a user
 func (s *voiceService) ListConferences(ctx context.Context, userID uuid.UUID, activeOnly bool, limit, offset int) ([]*model.Conference, int, error) {
 	return s.confRepo.ListConferences(ctx, userID, activeOnly, limit, offset)
+}
+
+// ListAllActiveConferences returns all active conferences with chat_id (for UI indicators)
+func (s *voiceService) ListAllActiveConferences(ctx context.Context) ([]*model.Conference, error) {
+	return s.confRepo.ListAllActiveConferences(ctx)
 }
 
 // JoinConference adds a user to a conference
@@ -170,6 +233,21 @@ func (s *voiceService) JoinConference(ctx context.Context, confID, userID uuid.U
 		return nil, fmt.Errorf("conference is not active")
 	}
 
+	// Check if user already has an active participant record (connecting or joined)
+	existing, err := s.confRepo.GetParticipant(ctx, confID, userID)
+	if err == nil && existing != nil {
+		// User already has an active participant record
+		switch existing.Status {
+		case model.ParticipantStatusConnecting, model.ParticipantStatusJoined:
+			// Return existing participant (idempotent join)
+			s.logger.Info("user already in conference, returning existing participant",
+				zap.String("conferenceId", confID.String()),
+				zap.String("userId", userID.String()),
+				zap.String("status", string(existing.Status)))
+			return existing, nil
+		}
+	}
+
 	// Check max members
 	participants, err := s.confRepo.ListParticipants(ctx, confID)
 	if err != nil {
@@ -178,13 +256,6 @@ func (s *voiceService) JoinConference(ctx context.Context, confID, userID uuid.U
 
 	if len(participants) >= conf.MaxMembers {
 		return nil, fmt.Errorf("conference is full")
-	}
-
-	// Check if user is already in conference
-	for _, p := range participants {
-		if p.UserID == userID {
-			return nil, fmt.Errorf("user already in conference")
-		}
 	}
 
 	// Create participant record
@@ -200,13 +271,44 @@ func (s *voiceService) JoinConference(ctx context.Context, confID, userID uuid.U
 	}
 
 	// Publish event
-	if err := s.eventPublisher.PublishParticipantJoined(ctx, participant); err != nil {
+	chatID := ""
+	if conf.ChatID != nil {
+		chatID = conf.ChatID.String()
+	}
+	if err := s.eventPublisher.PublishParticipantJoined(ctx, participant, chatID); err != nil {
 		s.logger.Error("failed to publish participant.joined event", zap.Error(err))
 	}
+
+	// Update participant count metrics
+	activeCount := 0
+	for _, p := range participants {
+		if p.Status == model.ParticipantStatusJoined || p.Status == model.ParticipantStatusConnecting {
+			activeCount++
+		}
+	}
+	activeCount++ // Include the newly joined participant
+	metrics.VoiceConferenceParticipantsGauge.WithLabelValues(
+		conf.ID.String(),
+		conf.Name,
+	).Set(float64(activeCount))
 
 	s.logger.Info("participant joined conference",
 		zap.String("conferenceId", confID.String()),
 		zap.String("userId", userID.String()))
+
+	// Send system message to chat if conference has a chat
+	if conf.ChatID != nil && s.chatClient != nil {
+		displayName := opts.DisplayName
+		if displayName == "" {
+			displayName = userID.String()[:8] // Fallback to short user ID
+		}
+		message := fmt.Sprintf("%s joined the event", displayName)
+		if _, err := s.chatClient.SendEventMessage(ctx, conf.ChatID.String(), message); err != nil {
+			s.logger.Warn("failed to send system message for participant join",
+				zap.Error(err),
+				zap.String("chatId", conf.ChatID.String()))
+		}
+	}
 
 	return participant, nil
 }
@@ -219,13 +321,13 @@ func (s *voiceService) LeaveConference(ctx context.Context, confID, userID uuid.
 		return err
 	}
 
+	// Get conference for chatID and FreeSWITCH operations
+	conf, _ := s.confRepo.GetConference(ctx, confID)
+
 	// Kick from FreeSWITCH if connected
-	if participant.FSMemberID != nil && s.eslClient.IsConnected() {
-		conf, _ := s.confRepo.GetConference(ctx, confID)
-		if conf != nil {
-			if err := s.eslClient.KickMember(ctx, conf.FreeSwitchName, *participant.FSMemberID); err != nil {
-				s.logger.Warn("failed to kick member from FreeSWITCH", zap.Error(err))
-			}
+	if participant.FSMemberID != nil && s.eslClient.IsConnected() && conf != nil {
+		if err := s.eslClient.KickMember(ctx, conf.FreeSwitchName, *participant.FSMemberID); err != nil {
+			s.logger.Warn("failed to kick member from FreeSWITCH", zap.Error(err))
 		}
 	}
 
@@ -238,15 +340,52 @@ func (s *voiceService) LeaveConference(ctx context.Context, confID, userID uuid.
 	participant.Status = model.ParticipantStatusLeft
 
 	// Publish event
-	if err := s.eventPublisher.PublishParticipantLeft(ctx, participant); err != nil {
+	chatID := ""
+	if conf != nil && conf.ChatID != nil {
+		chatID = conf.ChatID.String()
+	}
+	if err := s.eventPublisher.PublishParticipantLeft(ctx, participant, chatID); err != nil {
 		s.logger.Error("failed to publish participant.left event", zap.Error(err))
 	}
 
 	// Check if conference should end (no more active participants)
 	activeParticipants, _ := s.confRepo.ListParticipants(ctx, confID)
+
+	// Update participant count metrics
+	if conf != nil {
+		activeCount := 0
+		for _, p := range activeParticipants {
+			if p.Status == model.ParticipantStatusJoined || p.Status == model.ParticipantStatusConnecting {
+				activeCount++
+			}
+		}
+		metrics.VoiceConferenceParticipantsGauge.WithLabelValues(
+			conf.ID.String(),
+			conf.Name,
+		).Set(float64(activeCount))
+	}
+
 	if len(activeParticipants) == 0 {
 		s.logger.Info("conference has no participants, ending", zap.String("conferenceId", confID.String()))
 		_ = s.endConferenceInternal(ctx, confID)
+	}
+
+	// Send system message to chat if conference has a chat
+	if conf != nil && conf.ChatID != nil && s.chatClient != nil {
+		displayName := ""
+		if participant.DisplayName != nil {
+			displayName = *participant.DisplayName
+		} else if participant.Username != nil {
+			displayName = *participant.Username
+		} else {
+			displayName = userID.String()[:8]
+		}
+		message := fmt.Sprintf("%s left the event", displayName)
+		if _, err := s.chatClient.SendEventMessage(ctx, conf.ChatID.String(), message); err != nil {
+			s.logger.Warn("failed to send system message for participant leave",
+				zap.Error(err),
+				zap.String("chatId", conf.ChatID.String()))
+		}
 	}
 
 	return nil
@@ -291,7 +430,11 @@ func (s *voiceService) MuteParticipant(ctx context.Context, confID, targetUserID
 	participant.IsMuted = mute
 
 	// Publish event
-	if err := s.eventPublisher.PublishParticipantMuted(ctx, participant); err != nil {
+	chatID := ""
+	if conf.ChatID != nil {
+		chatID = conf.ChatID.String()
+	}
+	if err := s.eventPublisher.PublishParticipantMuted(ctx, participant, chatID); err != nil {
 		s.logger.Error("failed to publish participant.muted event", zap.Error(err))
 	}
 
@@ -338,7 +481,11 @@ func (s *voiceService) KickParticipant(ctx context.Context, confID, targetUserID
 	participant.Status = model.ParticipantStatusKicked
 
 	// Publish event
-	if err := s.eventPublisher.PublishParticipantLeft(ctx, participant); err != nil {
+	chatID := ""
+	if conf.ChatID != nil {
+		chatID = conf.ChatID.String()
+	}
+	if err := s.eventPublisher.PublishParticipantLeft(ctx, participant, chatID); err != nil {
 		s.logger.Error("failed to publish participant.left event", zap.Error(err))
 	}
 
@@ -390,6 +537,27 @@ func (s *voiceService) endConferenceInternal(ctx context.Context, confID uuid.UU
 
 	conf.Status = model.ConferenceStatusEnded
 
+	// Track metrics - remove from active gauge
+	chatID := ""
+	if conf.ChatID != nil {
+		chatID = conf.ChatID.String()
+	}
+	metrics.VoiceActiveConferencesGauge.DeleteLabelValues(
+		conf.ID.String(),
+		conf.Name,
+		string(conf.EventType),
+		chatID,
+	)
+
+	// Record conference duration
+	if conf.StartedAt != nil {
+		duration := endedAt.Sub(*conf.StartedAt).Seconds()
+		metrics.VoiceConferenceDurationSeconds.WithLabelValues(string(conf.EventType)).Observe(duration)
+	}
+
+	// Clear participant metrics
+	metrics.VoiceConferenceParticipantsGauge.DeleteLabelValues(conf.ID.String(), conf.Name)
+
 	// Publish event
 	if err := s.eventPublisher.PublishConferenceEnded(ctx, conf); err != nil {
 		s.logger.Error("failed to publish conference.ended event", zap.Error(err))
@@ -428,6 +596,14 @@ func (s *voiceService) InitiateCall(ctx context.Context, callerID, calleeID uuid
 	if err := s.eventPublisher.PublishCallInitiated(ctx, call); err != nil {
 		s.logger.Error("failed to publish call.initiated event", zap.Error(err))
 	}
+
+	// Track metrics
+	metrics.VoiceActiveCallsGauge.WithLabelValues(
+		call.ID.String(),
+		call.CallerID.String(),
+		call.CalleeID.String(),
+	).Set(1)
+	metrics.VoiceCallsTotal.WithLabelValues("1on1", "initiated").Inc()
 
 	s.logger.Info("call initiated",
 		zap.String("callId", call.ID.String()),
@@ -520,6 +696,19 @@ func (s *voiceService) HangupCall(ctx context.Context, callID, userID uuid.UUID)
 	call.Duration = duration
 	call.EndReason = &endReason
 
+	// Track metrics - remove from active gauge
+	metrics.VoiceActiveCallsGauge.DeleteLabelValues(
+		call.ID.String(),
+		call.CallerID.String(),
+		call.CalleeID.String(),
+	)
+	metrics.VoiceCallsTotal.WithLabelValues("1on1", "ended").Inc()
+
+	// Record call duration
+	if call.AnsweredAt != nil {
+		metrics.VoiceCallDurationSeconds.WithLabelValues("1on1").Observe(float64(duration))
+	}
+
 	// Publish event
 	if err := s.eventPublisher.PublishCallEnded(ctx, call); err != nil {
 		s.logger.Error("failed to publish call.ended event", zap.Error(err))
@@ -538,24 +727,37 @@ func (s *voiceService) GetCallHistory(ctx context.Context, userID uuid.UUID, lim
 	return s.callRepo.GetCallHistory(ctx, userID, limit, offset)
 }
 
-// GetVertoCredentials generates temporary Verto credentials for a user
+// GetVertoCredentials returns Verto credentials for a user based on their extension
 func (s *voiceService) GetVertoCredentials(ctx context.Context, userID uuid.UUID) (*model.VertoCredentials, error) {
-	// Generate random password
-	passwordBytes := make([]byte, 16)
-	if _, err := rand.Read(passwordBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate password: %w", err)
-	}
-	password := hex.EncodeToString(passwordBytes)
+	// Look up user extension and SIP password from database
+	query := `
+		SELECT extension, COALESCE(sip_password, '')
+		FROM con_test.users
+		WHERE id = $1 AND extension IS NOT NULL
+	`
 
-	// Login format: user_<uuid>@domain
-	login := fmt.Sprintf("user_%s@%s", userID.String()[:8], s.cfg.Verto.Domain)
+	var extension, sipPassword string
+	err := s.pool.QueryRow(ctx, query, userID).Scan(&extension, &sipPassword)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("user %s has no extension assigned", userID)
+		}
+		return nil, fmt.Errorf("failed to get user extension: %w", err)
+	}
+
+	if sipPassword == "" {
+		return nil, fmt.Errorf("user %s has no SIP password", userID)
+	}
+
+	// Login format: extension@domain
+	login := fmt.Sprintf("%s@%s", extension, s.cfg.Verto.Domain)
 
 	expiresAt := time.Now().Add(time.Duration(s.cfg.Verto.CredentialsTTL) * time.Second)
 
 	creds := &model.VertoCredentials{
 		UserID:    userID,
 		Login:     login,
-		Password:  password,
+		Password:  sipPassword,
 		WSUrl:     s.cfg.Verto.WSUrl,
 		ExpiresAt: expiresAt.Unix(),
 		IceServers: []model.IceServer{
@@ -571,18 +773,26 @@ func (s *voiceService) GetVertoCredentials(ctx context.Context, userID uuid.UUID
 		creds.IceServers[0].Credential = s.cfg.TURN.Credential
 	}
 
-	s.logger.Debug("generated verto credentials",
+	s.logger.Debug("returning verto credentials",
 		zap.String("userId", userID.String()),
+		zap.String("extension", extension),
 		zap.String("login", login))
 
 	return creds, nil
 }
 
 // StartChatCall starts a quick call from a chat room
-func (s *voiceService) StartChatCall(ctx context.Context, chatID, userID uuid.UUID) (*model.Conference, *model.VertoCredentials, error) {
+func (s *voiceService) StartChatCall(ctx context.Context, chatID, userID uuid.UUID, name string) (*model.Conference, *model.VertoCredentials, error) {
+	s.logger.Info("StartChatCall called",
+		zap.String("chatId", chatID.String()),
+		zap.String("userId", userID.String()),
+		zap.String("name", name))
+
 	// Check if there's already an active conference for this chat
 	existingConf, err := s.confRepo.GetConferenceByChatID(ctx, chatID)
 	if err == nil && existingConf != nil && existingConf.Status == model.ConferenceStatusActive {
+		s.logger.Info("returning existing active conference",
+			zap.String("conferenceId", existingConf.ID.String()))
 		// Return existing conference
 		creds, err := s.GetVertoCredentials(ctx, userID)
 		if err != nil {
@@ -591,14 +801,24 @@ func (s *voiceService) StartChatCall(ctx context.Context, chatID, userID uuid.UU
 		return existingConf, creds, nil
 	}
 
-	// Create new conference for this chat
-	conf, err := s.CreateConference(ctx, &model.CreateConferenceRequest{
-		Name:            fmt.Sprintf("Chat call - %s", chatID.String()[:8]),
-		ChatID:          &chatID,
-		CreatedBy:       userID,
-		MaxMembers:      10,
-		IsPrivate:       false,
-		EnableRecording: true,
+	// Get chat participants from chat service
+	chatParticipants, err := s.getChatParticipants(ctx, chatID)
+	if err != nil {
+		s.logger.Warn("failed to get chat participants, proceeding without invites",
+			zap.String("chatId", chatID.String()),
+			zap.Error(err))
+		chatParticipants = []uuid.UUID{}
+	}
+
+	s.logger.Info("creating ad-hoc conference from chat",
+		zap.String("chatId", chatID.String()),
+		zap.Int("participantCount", len(chatParticipants)))
+
+	// Use CreateAdHocFromChat which handles invites
+	conf, err := s.CreateAdHocFromChat(ctx, &model.CreateAdHocFromChatRequest{
+		ChatID:         chatID,
+		UserID:         userID,
+		ParticipantIDs: chatParticipants,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -749,6 +969,9 @@ func (s *voiceService) CreateAdHocFromChat(ctx context.Context, req *model.Creat
 		s.logger.Error("failed to add creator as participant", zap.Error(err))
 	}
 
+	// Collect participant IDs to invite via Verto
+	participantsToInvite := []uuid.UUID{}
+
 	// Add selected participants (or all chat members if ParticipantIDs is empty)
 	for _, participantID := range req.ParticipantIDs {
 		if participantID == req.UserID {
@@ -763,7 +986,26 @@ func (s *voiceService) CreateAdHocFromChat(ctx context.Context, req *model.Creat
 		}
 		if err := s.confRepo.AddParticipantWithRole(ctx, p); err != nil {
 			s.logger.Warn("failed to add participant", zap.String("userId", participantID.String()), zap.Error(err))
+		} else {
+			participantsToInvite = append(participantsToInvite, participantID)
 		}
+	}
+
+	// Invite participants via Verto (send incoming call to their browsers)
+	s.logger.Info("checking invite conditions",
+		zap.Bool("eslConnected", s.eslClient.IsConnected()),
+		zap.Int("participantsToInvite", len(participantsToInvite)))
+
+	if s.eslClient.IsConnected() && len(participantsToInvite) > 0 {
+		s.logger.Info("starting invite to conference",
+			zap.String("confName", conf.FreeSwitchName),
+			zap.Int("count", len(participantsToInvite)))
+		// Use background context because this runs in a goroutine after HTTP response is sent
+		go s.inviteParticipantsToConference(context.Background(), conf, participantsToInvite)
+	} else {
+		s.logger.Warn("skipping invite - conditions not met",
+			zap.Bool("eslConnected", s.eslClient.IsConnected()),
+			zap.Int("participantsCount", len(participantsToInvite)))
 	}
 
 	// Get conference with participants
@@ -778,6 +1020,20 @@ func (s *voiceService) CreateAdHocFromChat(ctx context.Context, req *model.Creat
 		zap.String("id", conf.ID.String()),
 		zap.String("chatId", req.ChatID.String()),
 		zap.Int("participantCount", len(req.ParticipantIDs)))
+
+	// Send system message to chat
+	if s.chatClient != nil {
+		message := fmt.Sprintf("Event \"%s\" started", conf.Name)
+		if _, err := s.chatClient.SendEventMessage(ctx, req.ChatID.String(), message); err != nil {
+			s.logger.Warn("failed to send system message for ad-hoc conference start",
+				zap.Error(err),
+				zap.String("chatId", req.ChatID.String()))
+		} else {
+			s.logger.Info("sent system message for conference start",
+				zap.String("chatId", req.ChatID.String()),
+				zap.String("message", message))
+		}
+	}
 
 	return conf, nil
 }
@@ -958,7 +1214,11 @@ func (s *voiceService) AddParticipants(ctx context.Context, req *model.AddPartic
 		}
 
 		// Publish event for each added participant
-		if err := s.eventPublisher.PublishParticipantAdded(ctx, p); err != nil {
+		chatID := ""
+		if conf.ChatID != nil {
+			chatID = conf.ChatID.String()
+		}
+		if err := s.eventPublisher.PublishParticipantAdded(ctx, p, chatID); err != nil {
 			s.logger.Error("failed to publish participant_added event", zap.Error(err))
 		}
 	}
@@ -1086,4 +1346,246 @@ func (s *voiceService) createReminder(ctx context.Context, confID, userID uuid.U
 			zap.String("userId", userID.String()),
 			zap.Error(err))
 	}
+}
+
+// inviteParticipantsToConference invites participants to conference via Verto
+// This sends incoming call INVITE to their browser through FreeSWITCH Verto
+// All invites are sent in parallel since each participant may take up to 60 seconds to answer
+func (s *voiceService) inviteParticipantsToConference(ctx context.Context, conf *model.Conference, participantIDs []uuid.UUID) {
+	if len(participantIDs) == 0 {
+		return
+	}
+
+	// Get extensions for all participants
+	extensions, err := s.getUserExtensions(ctx, participantIDs)
+	if err != nil {
+		s.logger.Error("failed to get user extensions for invite",
+			zap.String("conferenceId", conf.ID.String()),
+			zap.Error(err))
+		return
+	}
+
+	// Invite all participants in parallel
+	// Each invite is independent and may take up to 60 seconds (originate_timeout)
+	var wg sync.WaitGroup
+	for userID, extension := range extensions {
+		if extension == "" {
+			s.logger.Warn("user has no extension, skipping invite",
+				zap.String("userId", userID.String()))
+			continue
+		}
+
+		wg.Add(1)
+		go func(uid uuid.UUID, ext string) {
+			defer wg.Done()
+
+			err := s.eslClient.InviteToConference(
+				ctx,
+				conf.FreeSwitchName,
+				ext,
+				s.cfg.Verto.Domain,
+				conf.Name,
+			)
+			if err != nil {
+				s.logger.Error("failed to invite user to conference",
+					zap.String("conferenceId", conf.ID.String()),
+					zap.String("userId", uid.String()),
+					zap.String("extension", ext),
+					zap.Error(err))
+			} else {
+				s.logger.Info("invited user to conference via Verto",
+					zap.String("conferenceId", conf.ID.String()),
+					zap.String("userId", uid.String()),
+					zap.String("extension", ext))
+			}
+		}(userID, extension)
+	}
+
+	// Wait for all invites to be sent (not for calls to be answered)
+	wg.Wait()
+	s.logger.Info("all conference invites sent",
+		zap.String("conferenceId", conf.ID.String()),
+		zap.Int("count", len(extensions)))
+}
+
+// getChatParticipants retrieves participant user IDs for a chat
+func (s *voiceService) getChatParticipants(ctx context.Context, chatID uuid.UUID) ([]uuid.UUID, error) {
+	query := `SELECT user_id FROM con_test.chat_participants WHERE chat_id = $1`
+
+	rows, err := s.pool.Query(ctx, query, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query chat participants: %w", err)
+	}
+	defer rows.Close()
+
+	var participants []uuid.UUID
+	for rows.Next() {
+		var userID uuid.UUID
+		if err := rows.Scan(&userID); err != nil {
+			s.logger.Warn("failed to scan participant user_id", zap.Error(err))
+			continue
+		}
+		participants = append(participants, userID)
+	}
+
+	s.logger.Debug("got chat participants",
+		zap.String("chatId", chatID.String()),
+		zap.Int("count", len(participants)))
+
+	return participants, nil
+}
+
+// getUserExtensions retrieves extensions for a list of user IDs
+func (s *voiceService) getUserExtensions(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(userIDs) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+
+	// Build query with placeholders
+	args := make([]interface{}, len(userIDs))
+	for i, id := range userIDs {
+		args[i] = id
+	}
+
+	query := `SELECT id, COALESCE(extension, '') as extension FROM con_test.users WHERE id IN (`
+	for i := range userIDs {
+		if i > 0 {
+			query += ", "
+		}
+		query += fmt.Sprintf("$%d", i+1)
+	}
+	query += ")"
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user extensions: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID]string)
+	for rows.Next() {
+		var userID uuid.UUID
+		var extension string
+		if err := rows.Scan(&userID, &extension); err != nil {
+			s.logger.Warn("failed to scan user extension", zap.Error(err))
+			continue
+		}
+		result[userID] = extension
+	}
+
+	return result, nil
+}
+
+// ======== Conference History ========
+
+// GetConferenceHistory retrieves detailed history for a specific conference
+func (s *voiceService) GetConferenceHistory(ctx context.Context, confID, userID uuid.UUID) (*model.ConferenceHistory, error) {
+	// Get conference
+	conf, err := s.confRepo.GetConference(ctx, confID)
+	if err != nil {
+		return nil, fmt.Errorf("conference not found: %w", err)
+	}
+
+	// Get all participants with their sessions
+	allParticipants, err := s.confRepo.GetAllParticipantSessions(ctx, confID)
+	if err != nil {
+		s.logger.Warn("failed to get participant history", zap.Error(err))
+		allParticipants = []model.ParticipantHistory{}
+	}
+
+	history := &model.ConferenceHistory{
+		Conference:      *conf,
+		AllParticipants: allParticipants,
+	}
+
+	return history, nil
+}
+
+// ListChatConferenceHistory lists conference history for a chat
+func (s *voiceService) ListChatConferenceHistory(ctx context.Context, chatID, userID uuid.UUID, limit, offset int) ([]*model.ConferenceHistory, int, error) {
+	// Get conferences for this chat (ended conferences only)
+	conferences, total, err := s.confRepo.ListConferenceHistory(ctx, chatID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list conference history: %w", err)
+	}
+
+	// Convert to history objects with participant data
+	result := make([]*model.ConferenceHistory, len(conferences))
+	for i, conf := range conferences {
+		allParticipants, err := s.confRepo.GetAllParticipantSessions(ctx, conf.ID)
+		if err != nil {
+			s.logger.Warn("failed to get participant history for conference",
+				zap.String("conferenceId", conf.ID.String()),
+				zap.Error(err))
+			allParticipants = []model.ParticipantHistory{}
+		}
+
+		result[i] = &model.ConferenceHistory{
+			Conference:      conf.Conference,
+			AllParticipants: allParticipants,
+		}
+	}
+
+	return result, total, nil
+}
+
+// GetConferenceMessages retrieves messages sent during a conference
+func (s *voiceService) GetConferenceMessages(ctx context.Context, confID, userID uuid.UUID) ([]*model.ConferenceMessage, error) {
+	// Get conference to verify access and get chat_id/time range
+	conf, err := s.confRepo.GetConference(ctx, confID)
+	if err != nil {
+		return nil, fmt.Errorf("conference not found: %w", err)
+	}
+
+	// If conference is not linked to a chat, return empty
+	if conf.ChatID == nil {
+		return []*model.ConferenceMessage{}, nil
+	}
+
+	// Get messages from chat during conference time window
+	messages, err := s.confRepo.GetConferenceMessages(ctx, confID, *conf.ChatID, conf.StartedAt, conf.EndedAt)
+	if err != nil {
+		s.logger.Warn("failed to get conference messages", zap.Error(err))
+		return []*model.ConferenceMessage{}, nil
+	}
+
+	return messages, nil
+}
+
+// GetModeratorActions retrieves moderator actions for a conference
+func (s *voiceService) GetModeratorActions(ctx context.Context, confID, userID uuid.UUID) ([]*model.ModeratorAction, error) {
+	// Get conference to check access
+	_, err := s.confRepo.GetConference(ctx, confID)
+	if err != nil {
+		return nil, fmt.Errorf("conference not found: %w", err)
+	}
+
+	// Get user's role in conference
+	participant, err := s.confRepo.GetParticipant(ctx, confID, userID)
+	if err != nil {
+		// User might not be a participant, allow if they have access to chat
+		s.logger.Debug("user is not a participant, checking chat access",
+			zap.String("userId", userID.String()),
+			zap.String("conferenceId", confID.String()))
+	} else {
+		// Only originator and moderator can view moderator actions
+		if participant.Role != model.RoleOriginator && participant.Role != model.RoleModerator {
+			return nil, fmt.Errorf("not authorized to view moderator actions")
+		}
+	}
+
+	// Get moderator actions
+	actions, err := s.confRepo.ListModeratorActions(ctx, confID)
+	if err != nil {
+		s.logger.Warn("failed to get moderator actions", zap.Error(err))
+		return []*model.ModeratorAction{}, nil
+	}
+
+	// Convert to pointer slice
+	result := make([]*model.ModeratorAction, len(actions))
+	for i := range actions {
+		result[i] = &actions[i]
+	}
+
+	return result, nil
 }

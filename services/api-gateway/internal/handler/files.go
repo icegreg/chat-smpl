@@ -28,6 +28,7 @@ func (h *FilesHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	r.Post("/upload", h.Upload)
+	r.Get("/chats/{chatId}/files", h.GetChatFiles)
 	r.Get("/{linkId}", h.Download)
 	r.Get("/{linkId}/info", h.GetFileInfo)
 	r.Delete("/{linkId}", h.Delete)
@@ -234,6 +235,66 @@ func (h *FilesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 		io.Copy(w, resp.Body)
 	}
+}
+
+// GetChatFiles godoc
+// @Summary Get files in a chat
+// @Description Returns all files uploaded to a specific chat
+// @Tags files
+// @Produce json
+// @Security Bearer
+// @Param chatId path string true "Chat ID"
+// @Param limit query int false "Number of files to return" default(50)
+// @Param offset query int false "Offset for pagination" default(0)
+// @Success 200 {object} ChatFilesResponse "List of files"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 502 {object} ErrorResponse "Files service unavailable"
+// @Router /files/chats/{chatId}/files [get]
+func (h *FilesHandler) GetChatFiles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	chatId := chi.URLParam(r, "chatId")
+
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	// Get query params
+	limit := r.URL.Query().Get("limit")
+	offset := r.URL.Query().Get("offset")
+	if limit == "" {
+		limit = "50"
+	}
+	if offset == "" {
+		offset = "0"
+	}
+
+	// Create proxy request
+	proxyURL := h.filesServiceURL + "/files/chats/" + chatId + "/files?limit=" + limit + "&offset=" + offset
+	proxyReq, err := http.NewRequestWithContext(ctx, http.MethodGet, proxyURL, nil)
+	if err != nil {
+		h.log.Error("failed to create proxy request", "error", err)
+		h.respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	proxyReq.Header.Set("X-User-ID", userID.String())
+
+	// Send request
+	client := &http.Client{}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		h.log.Error("failed to proxy get chat files request", "error", err)
+		h.respondError(w, http.StatusBadGateway, "files service unavailable")
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 func (h *FilesHandler) respondError(w http.ResponseWriter, status int, message string) {

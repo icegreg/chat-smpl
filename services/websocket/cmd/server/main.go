@@ -8,9 +8,12 @@ import (
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	"github.com/icegreg/chat-smpl/pkg/rabbitmq"
+	pb "github.com/icegreg/chat-smpl/proto/chat"
 	"github.com/icegreg/chat-smpl/services/websocket/internal/centrifugo"
 	"github.com/icegreg/chat-smpl/services/websocket/internal/consumer"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func main() {
@@ -25,6 +28,20 @@ func main() {
 	centrifugoAPIURL := getEnv("CENTRIFUGO_API_URL", "http://localhost:8000/api")
 	centrifugoAPIKey := getEnv("CENTRIFUGO_API_KEY", "centrifugo-api-key")
 	centrifugoSecret := getEnv("CENTRIFUGO_SECRET", "your-centrifugo-secret-key-change-in-production")
+	chatServiceAddr := getEnv("CHAT_SERVICE_ADDR", "localhost:50051")
+
+	// Connect to chat service via gRPC
+	chatConn, err := grpc.NewClient(chatServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		logger.Warn("failed to connect to chat service", zap.Error(err), zap.String("addr", chatServiceAddr))
+	} else {
+		defer chatConn.Close()
+		logger.Info("connected to chat service", zap.String("addr", chatServiceAddr))
+	}
+	var chatClient pb.ChatServiceClient
+	if chatConn != nil {
+		chatClient = pb.NewChatServiceClient(chatConn)
+	}
 
 	// Connect to RabbitMQ
 	rmqConn, err := rabbitmq.NewConnection(rabbitmq.Config{
@@ -51,7 +68,7 @@ func main() {
 	}
 
 	// Create voice consumer
-	voiceConsumer := consumer.NewVoiceConsumer(rmqConn, centrifugoClient)
+	voiceConsumer := consumer.NewVoiceConsumer(rmqConn, centrifugoClient, chatClient)
 
 	// Setup voice queue bindings
 	if err := voiceConsumer.Setup(); err != nil {

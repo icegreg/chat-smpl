@@ -150,13 +150,14 @@ type ArchivedChat struct {
 type ThreadType string
 
 const (
-	ThreadTypeUser   ThreadType = "user"
-	ThreadTypeSystem ThreadType = "system"
+	ThreadTypeUser       ThreadType = "user"
+	ThreadTypeSystem     ThreadType = "system"
+	ThreadTypeConference ThreadType = "conference" // For voice conference activity logging
 )
 
 func (t ThreadType) IsValid() bool {
 	switch t {
-	case ThreadTypeUser, ThreadTypeSystem:
+	case ThreadTypeUser, ThreadTypeSystem, ThreadTypeConference:
 		return true
 	}
 	return false
@@ -178,6 +179,7 @@ type Thread struct {
 	UpdatedAt              time.Time  `json:"updated_at" db:"updated_at"`
 	IsArchived             bool       `json:"is_archived" db:"is_archived"`
 	RestrictedParticipants bool       `json:"restricted_participants" db:"restricted_participants"`
+	ConferenceID           *uuid.UUID `json:"conference_id,omitempty" db:"conference_id"` // For conference threads
 }
 
 // PermissionSource indicates where the user's permission to access a thread comes from

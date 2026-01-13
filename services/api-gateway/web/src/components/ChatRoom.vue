@@ -10,6 +10,7 @@ import ThreadView from './ThreadView.vue'
 import ForwardMessageModal from './ForwardMessageModal.vue'
 import AdHocCallButton from './voice/AdHocCallButton.vue'
 import ScheduledEventWidget from './voice/ScheduledEventWidget.vue'
+import EventHistoryPanel from './EventHistoryPanel.vue'
 
 const props = defineProps<{
   chat: Chat
@@ -25,6 +26,7 @@ const messagesContainer = ref<HTMLElement | null>(null)
 const lastTypingSentAt = ref<number>(0)
 const showParticipants = ref(false)
 const showThreads = ref(false)
+const showHistory = ref(false)
 const selectedThread = ref<Thread | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const pendingFiles = ref<{ file: File; linkId: string; uploading: boolean }[]>([])
@@ -116,6 +118,12 @@ const typingIndicator = computed(() => {
 
   if (users.length === 1) return 'Someone is typing...'
   return `${users.length} people are typing...`
+})
+
+// Check if current user is a moderator or owner
+const isModerator = computed(() => {
+  const userRole = props.currentUser.role
+  return userRole === 'owner' || userRole === 'moderator'
 })
 
 watch(
@@ -297,6 +305,20 @@ function toggleThreads() {
   if (!showThreads.value) {
     selectedThread.value = null
   }
+  // Close history when opening threads
+  if (showThreads.value) {
+    showHistory.value = false
+  }
+}
+
+// History panel functions
+function toggleHistory() {
+  showHistory.value = !showHistory.value
+  // Close threads when opening history
+  if (showHistory.value) {
+    showThreads.value = false
+    selectedThread.value = null
+  }
 }
 
 function selectThread(thread: Thread) {
@@ -353,7 +375,7 @@ async function createThread() {
         </div>
         <div class="flex items-center gap-2">
           <!-- Voice call button with participant selection -->
-          <AdHocCallButton :chat-id="chat.id" />
+          <AdHocCallButton :chat-id="chat.id" :chat-name="chat.name" />
 
           <button
             @click.stop="toggleThreads"
@@ -364,6 +386,17 @@ async function createThread() {
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </button>
+          <button
+            @click.stop="toggleHistory"
+            data-testid="history-button"
+            class="p-2 text-gray-500 hover:text-indigo-600 rounded-lg hover:bg-gray-100"
+            :class="{ 'text-indigo-600 bg-indigo-50': showHistory }"
+            title="View history"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </button>
           <button
@@ -585,6 +618,14 @@ async function createThread() {
       :current-chat-id="chat.id"
       @close="closeForwardModal"
       @forward="handleForwardToChat"
+    />
+
+    <!-- Event history panel -->
+    <EventHistoryPanel
+      v-if="showHistory"
+      :chat-id="chat.id"
+      :is-moderator="isModerator"
+      @close="showHistory = false"
     />
   </div>
 </template>

@@ -6,7 +6,7 @@
   "admin_secret": "admin-secret",
   "health": true,
   "prometheus": true,
-  "allowed_origins": ["http://localhost", "http://localhost:80", "http://localhost:8080", "http://127.0.0.1:8888", "http://localhost:8888"],
+  "allowed_origins": ["*"],
 
   "engine": "redis",
   "redis_address": "redis:6379",
@@ -40,6 +40,15 @@
       "name": "user",
       "presence": false,
       "join_leave": false,
+      "history_size": 50,
+      "history_ttl": "1h",
+      "force_recovery": true,
+      "allow_subscribe_for_client": true
+    },
+    {
+      "name": "conference",
+      "presence": true,
+      "join_leave": true,
       "history_size": 50,
       "history_ttl": "1h",
       "force_recovery": true,

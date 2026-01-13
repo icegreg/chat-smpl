@@ -1,12 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <include>
   <context name="default">
-    
-    <!-- Conference extension -->
+
+    <!-- Conference extension for regular conferences -->
     <extension name="conference">
       <condition field="destination_number" expression="^conf_(.*)$">
         <action application="answer"/>
         <action application="conference" data="$1@default"/>
+      </condition>
+    </extension>
+
+    <!-- Ad-hoc conference from chat -->
+    <extension name="adhoc_chat_conference">
+      <condition field="destination_number" expression="^adhoc_chat_(.*)$">
+        <action application="answer"/>
+        <action application="conference" data="adhoc_chat_$1@default"/>
+      </condition>
+    </extension>
+
+    <!-- Quick ad-hoc conference -->
+    <extension name="adhoc_conference">
+      <condition field="destination_number" expression="^adhoc_(.*)$">
+        <action application="answer"/>
+        <action application="conference" data="adhoc_$1@default"/>
+      </condition>
+    </extension>
+
+    <!-- Scheduled conference -->
+    <extension name="scheduled_conference">
+      <condition field="destination_number" expression="^scheduled_(.*)$">
+        <action application="answer"/>
+        <action application="conference" data="scheduled_$1@default"/>
       </condition>
     </extension>
 
@@ -18,10 +42,21 @@
       </condition>
     </extension>
 
-    <!-- Direct call to user -->
+    <!-- Direct call to user via Verto -->
     <extension name="user_call">
       <condition field="destination_number" expression="^user_(.*)$">
-        <action application="bridge" data="verto/$1@chatapp.local"/>
+        <action application="bridge" data="${verto_contact($1@chatapp.local)}"/>
+      </condition>
+    </extension>
+
+    <!-- Invite user to conference via Verto -->
+    <!-- This extension is called when originating to loopback/invite_EXTENSION_CONFNAME/default -->
+    <!-- The originator joins the conference, and user receives the call -->
+    <extension name="invite_to_conference">
+      <condition field="destination_number" expression="^invite_(\d+)_(.*)$">
+        <action application="set" data="effective_caller_id_name=$2"/>
+        <action application="set" data="effective_caller_id_number=$2"/>
+        <action application="bridge" data="${verto_contact($1@chatapp.local)}"/>
       </condition>
     </extension>
 

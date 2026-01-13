@@ -43,9 +43,9 @@ const (
 type Publisher interface {
 	PublishConferenceCreated(ctx context.Context, conf *model.Conference) error
 	PublishConferenceEnded(ctx context.Context, conf *model.Conference) error
-	PublishParticipantJoined(ctx context.Context, p *model.Participant) error
-	PublishParticipantLeft(ctx context.Context, p *model.Participant) error
-	PublishParticipantMuted(ctx context.Context, p *model.Participant) error
+	PublishParticipantJoined(ctx context.Context, p *model.Participant, chatID string) error
+	PublishParticipantLeft(ctx context.Context, p *model.Participant, chatID string) error
+	PublishParticipantMuted(ctx context.Context, p *model.Participant, chatID string) error
 	PublishParticipantSpeaking(ctx context.Context, participantID string, isSpeaking bool) error
 	PublishCallInitiated(ctx context.Context, call *model.Call) error
 	PublishCallAnswered(ctx context.Context, call *model.Call) error
@@ -56,7 +56,7 @@ type Publisher interface {
 	PublishConferenceCancelled(ctx context.Context, conf *model.Conference) error
 	PublishRSVPUpdated(ctx context.Context, confID, userID string, status model.RSVPStatus) error
 	PublishParticipantRoleChanged(ctx context.Context, confID, userID string, oldRole, newRole model.ConferenceRole) error
-	PublishParticipantAdded(ctx context.Context, p *model.Participant) error
+	PublishParticipantAdded(ctx context.Context, p *model.Participant, chatID string) error
 	PublishParticipantRemoved(ctx context.Context, confID, userID string) error
 	PublishConferenceReminder(ctx context.Context, reminder *model.ConferenceReminder) error
 
@@ -200,6 +200,7 @@ func (p *publisher) PublishConferenceEnded(ctx context.Context, conf *model.Conf
 type ParticipantEvent struct {
 	ID           string  `json:"id"`
 	ConferenceID string  `json:"conference_id"`
+	ChatID       string  `json:"chat_id,omitempty"`
 	UserID       string  `json:"user_id"`
 	Status       string  `json:"status"`
 	IsMuted      bool    `json:"is_muted"`
@@ -212,10 +213,11 @@ type ParticipantEvent struct {
 	LeftAt       *string `json:"left_at,omitempty"`
 }
 
-func participantToEvent(p *model.Participant) ParticipantEvent {
+func participantToEvent(p *model.Participant, chatID string) ParticipantEvent {
 	event := ParticipantEvent{
 		ID:           p.ID.String(),
 		ConferenceID: p.ConferenceID.String(),
+		ChatID:       chatID,
 		UserID:       p.UserID.String(),
 		Status:       string(p.Status),
 		IsMuted:      p.IsMuted,
@@ -237,18 +239,18 @@ func participantToEvent(p *model.Participant) ParticipantEvent {
 }
 
 // PublishParticipantJoined publishes participant.joined event
-func (p *publisher) PublishParticipantJoined(ctx context.Context, participant *model.Participant) error {
-	return p.publish(ctx, ParticipantJoinedKey, participantToEvent(participant))
+func (p *publisher) PublishParticipantJoined(ctx context.Context, participant *model.Participant, chatID string) error {
+	return p.publish(ctx, ParticipantJoinedKey, participantToEvent(participant, chatID))
 }
 
 // PublishParticipantLeft publishes participant.left event
-func (p *publisher) PublishParticipantLeft(ctx context.Context, participant *model.Participant) error {
-	return p.publish(ctx, ParticipantLeftKey, participantToEvent(participant))
+func (p *publisher) PublishParticipantLeft(ctx context.Context, participant *model.Participant, chatID string) error {
+	return p.publish(ctx, ParticipantLeftKey, participantToEvent(participant, chatID))
 }
 
 // PublishParticipantMuted publishes participant.muted event
-func (p *publisher) PublishParticipantMuted(ctx context.Context, participant *model.Participant) error {
-	return p.publish(ctx, ParticipantMutedKey, participantToEvent(participant))
+func (p *publisher) PublishParticipantMuted(ctx context.Context, participant *model.Participant, chatID string) error {
+	return p.publish(ctx, ParticipantMutedKey, participantToEvent(participant, chatID))
 }
 
 // SpeakingEvent represents a speaking state change
@@ -423,8 +425,8 @@ func (p *publisher) PublishParticipantRoleChanged(ctx context.Context, confID, u
 }
 
 // PublishParticipantAdded publishes participant.added event
-func (p *publisher) PublishParticipantAdded(ctx context.Context, participant *model.Participant) error {
-	return p.publish(ctx, ParticipantAddedKey, participantToEvent(participant))
+func (p *publisher) PublishParticipantAdded(ctx context.Context, participant *model.Participant, chatID string) error {
+	return p.publish(ctx, ParticipantAddedKey, participantToEvent(participant, chatID))
 }
 
 // ParticipantRemovedEvent represents participant removal event

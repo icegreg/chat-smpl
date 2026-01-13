@@ -80,6 +80,7 @@ export interface Message {
   sender_id: string
   content: string
   type?: 'text' | 'file' | 'system'
+  is_system?: boolean // True for system-generated messages
   reply_to_id?: string           // Deprecated: use reply_to_ids
   reply_to_ids?: string[]        // IDs of messages this is replying to
   thread_id?: string
@@ -175,7 +176,7 @@ export interface PresenceInfo {
 }
 
 // Thread types
-export type ThreadType = 'user' | 'system'
+export type ThreadType = 'user' | 'system' | 'conference'
 
 export interface Thread {
   id: string
@@ -192,6 +193,7 @@ export interface Thread {
   updated_at: string
   is_archived: boolean
   restricted_participants: boolean
+  conference_id?: string     // For conference threads
 }
 
 export interface ThreadParticipant {
@@ -217,6 +219,7 @@ export type CallStatus = 'initiated' | 'ringing' | 'answered' | 'ended' | 'misse
 export interface Conference {
   id: string
   name: string
+  freeswitch_name: string
   chat_id?: string
   created_by: string
   status: ConferenceStatus
@@ -238,6 +241,7 @@ export interface VoiceParticipant {
   display_name?: string
   avatar_url?: string
   joined_at?: string
+  role?: 'originator' | 'moderator' | 'speaker' | 'assistant' | 'participant'
 }
 
 export interface Call {
@@ -275,6 +279,7 @@ export interface CreateConferenceRequest {
 
 export interface JoinConferenceRequest {
   muted?: boolean
+  display_name?: string
 }
 
 export interface InitiateCallRequest {
@@ -408,4 +413,75 @@ export interface ConferenceReminderEvent {
   conference_name: string
   scheduled_at: string
   minutes_before: number
+}
+
+// Conference History types
+export type ModeratorActionType = 'mute' | 'unmute' | 'kick' | 'role_change' | 'start_recording' | 'stop_recording'
+
+export interface ModeratorAction {
+  id: string
+  conference_id: string
+  actor_id: string
+  target_user_id?: string
+  action_type: ModeratorActionType
+  details?: Record<string, unknown>
+  created_at: string
+  actor_username?: string
+  actor_display_name?: string
+  target_username?: string
+  target_display_name?: string
+}
+
+export interface ParticipantSession {
+  joined_at: string
+  left_at?: string
+  status: ParticipantStatus
+  role: ConferenceRole
+}
+
+export interface ParticipantHistory {
+  user_id: string
+  username?: string
+  display_name?: string
+  avatar_url?: string
+  sessions: ParticipantSession[]
+}
+
+export interface ConferenceHistory {
+  id: string
+  name: string
+  chat_id?: string
+  status: ConferenceStatus
+  event_type: EventType
+  started_at?: string
+  ended_at?: string
+  created_at: string
+  participant_count: number
+  thread_id?: string
+  all_participants?: ParticipantHistory[]
+  moderator_actions?: ModeratorAction[]
+}
+
+export interface ConferenceHistoryListResponse {
+  conferences: ConferenceHistory[]
+  total: number
+}
+
+// Chat Files types
+export interface ChatFile {
+  id: string
+  link_id: string
+  filename: string
+  original_filename: string
+  content_type: string
+  size: number
+  uploaded_by: string
+  uploaded_at: string
+  uploader_name?: string
+  uploader_display_name?: string
+}
+
+export interface ChatFilesResponse {
+  files: ChatFile[]
+  total: number
 }

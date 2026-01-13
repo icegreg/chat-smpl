@@ -97,6 +97,13 @@ export const useNetworkStore = defineStore('network', () => {
   }
 
   function updateConnectionQuality() {
+    // Skip slow connection detection for localhost - it's always fast
+    const hostname = window.location.hostname
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.')) {
+      connectionQuality.value = 'online'
+      return
+    }
+
     if (!('connection' in navigator)) return
 
     const connection = (navigator as any).connection
@@ -105,9 +112,8 @@ export const useNetworkStore = defineStore('network', () => {
     const effectiveType = connection.effectiveType // '4g', '3g', '2g', 'slow-2g'
     const downlink = connection.downlink // Mbps
 
-    if (effectiveType === 'slow-2g' || effectiveType === '2g' || downlink < 0.5) {
-      connectionQuality.value = 'slow'
-    } else if (effectiveType === '3g' || downlink < 2) {
+    // Only mark as slow for really bad connections
+    if (effectiveType === 'slow-2g' || effectiveType === '2g' || downlink < 0.25) {
       connectionQuality.value = 'slow'
     } else {
       connectionQuality.value = 'online'

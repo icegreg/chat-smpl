@@ -26,9 +26,14 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.User, error)
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
 	GetByUsername(ctx context.Context, username string) (*model.User, error)
+	GetByExtension(ctx context.Context, extension string) (*model.User, error)
 	List(ctx context.Context, page, count int) ([]model.User, int, error)
 	Update(ctx context.Context, user *model.User) error
 	Delete(ctx context.Context, id uuid.UUID) error
+
+	// Extension management
+	GetNextExtension(ctx context.Context) (string, error)
+	AssignExtension(ctx context.Context, userID uuid.UUID) (string, error)
 
 	// Refresh tokens
 	CreateRefreshToken(ctx context.Context, token *model.RefreshToken) error
@@ -47,8 +52,8 @@ func NewUserRepository(pool *pgxpool.Pool) UserRepository {
 
 func (r *userRepository) Create(ctx context.Context, user *model.User) error {
 	query := `
-		INSERT INTO con_test.users (id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO con_test.users (id, username, email, display_name, avatar_url, extension, sip_password, password_hash, role, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	user.ID = uuid.New()
@@ -56,12 +61,30 @@ func (r *userRepository) Create(ctx context.Context, user *model.User) error {
 	user.CreatedAt = now
 	user.UpdatedAt = now
 
+	// Auto-assign extension and SIP password for non-guest users
+	if user.Extension == nil && user.Role != model.RoleGuest {
+		ext, err := r.GetNextExtension(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get next extension: %w", err)
+		}
+		user.Extension = &ext
+
+		// Generate SIP password
+		sipPass, err := r.generateSIPPassword(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to generate SIP password: %w", err)
+		}
+		user.SIPPassword = &sipPass
+	}
+
 	_, err := r.pool.Exec(ctx, query,
 		user.ID,
 		user.Username,
 		user.Email,
 		user.DisplayName,
 		user.AvatarURL,
+		user.Extension,
+		user.SIPPassword,
 		user.PasswordHash,
 		user.Role,
 		user.CreatedAt,
@@ -78,9 +101,19 @@ func (r *userRepository) Create(ctx context.Context, user *model.User) error {
 	return nil
 }
 
+func (r *userRepository) generateSIPPassword(ctx context.Context) (string, error) {
+	query := `SELECT con_test.generate_sip_password()`
+	var password string
+	err := r.pool.QueryRow(ctx, query).Scan(&password)
+	if err != nil {
+		return "", err
+	}
+	return password, nil
+}
+
 func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
 	query := `
-		SELECT id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at
+		SELECT id, username, email, display_name, avatar_url, extension, sip_password, password_hash, role, created_at, updated_at
 		FROM con_test.users
 		WHERE id = $1
 	`
@@ -92,6 +125,8 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.User
 		&user.Email,
 		&user.DisplayName,
 		&user.AvatarURL,
+		&user.Extension,
+		&user.SIPPassword,
 		&user.PasswordHash,
 		&user.Role,
 		&user.CreatedAt,
@@ -110,7 +145,7 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.User
 
 func (r *userRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	query := `
-		SELECT id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at
+		SELECT id, username, email, display_name, avatar_url, extension, sip_password, password_hash, role, created_at, updated_at
 		FROM con_test.users
 		WHERE email = $1
 	`
@@ -122,6 +157,8 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*model.U
 		&user.Email,
 		&user.DisplayName,
 		&user.AvatarURL,
+		&user.Extension,
+		&user.SIPPassword,
 		&user.PasswordHash,
 		&user.Role,
 		&user.CreatedAt,
@@ -140,7 +177,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*model.U
 
 func (r *userRepository) GetByUsername(ctx context.Context, username string) (*model.User, error) {
 	query := `
-		SELECT id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at
+		SELECT id, username, email, display_name, avatar_url, extension, sip_password, password_hash, role, created_at, updated_at
 		FROM con_test.users
 		WHERE username = $1
 	`
@@ -152,6 +189,8 @@ func (r *userRepository) GetByUsername(ctx context.Context, username string) (*m
 		&user.Email,
 		&user.DisplayName,
 		&user.AvatarURL,
+		&user.Extension,
+		&user.SIPPassword,
 		&user.PasswordHash,
 		&user.Role,
 		&user.CreatedAt,
@@ -163,6 +202,38 @@ func (r *userRepository) GetByUsername(ctx context.Context, username string) (*m
 			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("failed to get user by username: %w", err)
+	}
+
+	return &user, nil
+}
+
+func (r *userRepository) GetByExtension(ctx context.Context, extension string) (*model.User, error) {
+	query := `
+		SELECT id, username, email, display_name, avatar_url, extension, sip_password, password_hash, role, created_at, updated_at
+		FROM con_test.users
+		WHERE extension = $1
+	`
+
+	var user model.User
+	err := r.pool.QueryRow(ctx, query, extension).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.DisplayName,
+		&user.AvatarURL,
+		&user.Extension,
+		&user.SIPPassword,
+		&user.PasswordHash,
+		&user.Role,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get user by extension: %w", err)
 	}
 
 	return &user, nil
@@ -187,7 +258,7 @@ func (r *userRepository) List(ctx context.Context, page, count int) ([]model.Use
 
 	// Get users
 	query := `
-		SELECT id, username, email, display_name, avatar_url, password_hash, role, created_at, updated_at
+		SELECT id, username, email, display_name, avatar_url, extension, sip_password, password_hash, role, created_at, updated_at
 		FROM con_test.users
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2
@@ -208,6 +279,8 @@ func (r *userRepository) List(ctx context.Context, page, count int) ([]model.Use
 			&user.Email,
 			&user.DisplayName,
 			&user.AvatarURL,
+			&user.Extension,
+			&user.SIPPassword,
 			&user.PasswordHash,
 			&user.Role,
 			&user.CreatedAt,
@@ -224,7 +297,7 @@ func (r *userRepository) List(ctx context.Context, page, count int) ([]model.Use
 func (r *userRepository) Update(ctx context.Context, user *model.User) error {
 	query := `
 		UPDATE con_test.users
-		SET username = $2, email = $3, display_name = $4, avatar_url = $5, password_hash = $6, role = $7, updated_at = $8
+		SET username = $2, email = $3, display_name = $4, avatar_url = $5, extension = $6, sip_password = $7, password_hash = $8, role = $9, updated_at = $10
 		WHERE id = $1
 	`
 
@@ -236,6 +309,8 @@ func (r *userRepository) Update(ctx context.Context, user *model.User) error {
 		user.Email,
 		user.DisplayName,
 		user.AvatarURL,
+		user.Extension,
+		user.SIPPassword,
 		user.PasswordHash,
 		user.Role,
 		user.UpdatedAt,
@@ -253,6 +328,39 @@ func (r *userRepository) Update(ctx context.Context, user *model.User) error {
 	}
 
 	return nil
+}
+
+func (r *userRepository) GetNextExtension(ctx context.Context) (string, error) {
+	query := `SELECT con_test.get_next_extension()`
+
+	var ext string
+	err := r.pool.QueryRow(ctx, query).Scan(&ext)
+	if err != nil {
+		return "", fmt.Errorf("failed to get next extension: %w", err)
+	}
+
+	return ext, nil
+}
+
+func (r *userRepository) AssignExtension(ctx context.Context, userID uuid.UUID) (string, error) {
+	ext, err := r.GetNextExtension(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	query := `UPDATE con_test.users SET extension = $2, updated_at = $3 WHERE id = $1 AND extension IS NULL`
+
+	result, err := r.pool.Exec(ctx, query, userID, ext, time.Now())
+	if err != nil {
+		return "", fmt.Errorf("failed to assign extension: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		// User already has extension or not found
+		return "", ErrUserNotFound
+	}
+
+	return ext, nil
 }
 
 func (r *userRepository) Delete(ctx context.Context, id uuid.UUID) error {

@@ -6,6 +6,7 @@ import { Centrifuge, Subscription } from 'centrifuge'
 import { useAuthStore } from './auth'
 import { usePresenceStore } from './presence'
 import { useNetworkStore } from './network'
+import { useVoiceStore } from './voice'
 
 // Event types from websocket-service
 interface ChatEvent {
@@ -242,6 +243,20 @@ export const useChatStore = defineStore('chat', () => {
         break
       case 'reaction.removed':
         handleReactionRemoved(event.data as { message_id: string; emoji: string; user_id: string })
+        break
+
+      // Voice events - forward to voice store
+      case 'conference.created':
+      case 'conference.ended':
+      case 'participant.joined':
+      case 'participant.left':
+      case 'call.initiated':
+      case 'call.answered':
+      case 'call.ended':
+        {
+          const voiceStore = useVoiceStore()
+          voiceStore.handleVoiceEvent({ type: event.type, data: event.data })
+        }
         break
     }
   }

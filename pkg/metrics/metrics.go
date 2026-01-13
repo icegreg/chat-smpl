@@ -226,4 +226,63 @@ var (
 			Help: "Number of active user sessions",
 		},
 	)
+
+	// Voice/Conference metrics
+	VoiceActiveCallsGauge = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "voice_active_calls",
+			Help: "Number of active 1-on-1 voice calls with details",
+		},
+		[]string{"call_id", "caller_id", "callee_id"},
+	)
+
+	VoiceActiveConferencesGauge = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "voice_active_conferences",
+			Help: "Number of active conferences with details",
+		},
+		[]string{"conference_id", "conference_name", "event_type", "chat_id"},
+	)
+
+	VoiceConferenceParticipantsGauge = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "voice_conference_participants",
+			Help: "Number of participants in a conference",
+		},
+		[]string{"conference_id", "conference_name"},
+	)
+
+	VoiceCallsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "voice_calls_total",
+			Help: "Total number of voice calls",
+		},
+		[]string{"type", "status"},
+	)
+
+	VoiceConferencesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "voice_conferences_total",
+			Help: "Total number of conferences created",
+		},
+		[]string{"event_type"},
+	)
+
+	VoiceCallDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "voice_call_duration_seconds",
+			Help:    "Voice call duration in seconds",
+			Buckets: []float64{5, 10, 30, 60, 120, 300, 600, 1800, 3600},
+		},
+		[]string{"type"},
+	)
+
+	VoiceConferenceDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "voice_conference_duration_seconds",
+			Help:    "Conference duration in seconds",
+			Buckets: []float64{5, 10, 30, 60, 120, 300, 600, 1800, 3600},
+		},
+		[]string{"event_type"},
+	)
 )

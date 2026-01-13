@@ -34,6 +34,15 @@ nul
 
 # Temp files
 /tmp/
+*.bak
+
+# Environment files
+.env
+.env.local
+
+# SSL certificates
+deployments/nginx/certs/
+deployments/freeswitch/certs/
 
 # Docker volumes (local data)
 avatars/

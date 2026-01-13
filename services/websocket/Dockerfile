@@ -2,7 +2,12 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
+# Copy go mod files and local dependencies
 COPY go.mod go.sum ./
+COPY pkg/ ./pkg/
+COPY proto/ ./proto/
+
+# Download dependencies
 RUN go mod download
 
 COPY . .

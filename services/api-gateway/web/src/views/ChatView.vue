@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
+import { useVoiceStore } from '@/stores/voice'
 import LeftNavPanel from '@/components/layout/LeftNavPanel.vue'
 import ChatSidebar from '@/components/ChatSidebar.vue'
 import ChatRoom from '@/components/ChatRoom.vue'
@@ -12,6 +13,7 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+const voiceStore = useVoiceStore()
 
 onMounted(async () => {
   // Wait for auth to be initialized (user fetched from API)
@@ -34,6 +36,9 @@ onMounted(async () => {
 
   await chatStore.initCentrifuge()
   await chatStore.fetchChats()
+
+  // Load active conferences for UI indicators
+  await voiceStore.loadActiveConferences()
 
   // Select chat from route if provided
   if (route.params.id) {

@@ -158,6 +158,18 @@ type ShareLinkDTO struct {
 	CreatedAt     time.Time  `json:"created_at"`
 }
 
+// ChatFileDTO represents a file uploaded to a chat
+type ChatFileDTO struct {
+	LinkID           uuid.UUID `json:"link_id"`
+	FileID           uuid.UUID `json:"file_id"`
+	OriginalFilename string    `json:"original_filename"`
+	ContentType      string    `json:"content_type"`
+	Size             int64     `json:"size"`
+	UploadedBy       uuid.UUID `json:"uploaded_by"`
+	UploadedAt       time.Time `json:"uploaded_at"`
+	UploaderUsername *string   `json:"uploader_username,omitempty"`
+}
+
 func (s *FileShareLink) ToDTO(baseURL string) ShareLinkDTO {
 	return ShareLinkDTO{
 		ID:            s.ID,

@@ -7,6 +7,8 @@ toolchain go1.24.11
 require (
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-chi/cors v1.2.2
+	github.com/icegreg/chat-smpl/pkg/metrics v0.0.0
+	github.com/icegreg/chat-smpl/proto/chat v0.0.0
 	github.com/icegreg/chat-smpl/proto/voice v0.0.0
 	github.com/go-playground/validator/v10 v10.22.1
 	github.com/golang-jwt/jwt/v5 v5.2.1
@@ -55,4 +57,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/icegreg/chat-smpl/proto/voice => ./proto/voice
+replace (
+	github.com/icegreg/chat-smpl/proto/chat => ./proto/chat
+	github.com/icegreg/chat-smpl/proto/voice => ./proto/voice
+	github.com/icegreg/chat-smpl/pkg/metrics => ./pkg/metrics
+)

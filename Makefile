@@ -1,4 +1,5 @@
-.PHONY: all build test clean docker-up docker-down docker-build migrate proto proto-doc swagger lint help
+.PHONY: all build test clean docker-up docker-down docker-build migrate proto proto-doc swagger lint help \
+	ssl-generate-self-signed ssl-init-letsencrypt ssl-up-custom ssl-up-letsencrypt ssl-down
 
 # Go parameters
 GOCMD=go
@@ -52,7 +53,7 @@ docker-clean: ## Remove all containers and volumes
 
 # ==================== Build ====================
 
-build: build-users build-chat build-files build-gateway build-org ## Build all services
+build: build-users build-chat build-files build-gateway build-org build-health ## Build all services
 
 build-users: ## Build users service
 	$(GOBUILD) -o bin/users-server ./$(SERVICES_DIR)/users/cmd/server
@@ -71,6 +72,9 @@ build-org: ## Build org service
 	$(GOBUILD) -o bin/org-server ./$(SERVICES_DIR)/org/cmd/server
 	$(GOBUILD) -o bin/org-cli ./$(SERVICES_DIR)/org/cmd/cli
 
+build-health: ## Build health service
+	$(GOBUILD) -o bin/health-server ./$(SERVICES_DIR)/health/cmd/server
+
 # ==================== Run locally ====================
 
 run-users: ## Run users service locally
@@ -84,6 +88,9 @@ run-files: ## Run files service locally
 
 run-gateway: ## Run api-gateway locally
 	$(GOCMD) run ./$(SERVICES_DIR)/api-gateway/cmd/server
+
+run-health: ## Run health service locally
+	$(GOCMD) run ./$(SERVICES_DIR)/health/cmd/server
 
 # ==================== Testing ====================
 
@@ -101,6 +108,9 @@ test-files: ## Run files service tests
 
 test-gateway: ## Run api-gateway tests
 	$(GOTEST) -v -race ./$(SERVICES_DIR)/api-gateway/...
+
+test-health: ## Run health service tests
+	$(GOTEST) -v -race ./$(SERVICES_DIR)/health/...
 
 test-pkg: ## Run pkg tests
 	$(GOTEST) -v -race ./$(PKG_DIR)/...
@@ -236,6 +246,30 @@ load-test: build-loadgen ## Run load test (usage: make load-test duration=100m u
 
 load-test-file: build-loadgen ## Run load test with users file (usage: make load-test-file users=users.json)
 	./bin/loadgen -duration $(or $(duration),100m) -users $(or $(users),users.json) -url $(or $(url),http://localhost:3001)
+
+# ==================== SSL ====================
+
+ssl-generate-self-signed: ## Generate self-signed SSL certificates for testing
+	@chmod +x scripts/ssl/generate-self-signed.sh
+	@./scripts/ssl/generate-self-signed.sh $(or $(domain),localhost)
+
+ssl-init-letsencrypt: ## Initialize Let's Encrypt certificates (usage: make ssl-init-letsencrypt domain=example.com email=admin@example.com)
+	@chmod +x scripts/ssl/*.sh
+	@./scripts/ssl/init-letsencrypt.sh $(domain) $(email) $(staging)
+
+ssl-up-custom: ## Start all services with custom SSL certificates
+	$(DOCKER_COMPOSE) --profile ssl-custom up -d
+
+ssl-up-letsencrypt: ## Start all services with Let's Encrypt certificates
+	$(DOCKER_COMPOSE) --profile ssl-letsencrypt up -d
+
+ssl-down: ## Stop SSL-enabled services
+	$(DOCKER_COMPOSE) --profile ssl-custom --profile ssl-letsencrypt down
+
+ssl-renew: ## Force certificate renewal
+	docker exec chatapp-certbot certbot renew --force-renewal
+	@chmod +x scripts/ssl/renew-hook.sh
+	@./scripts/ssl/renew-hook.sh
 
 # ==================== Cleanup ====================
 

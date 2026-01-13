@@ -31,6 +31,7 @@ const filteredThreads = computed(() => {
 
 const userThreads = computed(() => filteredThreads.value.filter(t => t.thread_type === 'user'))
 const systemThreads = computed(() => filteredThreads.value.filter(t => t.thread_type === 'system'))
+const conferenceThreads = computed(() => filteredThreads.value.filter(t => t.thread_type === 'conference'))
 
 async function loadThreads() {
   loading.value = true
@@ -232,6 +233,44 @@ const headerTitle = computed(() => {
                   </div>
                   <p class="text-xs text-gray-500 mt-0.5">
                     {{ thread.message_count }} {{ thread.message_count === 1 ? 'event' : 'events' }}
+                  </p>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Conference/Event threads section with gradient -->
+        <div v-if="conferenceThreads.length > 0">
+          <div class="px-4 py-2 text-xs font-medium text-purple-700 uppercase tracking-wider bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50">
+            Events
+          </div>
+          <ul>
+            <li
+              v-for="thread in conferenceThreads"
+              :key="thread.id"
+              @click="$emit('selectThread', thread)"
+              data-testid="thread-item"
+              :data-thread-type="thread.thread_type"
+              class="px-4 py-3 cursor-pointer border-b border-purple-100 bg-gradient-to-r from-indigo-50/50 via-purple-50/50 to-pink-50/50 hover:from-indigo-100/50 hover:via-purple-100/50 hover:to-pink-100/50 transition-colors border-l-4 border-l-purple-400"
+            >
+              <div class="flex items-start gap-3">
+                <div class="mt-0.5 p-1.5 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-lg">
+                  <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center justify-between">
+                    <p class="text-sm font-medium text-gray-900 truncate">
+                      {{ getThreadTitle(thread) }}
+                    </p>
+                    <span class="text-xs text-purple-500">
+                      {{ formatDate(thread.last_message_at) }}
+                    </span>
+                  </div>
+                  <p class="text-xs text-purple-600 mt-0.5">
+                    {{ thread.message_count }} {{ thread.message_count === 1 ? 'activity' : 'activities' }}
                   </p>
                 </div>
               </div>

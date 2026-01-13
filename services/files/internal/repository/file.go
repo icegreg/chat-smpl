@@ -74,6 +74,9 @@ type FileRepository interface {
 
 	// Batch operations
 	GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.UUID) (map[uuid.UUID]*model.File, error)
+
+	// Chat files
+	GetChatFiles(ctx context.Context, chatID uuid.UUID, limit, offset int) ([]*model.ChatFileDTO, int, error)
 }
 
 type fileRepository struct {
@@ -655,4 +658,72 @@ func (r *fileRepository) GetFilesByLinkIDs(ctx context.Context, linkIDs []uuid.U
 	}
 
 	return result, nil
+}
+
+// GetChatFiles returns files that were attached to messages in a specific chat
+func (r *fileRepository) GetChatFiles(ctx context.Context, chatID uuid.UUID, limit, offset int) ([]*model.ChatFileDTO, int, error) {
+	// Get total count first
+	countQuery := `
+		SELECT COUNT(DISTINCT fl.id)
+		FROM con_test.message_file_attachments mfa
+		JOIN con_test.messages m ON m.id = mfa.message_id
+		JOIN con_test.file_links fl ON fl.id = mfa.file_link_id
+		WHERE m.chat_id = $1 AND fl.is_deleted = false
+	`
+
+	var total int
+	if err := r.pool.QueryRow(ctx, countQuery, chatID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count chat files: %w", err)
+	}
+
+	if total == 0 {
+		return []*model.ChatFileDTO{}, 0, nil
+	}
+
+	// Get files with pagination
+	query := `
+		SELECT DISTINCT
+			fl.id as link_id,
+			f.id as file_id,
+			f.original_filename,
+			f.content_type,
+			f.size,
+			fl.uploaded_by,
+			fl.uploaded_at,
+			u.username
+		FROM con_test.message_file_attachments mfa
+		JOIN con_test.messages m ON m.id = mfa.message_id
+		JOIN con_test.file_links fl ON fl.id = mfa.file_link_id
+		JOIN con_test.files f ON f.id = fl.file_id
+		LEFT JOIN con_test.users u ON u.id = fl.uploaded_by
+		WHERE m.chat_id = $1 AND fl.is_deleted = false AND f.status = 'active'
+		ORDER BY fl.uploaded_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.pool.Query(ctx, query, chatID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get chat files: %w", err)
+	}
+	defer rows.Close()
+
+	var files []*model.ChatFileDTO
+	for rows.Next() {
+		var f model.ChatFileDTO
+		if err := rows.Scan(
+			&f.LinkID,
+			&f.FileID,
+			&f.OriginalFilename,
+			&f.ContentType,
+			&f.Size,
+			&f.UploadedBy,
+			&f.UploadedAt,
+			&f.UploaderUsername,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan chat file: %w", err)
+		}
+		files = append(files, &f)
+	}
+
+	return files, total, nil
 }

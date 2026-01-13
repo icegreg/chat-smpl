@@ -41,6 +41,9 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/{linkId}/info", h.GetFileInfo)
 	r.Delete("/{linkId}", h.Delete)
 
+	// Chat files
+	r.Get("/chats/{chatId}/files", h.GetChatFiles)
+
 	// Share links
 	r.Post("/{fileId}/share", h.CreateShareLink)
 	r.Get("/share/{token}", h.DownloadByShareToken)
@@ -340,6 +343,47 @@ func (h *Handler) GrantPermissions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// GetChatFiles returns files that were attached to messages in a specific chat
+// GET /files/chats/{chatId}/files
+func (h *Handler) GetChatFiles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	chatIDStr := chi.URLParam(r, "chatId")
+	chatID, err := uuid.Parse(chatIDStr)
+	if err != nil {
+		h.respondError(w, http.StatusBadRequest, "invalid chat ID")
+		return
+	}
+
+	// Get pagination params
+	limit := 50
+	offset := 0
+
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	files, total, err := h.fileService.GetChatFiles(ctx, chatID, limit, offset)
+	if err != nil {
+		h.log.Error("failed to get chat files", "error", err, "chat_id", chatID)
+		h.respondError(w, http.StatusInternalServerError, "failed to get chat files")
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"files": files,
+		"total": total,
+	})
 }
 
 // GetFilesByLinkIDs returns file metadata for multiple link IDs

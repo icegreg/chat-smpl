@@ -41,6 +41,8 @@ type User struct {
 	Email        string    `json:"email" db:"email"`
 	DisplayName  *string   `json:"display_name,omitempty" db:"display_name"`
 	AvatarURL    *string   `json:"avatar_url,omitempty" db:"avatar_url"`
+	Extension    *string   `json:"extension,omitempty" db:"extension"`       // SIP/Verto extension (10000-99999)
+	SIPPassword  *string   `json:"-" db:"sip_password"`                      // Password for SIP/Verto auth
 	PasswordHash string    `json:"-" db:"password_hash"`
 	Role         Role      `json:"role" db:"role"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`

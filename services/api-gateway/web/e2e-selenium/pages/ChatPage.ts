@@ -863,7 +863,8 @@ export class ChatPage extends BasePage {
   // Get chat ID from URL
   async getCurrentChatId(): Promise<string> {
     const url = await this.getCurrentUrl()
-    const match = url.match(/\/chat\/([a-f0-9-]+)/)
+    // Match both /chat/ and /chats/ patterns
+    const match = url.match(/\/chats?\/([a-f0-9-]+)/)
     return match ? match[1] : ''
   }
 
@@ -1544,6 +1545,278 @@ export class ChatPage extends BasePage {
     await this.sleep(1000)
   }
 
+  // ========== Incoming Call Overlay ==========
+  private readonly incomingCallOverlay = By.css('.incoming-call-overlay')
+  private readonly incomingCallAnswerBtn = By.css('.incoming-call-overlay .action-btn.answer')
+  private readonly incomingCallRejectBtn = By.css('.incoming-call-overlay .action-btn.reject')
+  private readonly incomingCallerName = By.css('.incoming-call-overlay .caller-name')
+
+  /**
+   * Check if incoming call overlay is visible
+   */
+  async isIncomingCallVisible(): Promise<boolean> {
+    return this.isDisplayed(this.incomingCallOverlay)
+  }
+
+  /**
+   * Wait for incoming call overlay to appear
+   */
+  async waitForIncomingCall(timeout: number = 10000): Promise<void> {
+    await this.waitForElement(this.incomingCallOverlay, timeout)
+  }
+
+  /**
+   * Get the caller name from incoming call overlay
+   */
+  async getIncomingCallerName(): Promise<string> {
+    const element = await this.waitForElement(this.incomingCallerName)
+    return element.getText()
+  }
+
+  /**
+   * Answer the incoming call
+   */
+  async answerIncomingCall(): Promise<void> {
+    await this.click(this.incomingCallAnswerBtn)
+    await this.sleep(500)
+  }
+
+  /**
+   * Reject the incoming call
+   */
+  async rejectIncomingCall(): Promise<void> {
+    await this.click(this.incomingCallRejectBtn)
+    await this.sleep(500)
+  }
+
+  // ========== Active Conference Indicators ==========
+  private readonly callIndicatorEmoji = By.css('.call-indicator')
+  private readonly joinCallButton = By.css('.adhoc-call-button .join-btn')
+  private readonly hangupButton = By.css('.adhoc-call-button .hangup-btn')
+
+  /**
+   * Check if any chat in the sidebar has the active call indicator (📞)
+   */
+  async hasActiveCallIndicator(): Promise<boolean> {
+    return this.isDisplayed(this.callIndicatorEmoji)
+  }
+
+  /**
+   * Get list of chat names that have active call indicator
+   */
+  async getChatsWithActiveCall(): Promise<string[]> {
+    const chatItems = await this.driver.findElements(this.chatListItem)
+    const chatsWithCall: string[] = []
+
+    for (const item of chatItems) {
+      try {
+        const indicators = await item.findElements(this.callIndicatorEmoji)
+        if (indicators.length > 0) {
+          const nameSpan = await item.findElement(By.css('span.font-medium'))
+          const text = await nameSpan.getText()
+          chatsWithCall.push(text.trim())
+        }
+      } catch {
+        continue
+      }
+    }
+    return chatsWithCall
+  }
+
+  /**
+   * Check if the Join button is visible (shown when there's an active conference)
+   */
+  async isJoinCallButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.joinCallButton)
+  }
+
+  /**
+   * Click the Join button to join an existing conference
+   */
+  async clickJoinCall(): Promise<void> {
+    await this.click(this.joinCallButton)
+    await this.sleep(500)
+  }
+
+  /**
+   * Get text from Join button (e.g., "Join (2)")
+   */
+  async getJoinButtonText(): Promise<string> {
+    try {
+      return await this.getText(this.joinCallButton)
+    } catch {
+      return ''
+    }
+  }
+
+  /**
+   * Check if the Hangup button is visible
+   */
+  async isHangupButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.hangupButton)
+  }
+
+  /**
+   * Click the Hangup button to leave conference
+   */
+  async clickHangup(): Promise<void> {
+    await this.click(this.hangupButton)
+    await this.sleep(500)
+  }
+
+  /**
+   * Wait for the call indicator to appear on a specific chat
+   */
+  async waitForCallIndicator(chatName: string, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const chatsWithCall = await this.getChatsWithActiveCall()
+      if (chatsWithCall.some(name => name.includes(chatName))) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error(`Call indicator for chat "${chatName}" not found within timeout`)
+  }
+
+  /**
+   * Wait for the call indicator to disappear from a specific chat
+   */
+  async waitForCallIndicatorToDisappear(chatName: string, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const chatsWithCall = await this.getChatsWithActiveCall()
+      if (!chatsWithCall.some(name => name.includes(chatName))) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error(`Call indicator for chat "${chatName}" still visible after timeout`)
+  }
+
+  /**
+   * Wait for Join button to appear
+   */
+  async waitForJoinButton(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isJoinCallButtonVisible()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Join button did not appear within timeout')
+  }
+
+  /**
+   * Wait for Join button to disappear (after conference ends)
+   */
+  async waitForJoinButtonToDisappear(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (!(await this.isJoinCallButtonVisible())) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Join button still visible after timeout')
+  }
+
+  /**
+   * Get active conferences from API
+   */
+  async getActiveConferencesViaApi(): Promise<{ id: string; chat_id: string; name: string; participant_count: number }[]> {
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/voice/conferences/active', {
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          const data = await response.json();
+          resolve(data.conferences || []);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `) as { id: string; chat_id: string; name: string; participant_count: number }[]
+
+    return result || []
+  }
+
+  /**
+   * End a conference via API
+   */
+  async endConferenceViaApi(conferenceId: string): Promise<void> {
+    await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/voice/conferences/${conferenceId}/end', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          resolve({ success: true });
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `)
+  }
+
+  /**
+   * Leave a conference via API
+   */
+  async leaveConferenceViaApi(conferenceId: string): Promise<void> {
+    await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/voice/conferences/${conferenceId}/leave', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          resolve({ success: true });
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `)
+  }
+
   /**
    * Remove a participant from the current chat via API
    * @param userId - UUID of the user to remove
@@ -1586,5 +1859,1111 @@ export class ChatPage extends BasePage {
 
     // Wait for the change to propagate
     await this.sleep(1000)
+  }
+
+  // ========== Conference View Popup ==========
+
+  private readonly conferenceView = By.css('.conference-view')
+  private readonly conferenceName = By.css('.conference-name')
+  private readonly participantCount = By.css('.participant-count')
+  private readonly conferenceCloseBtn = By.css('.close-btn')
+
+  /**
+   * Check if Conference View popup is visible
+   */
+  async isConferenceViewVisible(): Promise<boolean> {
+    return this.isDisplayed(this.conferenceView)
+  }
+
+  /**
+   * Wait for Conference View popup to appear
+   */
+  async waitForConferenceView(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isConferenceViewVisible()) {
+        return
+      }
+      await this.sleep(100)
+    }
+    throw new Error('Conference View did not appear within timeout')
+  }
+
+  /**
+   * Get conference name from the popup
+   */
+  async getConferenceName(): Promise<string> {
+    try {
+      return await this.getText(this.conferenceName)
+    } catch {
+      return ''
+    }
+  }
+
+  /**
+   * Get participant count text (e.g., "2 participants")
+   */
+  async getConferenceParticipantCount(): Promise<string> {
+    try {
+      return await this.getText(this.participantCount)
+    } catch {
+      return ''
+    }
+  }
+
+  /**
+   * Close conference view popup by clicking close button
+   */
+  async closeConferenceView(): Promise<void> {
+    await this.click(this.conferenceCloseBtn)
+    await this.sleep(500)
+  }
+
+  /**
+   * Wait for Conference View to disappear
+   */
+  async waitForConferenceViewToDisappear(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (!(await this.isConferenceViewVisible())) {
+        return
+      }
+      await this.sleep(100)
+    }
+    throw new Error('Conference View did not disappear within timeout')
+  }
+
+  // ========== Conference Controls (Mute, etc.) ==========
+
+  private readonly muteButton = By.css('.call-controls .control-btn[title*="Mute"], .call-controls .control-btn[title*="Unmute"]')
+
+  /**
+   * Check if user is currently muted (mute button has 'active' class)
+   */
+  async isMutedInConference(): Promise<boolean> {
+    try {
+      const button = await this.driver.findElement(this.muteButton)
+      const classes = await button.getAttribute('class')
+      return classes.includes('active')
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Toggle mute button in conference
+   */
+  async toggleMuteInConference(): Promise<void> {
+    await this.click(this.muteButton)
+    await this.sleep(500)
+  }
+
+  /**
+   * Mute microphone if not already muted
+   */
+  async muteInConference(): Promise<void> {
+    const isMuted = await this.isMutedInConference()
+    if (!isMuted) {
+      await this.toggleMuteInConference()
+    }
+  }
+
+  /**
+   * Unmute microphone if currently muted
+   */
+  async unmuteInConference(): Promise<void> {
+    const isMuted = await this.isMutedInConference()
+    if (isMuted) {
+      await this.toggleMuteInConference()
+    }
+  }
+
+  /**
+   * Get participant count from conference view
+   */
+  async getParticipantCountNumber(): Promise<number> {
+    const text = await this.getConferenceParticipantCount()
+    // Extract number from "2 participants" or "1 participant"
+    const match = text.match(/(\d+)/)
+    return match ? parseInt(match[1], 10) : 0
+  }
+
+  /**
+   * Wait for participant count to reach expected value
+   */
+  async waitForParticipantCount(expectedCount: number, timeout: number = 15000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const count = await this.getParticipantCountNumber()
+      if (count === expectedCount) {
+        return
+      }
+      await this.sleep(500)
+    }
+    throw new Error(`Participant count did not reach ${expectedCount} within timeout`)
+  }
+
+  // ========== Active Events Section in Sidebar ==========
+
+  private readonly activeEventsSection = By.xpath('//h3[contains(text(), "Активные мероприятия")]')
+  private readonly activeEventsChatItems = By.xpath('//h3[contains(text(), "Активные мероприятия")]/ancestor::div[contains(@class, "border-b")]//div[contains(@class, "hover:bg-green-50")]')
+  private readonly activeEventsJoinButton = By.xpath('//button[contains(text(), "Присоединиться")]')
+  private readonly activeEventsParticipatingBadge = By.xpath('//span[contains(text(), "Вы участвуете")]')
+  private readonly activeEventsInCallStatus = By.xpath('//span[contains(text(), "В звонке")]')
+  private readonly activeEventsOnHoldStatus = By.xpath('//span[contains(text(), "На hold")]')
+  private readonly activeEventsOngoingText = By.xpath('//span[contains(text(), "Идёт")]')
+  private readonly regularChatsSection = By.xpath('//h3[contains(text(), "Чаты")]')
+
+  /**
+   * Check if "Активные мероприятия" section is visible in sidebar
+   */
+  async isActiveEventsSectionVisible(): Promise<boolean> {
+    return this.isDisplayed(this.activeEventsSection)
+  }
+
+  /**
+   * Wait for "Активные мероприятия" section to appear
+   */
+  async waitForActiveEventsSection(timeout: number = 15000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isActiveEventsSectionVisible()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Active Events section did not appear within timeout')
+  }
+
+  /**
+   * Wait for "Активные мероприятия" section to disappear
+   */
+  async waitForActiveEventsSectionToDisappear(timeout: number = 15000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (!(await this.isActiveEventsSectionVisible())) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Active Events section still visible after timeout')
+  }
+
+  /**
+   * Get count of chats in "Активные мероприятия" section
+   */
+  async getActiveEventsChatCount(): Promise<number> {
+    try {
+      const elements = await this.driver.findElements(this.activeEventsChatItems)
+      return elements.length
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * Get names of chats in "Активные мероприятия" section
+   */
+  async getActiveEventsChatNames(): Promise<string[]> {
+    const names: string[] = []
+    try {
+      const elements = await this.driver.findElements(this.activeEventsChatItems)
+      for (const el of elements) {
+        try {
+          const nameSpan = await el.findElement(By.css('span.font-medium'))
+          const text = await nameSpan.getText()
+          names.push(text.trim())
+        } catch {
+          continue
+        }
+      }
+    } catch {
+      // Section might not exist
+    }
+    return names
+  }
+
+  /**
+   * Check if a specific chat is in "Активные мероприятия" section
+   */
+  async isChatInActiveEventsSection(chatName: string): Promise<boolean> {
+    const names = await this.getActiveEventsChatNames()
+    return names.some(name => name.includes(chatName))
+  }
+
+  /**
+   * Check if "Присоединиться" button is visible in active events section
+   */
+  async isJoinActiveEventButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.activeEventsJoinButton)
+  }
+
+  /**
+   * Click "Присоединиться" button in active events section
+   */
+  async clickJoinActiveEvent(): Promise<void> {
+    await this.click(this.activeEventsJoinButton)
+    await this.sleep(500)
+  }
+
+  /**
+   * Check if "Вы участвуете" badge is visible
+   */
+  async isParticipatingBadgeVisible(): Promise<boolean> {
+    return this.isDisplayed(this.activeEventsParticipatingBadge)
+  }
+
+  /**
+   * Check if "В звонке" status is visible (for direct chats)
+   */
+  async isInCallStatusVisible(): Promise<boolean> {
+    return this.isDisplayed(this.activeEventsInCallStatus)
+  }
+
+  /**
+   * Check if "На hold" status is visible (for direct chats when muted)
+   */
+  async isOnHoldStatusVisible(): Promise<boolean> {
+    return this.isDisplayed(this.activeEventsOnHoldStatus)
+  }
+
+  /**
+   * Check if "Идёт звонок/мероприятие" text is visible
+   */
+  async isOngoingEventTextVisible(): Promise<boolean> {
+    return this.isDisplayed(this.activeEventsOngoingText)
+  }
+
+  /**
+   * Check if "Чаты" section header is visible (appears when active events are shown)
+   */
+  async isRegularChatsSectionVisible(): Promise<boolean> {
+    return this.isDisplayed(this.regularChatsSection)
+  }
+
+  /**
+   * Click on a chat in "Активные мероприятия" section by name
+   */
+  async clickActiveEventChatByName(chatName: string): Promise<void> {
+    const elements = await this.driver.findElements(this.activeEventsChatItems)
+    for (const el of elements) {
+      try {
+        const nameSpan = await el.findElement(By.css('span.font-medium'))
+        const text = await nameSpan.getText()
+        if (text.includes(chatName)) {
+          await el.click()
+          await this.sleep(500)
+          return
+        }
+      } catch {
+        continue
+      }
+    }
+    throw new Error(`Chat "${chatName}" not found in active events section`)
+  }
+
+  /**
+   * Get participant count displayed for a chat in active events section
+   */
+  async getActiveEventParticipantCount(chatName: string): Promise<number> {
+    const elements = await this.driver.findElements(this.activeEventsChatItems)
+    for (const el of elements) {
+      try {
+        const nameSpan = await el.findElement(By.css('span.font-medium'))
+        const name = await nameSpan.getText()
+        if (name.includes(chatName)) {
+          // Find participant count span (e.g., "2 уч.")
+          const countSpan = await el.findElement(By.css('.text-green-600.font-medium'))
+          const countText = await countSpan.getText()
+          const match = countText.match(/(\d+)/)
+          return match ? parseInt(match[1], 10) : 0
+        }
+      } catch {
+        continue
+      }
+    }
+    return 0
+  }
+
+  /**
+   * Wait for a chat to appear in active events section
+   */
+  async waitForChatInActiveEvents(chatName: string, timeout: number = 15000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isChatInActiveEventsSection(chatName)) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error(`Chat "${chatName}" did not appear in active events section within timeout`)
+  }
+
+  /**
+   * Wait for a chat to disappear from active events section
+   */
+  async waitForChatToLeaveActiveEvents(chatName: string, timeout: number = 15000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (!(await this.isChatInActiveEventsSection(chatName))) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error(`Chat "${chatName}" still in active events section after timeout`)
+  }
+
+  /**
+   * Refresh active conferences in voice store
+   */
+  async refreshActiveConferences(): Promise<void> {
+    await this.driver.executeScript(`
+      if (window.__voiceStore?.loadActiveConferences) {
+        return window.__voiceStore.loadActiveConferences()
+      }
+    `)
+    await this.sleep(500)
+  }
+
+  // ========== Event History Panel ==========
+
+  private readonly historyButton = By.css('[data-testid="history-button"]')
+  private readonly historyPanelTitle = By.xpath('//h4[contains(text(), "History")]')
+  private readonly historyEventsTab = By.xpath('//button[.//span[contains(text(), "Events")]]')
+  private readonly historyFilesTab = By.xpath('//button[.//span[contains(text(), "Files")]]')
+  private readonly historyPanelClose = By.css('.w-80.border-l button[title="Close"]')
+  private readonly historyEventItems = By.css('.w-80.border-l ul li')
+  private readonly historyFileItems = By.css('.w-80.border-l ul li')
+  private readonly historyLoading = By.css('.w-80.border-l .animate-spin')
+  private readonly historyEmptyEvents = By.xpath('//*[contains(text(), "No events yet")]')
+  private readonly historyEmptyFiles = By.xpath('//*[contains(text(), "No files in this chat")]')
+
+  // Event detail view
+  private readonly historyDetailView = By.xpath('//button[@title="Back to list"]')
+  private readonly historyBackButton = By.xpath('//button[@title="Back to list"]')
+  private readonly historyParticipantsTab = By.xpath('//button[contains(text(), "Participants")]')
+  private readonly historyMessagesTab = By.xpath('//button[contains(text(), "Messages")]')
+  private readonly historyActionsTab = By.xpath('//button[contains(text(), "Actions")]')
+  private readonly historyParticipantItems = By.css('.w-80.border-l .space-y-4 > div')
+  private readonly historyActionItems = By.css('.w-80.border-l .border-l-2.border-orange-400')
+
+  /**
+   * Click History button to open history panel
+   */
+  async clickHistoryButton(): Promise<void> {
+    await this.click(this.historyButton)
+    await this.sleep(500)
+  }
+
+  /**
+   * Check if History button is visible
+   */
+  async isHistoryButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.historyButton)
+  }
+
+  /**
+   * Check if History panel is visible
+   */
+  async isHistoryPanelVisible(): Promise<boolean> {
+    return this.isDisplayed(this.historyPanelTitle)
+  }
+
+  /**
+   * Wait for History panel to appear
+   */
+  async waitForHistoryPanel(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isHistoryPanelVisible()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('History panel did not appear within timeout')
+  }
+
+  /**
+   * Close History panel
+   */
+  async closeHistoryPanel(): Promise<void> {
+    await this.click(this.historyPanelClose)
+    await this.sleep(300)
+  }
+
+  /**
+   * Click Events tab in history panel
+   */
+  async clickHistoryEventsTab(): Promise<void> {
+    await this.click(this.historyEventsTab)
+    await this.sleep(500)
+  }
+
+  /**
+   * Click Files tab in history panel
+   */
+  async clickHistoryFilesTab(): Promise<void> {
+    await this.click(this.historyFilesTab)
+    await this.sleep(500)
+  }
+
+  /**
+   * Check if Events tab is active
+   */
+  async isHistoryEventsTabActive(): Promise<boolean> {
+    try {
+      const element = await this.driver.findElement(this.historyEventsTab)
+      const classes = await element.getAttribute('class')
+      return classes.includes('text-indigo-600')
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Check if Files tab is active
+   */
+  async isHistoryFilesTabActive(): Promise<boolean> {
+    try {
+      const element = await this.driver.findElement(this.historyFilesTab)
+      const classes = await element.getAttribute('class')
+      return classes.includes('text-indigo-600')
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Wait for history loading to complete
+   */
+  async waitForHistoryLoaded(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    // First wait for loading to start or content to appear
+    await this.sleep(500)
+    // Then wait for loading to finish
+    while (Date.now() - start < timeout) {
+      const loading = await this.isDisplayed(this.historyLoading)
+      if (!loading) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('History loading did not complete within timeout')
+  }
+
+  /**
+   * Get count of events in history list
+   */
+  async getHistoryEventCount(): Promise<number> {
+    try {
+      const elements = await this.driver.findElements(this.historyEventItems)
+      return elements.length
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * Get names of events in history list
+   */
+  async getHistoryEventNames(): Promise<string[]> {
+    const names: string[] = []
+    try {
+      const elements = await this.driver.findElements(this.historyEventItems)
+      for (const el of elements) {
+        try {
+          const nameEl = await el.findElement(By.css('.font-medium'))
+          const text = await nameEl.getText()
+          names.push(text.trim())
+        } catch {
+          continue
+        }
+      }
+    } catch {
+      // Panel might not exist
+    }
+    return names
+  }
+
+  /**
+   * Click on an event in history list by name
+   */
+  async clickHistoryEventByName(eventName: string): Promise<void> {
+    const elements = await this.driver.findElements(this.historyEventItems)
+    for (const el of elements) {
+      try {
+        const text = await el.getText()
+        if (text.includes(eventName)) {
+          await el.click()
+          await this.sleep(500)
+          return
+        }
+      } catch {
+        continue
+      }
+    }
+    throw new Error(`Event "${eventName}" not found in history`)
+  }
+
+  /**
+   * Click on first event in history list
+   */
+  async clickFirstHistoryEvent(): Promise<void> {
+    const elements = await this.driver.findElements(this.historyEventItems)
+    if (elements.length > 0) {
+      await elements[0].click()
+      await this.sleep(500)
+    } else {
+      throw new Error('No events found in history')
+    }
+  }
+
+  /**
+   * Check if empty events message is visible
+   */
+  async isHistoryEmptyEventsVisible(): Promise<boolean> {
+    return this.isDisplayed(this.historyEmptyEvents)
+  }
+
+  /**
+   * Check if empty files message is visible
+   */
+  async isHistoryEmptyFilesVisible(): Promise<boolean> {
+    return this.isDisplayed(this.historyEmptyFiles)
+  }
+
+  /**
+   * Get count of files in history files tab
+   */
+  async getHistoryFileCount(): Promise<number> {
+    try {
+      const elements = await this.driver.findElements(this.historyFileItems)
+      return elements.length
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * Check if event detail view is showing (back button visible)
+   */
+  async isHistoryDetailViewVisible(): Promise<boolean> {
+    return this.isDisplayed(this.historyDetailView)
+  }
+
+  /**
+   * Click back button in history detail view
+   */
+  async clickHistoryBackButton(): Promise<void> {
+    await this.click(this.historyBackButton)
+    await this.sleep(300)
+  }
+
+  /**
+   * Click Participants tab in event detail view
+   */
+  async clickHistoryParticipantsTab(): Promise<void> {
+    await this.click(this.historyParticipantsTab)
+    await this.sleep(300)
+  }
+
+  /**
+   * Click Messages tab in event detail view
+   */
+  async clickHistoryMessagesTab(): Promise<void> {
+    await this.click(this.historyMessagesTab)
+    await this.sleep(300)
+  }
+
+  /**
+   * Click Actions tab in event detail view (only visible for moderators)
+   */
+  async clickHistoryActionsTab(): Promise<void> {
+    await this.click(this.historyActionsTab)
+    await this.sleep(300)
+  }
+
+  /**
+   * Check if Actions tab is visible (only for moderators)
+   */
+  async isHistoryActionsTabVisible(): Promise<boolean> {
+    return this.isDisplayed(this.historyActionsTab)
+  }
+
+  /**
+   * Get count of participants in event detail view
+   */
+  async getHistoryParticipantCount(): Promise<number> {
+    try {
+      const elements = await this.driver.findElements(this.historyParticipantItems)
+      return elements.length
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * Get count of moderator actions in event detail view
+   */
+  async getHistoryActionCount(): Promise<number> {
+    try {
+      const elements = await this.driver.findElements(this.historyActionItems)
+      return elements.length
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * Get conference history via API
+   */
+  async getConferenceHistoryViaApi(chatId: string): Promise<any[]> {
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/voice/chats/${chatId}/conferences/history', {
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          const data = await response.json();
+          resolve(data.conferences || []);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `) as any[]
+    return result || []
+  }
+
+  /**
+   * Get chat files via API
+   */
+  async getChatFilesViaApi(chatId: string): Promise<any[]> {
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/files/chats/${chatId}/files', {
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          const data = await response.json();
+          resolve(data.files || []);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `) as any[]
+    return result || []
+  }
+
+  /**
+   * Create a conference and end it (for testing history)
+   */
+  async createAndEndConferenceViaApi(chatId: string, name: string): Promise<string> {
+    const conferenceId = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+
+          // Create conference
+          const createResponse = await fetch('/api/voice/conferences', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              name: '${name}',
+              chat_id: '${chatId}',
+              event_type: 'adhoc'
+            })
+          });
+
+          if (!createResponse.ok) {
+            const error = await createResponse.text();
+            reject('Create error: ' + createResponse.status + ' ' + error);
+            return;
+          }
+
+          const conference = await createResponse.json();
+          const confId = conference.id;
+
+          // Wait a bit
+          await new Promise(r => setTimeout(r, 1000));
+
+          // End conference
+          const endResponse = await fetch('/api/voice/conferences/' + confId + '/end', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+
+          if (!endResponse.ok) {
+            // Conference may auto-end if no participants
+            console.log('End conference returned:', endResponse.status);
+          }
+
+          resolve(confId);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `) as string
+
+    return conferenceId
+  }
+
+  /**
+   * Get current user role via API
+   */
+  async getCurrentUserRoleViaApi(): Promise<string> {
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/auth/me', {
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            reject('API error: ' + response.status);
+            return;
+          }
+          const user = await response.json();
+          resolve(user.role || 'user');
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `) as string
+    return result
+  }
+
+  /**
+   * Set user role via CLI command (for testing as moderator)
+   * Note: This requires admin access
+   */
+  async setUserRoleViaApi(userId: string, role: string): Promise<void> {
+    await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/users/${userId}/role', {
+            method: 'PUT',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ role: '${role}' })
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          resolve(true);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `)
+  }
+
+  // ========== Conference Chat Panel ==========
+
+  private readonly conferenceChatToggle = By.css('.conference-view .header-btn[title="Toggle chat"]')
+  private readonly conferenceChatSidebar = By.css('.conference-view .chat-sidebar')
+  private readonly conferenceChatMessage = By.css('.conference-view .chat-message')
+  private readonly conferenceChatOwnMessage = By.css('.conference-view .chat-message.own-message')
+  private readonly conferenceChatSystemMessage = By.css('.conference-view .chat-message.system-message')
+  private readonly conferenceChatMessageContent = By.css('.conference-view .chat-message .message-content')
+  private readonly conferenceChatLoading = By.css('.conference-view .chat-messages .loading-messages')
+  private readonly conferenceChatNoMessages = By.css('.conference-view .chat-messages .no-messages')
+  private readonly conferenceChatInput = By.css('.conference-view .chat-input input')
+  private readonly conferenceChatSendButton = By.css('.conference-view .chat-input button')
+  private readonly conferenceChatUnreadBadge = By.css('.conference-view .header-btn[title="Toggle chat"] .badge')
+
+  /**
+   * Check if chat toggle button is visible in conference view
+   */
+  async isConferenceChatToggleVisible(): Promise<boolean> {
+    return this.isDisplayed(this.conferenceChatToggle)
+  }
+
+  /**
+   * Click chat toggle button in conference view
+   */
+  async clickConferenceChatToggle(): Promise<void> {
+    await this.click(this.conferenceChatToggle)
+    await this.sleep(500)
+  }
+
+  /**
+   * Check if chat sidebar is visible in conference view
+   */
+  async isConferenceChatSidebarVisible(): Promise<boolean> {
+    return this.isDisplayed(this.conferenceChatSidebar)
+  }
+
+  /**
+   * Wait for chat sidebar to appear in conference view
+   */
+  async waitForConferenceChatSidebar(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.isConferenceChatSidebarVisible()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Conference chat sidebar did not appear within timeout')
+  }
+
+  /**
+   * Wait for chat sidebar to disappear in conference view
+   */
+  async waitForConferenceChatSidebarToClose(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (!(await this.isConferenceChatSidebarVisible())) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Conference chat sidebar did not close within timeout')
+  }
+
+  /**
+   * Check if chat is loading in conference view
+   */
+  async isConferenceChatLoading(): Promise<boolean> {
+    return this.isDisplayed(this.conferenceChatLoading)
+  }
+
+  /**
+   * Wait for chat messages to load in conference view
+   */
+  async waitForConferenceChatLoaded(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    await this.sleep(300) // Brief wait for loading to start
+    while (Date.now() - start < timeout) {
+      if (!(await this.isConferenceChatLoading())) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Conference chat did not finish loading within timeout')
+  }
+
+  /**
+   * Check if "No messages" state is visible in conference chat
+   */
+  async isConferenceChatEmpty(): Promise<boolean> {
+    return this.isDisplayed(this.conferenceChatNoMessages)
+  }
+
+  /**
+   * Get count of messages in conference chat
+   */
+  async getConferenceChatMessageCount(): Promise<number> {
+    try {
+      const elements = await this.driver.findElements(this.conferenceChatMessage)
+      return elements.length
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * Get message texts from conference chat
+   */
+  async getConferenceChatMessages(): Promise<string[]> {
+    const messages: string[] = []
+    try {
+      const elements = await this.driver.findElements(this.conferenceChatMessageContent)
+      for (const el of elements) {
+        const text = await el.getText()
+        messages.push(text.trim())
+      }
+    } catch {
+      // ignore
+    }
+    return messages
+  }
+
+  /**
+   * Get last message text from conference chat
+   */
+  async getConferenceChatLastMessage(): Promise<string> {
+    const messages = await this.getConferenceChatMessages()
+    return messages.length > 0 ? messages[messages.length - 1] : ''
+  }
+
+  /**
+   * Type message in conference chat input
+   */
+  async typeConferenceChatMessage(message: string): Promise<void> {
+    await this.type(this.conferenceChatInput, message)
+  }
+
+  /**
+   * Click send button in conference chat
+   */
+  async clickConferenceChatSend(): Promise<void> {
+    await this.click(this.conferenceChatSendButton)
+    await this.sleep(500)
+  }
+
+  /**
+   * Send a message from conference chat panel
+   */
+  async sendConferenceChatMessage(message: string): Promise<void> {
+    await this.typeConferenceChatMessage(message)
+    await this.clickConferenceChatSend()
+  }
+
+  /**
+   * Check if send button is enabled in conference chat
+   */
+  async isConferenceChatSendEnabled(): Promise<boolean> {
+    try {
+      const element = await this.driver.findElement(this.conferenceChatSendButton)
+      const disabled = await element.getAttribute('disabled')
+      return disabled === null
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Check if unread badge is visible on chat toggle button
+   */
+  async hasConferenceChatUnreadBadge(): Promise<boolean> {
+    return this.isDisplayed(this.conferenceChatUnreadBadge)
+  }
+
+  /**
+   * Get unread count from chat toggle badge
+   */
+  async getConferenceChatUnreadCount(): Promise<number> {
+    try {
+      const text = await this.getText(this.conferenceChatUnreadBadge)
+      return parseInt(text, 10) || 0
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * Wait for a specific message to appear in conference chat
+   */
+  async waitForConferenceChatMessage(expectedText: string, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const messages = await this.getConferenceChatMessages()
+      if (messages.some(m => m.includes(expectedText))) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error(`Message containing "${expectedText}" not found in conference chat within timeout`)
+  }
+
+  /**
+   * Wait for message count in conference chat
+   */
+  async waitForConferenceChatMessageCount(expectedCount: number, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const count = await this.getConferenceChatMessageCount()
+      if (count >= expectedCount) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error(`Expected at least ${expectedCount} messages in conference chat, but found ${await this.getConferenceChatMessageCount()}`)
+  }
+
+  /**
+   * Check if a system message exists in conference chat
+   */
+  async hasConferenceChatSystemMessage(): Promise<boolean> {
+    return this.isDisplayed(this.conferenceChatSystemMessage)
+  }
+
+  /**
+   * Get system messages from conference chat
+   */
+  async getConferenceChatSystemMessages(): Promise<string[]> {
+    const messages: string[] = []
+    try {
+      const elements = await this.driver.findElements(this.conferenceChatSystemMessage)
+      for (const el of elements) {
+        const contentEl = await el.findElement(By.css('.message-content'))
+        const text = await contentEl.getText()
+        messages.push(text.trim())
+      }
+    } catch {
+      // ignore
+    }
+    return messages
+  }
+
+  /**
+   * Check if own message exists in conference chat
+   */
+  async hasConferenceChatOwnMessage(): Promise<boolean> {
+    return this.isDisplayed(this.conferenceChatOwnMessage)
+  }
+
+  /**
+   * Close conference chat sidebar
+   */
+  async closeConferenceChatSidebar(): Promise<void> {
+    try {
+      const closeBtn = By.css('.conference-view .chat-sidebar .sidebar-close')
+      await this.forceClick(closeBtn)
+      await this.sleep(500)
+    } catch (e) {
+      // If close button fails, try clicking the toggle button instead
+      console.log('Close button failed, trying toggle button')
+      await this.clickConferenceChatToggle()
+    }
   }
 }

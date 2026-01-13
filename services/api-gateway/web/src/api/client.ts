@@ -26,6 +26,9 @@ import type {
   CreateAdHocFromChatRequest,
   RSVPStatus,
   ConferenceRole,
+  ConferenceHistory,
+  ModeratorAction,
+  ChatFile,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -546,6 +549,10 @@ class ApiClient {
     return this.request<Conference>('GET', `/voice/conferences/${conferenceId}`)
   }
 
+  async getConferenceByFSName(fsName: string): Promise<Conference> {
+    return this.request<Conference>('GET', `/voice/conferences/by-fs-name/${fsName}`)
+  }
+
   async listConferences(chatId?: string, status?: string): Promise<{ conferences: Conference[] }> {
     let url = '/voice/conferences'
     const params: string[] = []
@@ -553,6 +560,10 @@ class ApiClient {
     if (status) params.push(`status=${status}`)
     if (params.length > 0) url += '?' + params.join('&')
     return this.request<{ conferences: Conference[] }>('GET', url)
+  }
+
+  async getActiveConferences(): Promise<{ conferences: Conference[]; total: number }> {
+    return this.request<{ conferences: Conference[]; total: number }>('GET', '/voice/conferences/active')
   }
 
   async joinConference(conferenceId: string, data?: JoinConferenceRequest): Promise<VoiceParticipant> {
@@ -598,8 +609,8 @@ class ApiClient {
   }
 
   // Quick call from chat
-  async startChatCall(chatId: string): Promise<StartChatCallResponse> {
-    return this.request<StartChatCallResponse>('POST', `/voice/chats/${chatId}/call`)
+  async startChatCall(chatId: string, chatName?: string): Promise<StartChatCallResponse> {
+    return this.request<StartChatCallResponse>('POST', `/voice/chats/${chatId}/call`, { name: chatName })
   }
 
   // Scheduled Events API
@@ -685,6 +696,52 @@ class ApiClient {
   // Get scheduled conference with participants
   async getScheduledConference(conferenceId: string): Promise<ScheduledConference> {
     return this.request<ScheduledConference>('GET', `/voice/conferences/${conferenceId}/scheduled`)
+  }
+
+  // ======== Conference History ========
+
+  // Get conference history for a chat
+  async getChatConferenceHistory(
+    chatId: string,
+    limit = 20,
+    offset = 0
+  ): Promise<{ conferences: ConferenceHistory[]; total: number }> {
+    return this.request<{ conferences: ConferenceHistory[]; total: number }>(
+      'GET',
+      `/voice/chats/${chatId}/conferences/history?limit=${limit}&offset=${offset}`
+    )
+  }
+
+  // Get detailed conference history
+  async getConferenceHistory(conferenceId: string): Promise<ConferenceHistory> {
+    return this.request<ConferenceHistory>('GET', `/voice/conferences/${conferenceId}/history`)
+  }
+
+  // Get messages sent during a conference
+  async getConferenceMessages(conferenceId: string): Promise<{ messages: Message[] }> {
+    return this.request<{ messages: Message[] }>('GET', `/voice/conferences/${conferenceId}/messages`)
+  }
+
+  // Get moderator actions for a conference (moderator only)
+  async getModeratorActions(conferenceId: string): Promise<{ actions: ModeratorAction[] }> {
+    return this.request<{ actions: ModeratorAction[] }>(
+      'GET',
+      `/voice/conferences/${conferenceId}/moderator-actions`
+    )
+  }
+
+  // ======== Chat Files ========
+
+  // Get files in a chat
+  async getChatFiles(
+    chatId: string,
+    limit = 50,
+    offset = 0
+  ): Promise<{ files: ChatFile[]; total: number }> {
+    return this.request<{ files: ChatFile[]; total: number }>(
+      'GET',
+      `/files/chats/${chatId}/files?limit=${limit}&offset=${offset}`
+    )
   }
 }
 

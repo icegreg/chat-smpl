@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useVoiceStore } from '@/stores/voice'
+import SystemStatusIndicator from '@/components/SystemStatusIndicator.vue'
+import ConnectionIndicator from '@/components/ConnectionIndicator.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -79,6 +81,12 @@ async function startQuickCall() {
 
     <!-- Spacer -->
     <div class="spacer"></div>
+
+    <!-- Connection Status (Centrifugo + Verto) -->
+    <ConnectionIndicator />
+
+    <!-- System Status -->
+    <SystemStatusIndicator />
 
     <!-- Settings (future) -->
     <button

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import type { Chat, ScheduledConference } from '@/types'
+import type { Chat, ScheduledConference, Conference } from '@/types'
 import CreateChatModal from './CreateChatModal.vue'
 import StatusSelector from './StatusSelector.vue'
 import { usePresenceStore } from '@/stores/presence'
 import { useVoiceStore } from '@/stores/voice'
 import { useAuthStore } from '@/stores/auth'
 
-defineProps<{
+const props = defineProps<{
   chats: Chat[]
   currentChatId?: string
   loading: boolean
@@ -19,11 +19,35 @@ const presenceStore = usePresenceStore()
 const voiceStore = useVoiceStore()
 const authStore = useAuthStore()
 
-// Fetch scheduled conferences
+// Fetch scheduled conferences and active conferences
 onMounted(() => {
   presenceStore.setupVisibilityHandler()
   voiceStore.fetchScheduledConferences(true) // upcoming only
+  voiceStore.loadActiveConferences() // load active conferences for indicators
 })
+
+// Chats with active conferences (shown in "Активные мероприятия" section)
+const chatsWithActiveConferences = computed(() => {
+  return props.chats.filter(chat => voiceStore.hasActiveConference(chat.id))
+})
+
+// Regular chats (without active conferences)
+const regularChats = computed(() => {
+  return props.chats.filter(chat => !voiceStore.hasActiveConference(chat.id))
+})
+
+// Get active conference for a chat
+function getActiveConferenceForChat(chatId: string): Conference | null {
+  return voiceStore.getActiveConference(chatId)
+}
+
+// Check if current user is in this conference
+function isUserInConference(chatId: string): boolean {
+  const conference = voiceStore.getActiveConference(chatId)
+  if (!conference) return false
+  // If we're currently in this conference
+  return voiceStore.currentConference?.id === conference.id
+}
 
 // Active events where user is participant with accepted RSVP or pending
 const activeEvents = computed(() => {
@@ -132,6 +156,31 @@ function handleEventClick(_event: ScheduledConference) {
 async function handleJoinEvent(event: ScheduledConference) {
   await voiceStore.joinConference(event.id)
 }
+
+// Join active conference in chat
+async function handleJoinActiveConference(chatId: string) {
+  const conference = voiceStore.getActiveConference(chatId)
+  if (conference) {
+    await voiceStore.joinConference(conference.id)
+  }
+}
+
+// Get call status for display
+function getCallStatus(chatId: string): { text: string; type: 'active' | 'hold' | 'none' } {
+  const conference = voiceStore.getActiveConference(chatId)
+  if (!conference) return { text: '', type: 'none' }
+
+  // Check if user is in this conference
+  if (voiceStore.currentConference?.id === conference.id) {
+    // Check if muted (on hold simulation)
+    if (voiceStore.isMuted) {
+      return { text: 'На hold', type: 'hold' }
+    }
+    return { text: 'В звонке', type: 'active' }
+  }
+
+  return { text: '', type: 'none' }
+}
 </script>
 
 <template>
@@ -155,7 +204,100 @@ async function handleJoinEvent(event: ScheduledConference) {
 
     <!-- Chat list -->
     <div class="flex-1 overflow-y-auto">
-      <!-- Active Events Section -->
+      <!-- Active Conferences Section (chats with ongoing calls) -->
+      <div v-if="chatsWithActiveConferences.length > 0" class="border-b">
+        <div class="px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50">
+          <h3 class="text-xs font-semibold text-green-700 uppercase tracking-wide flex items-center gap-2">
+            <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            Активные мероприятия
+          </h3>
+        </div>
+        <div class="divide-y divide-gray-100">
+          <div
+            v-for="chat in chatsWithActiveConferences"
+            :key="chat.id"
+            @click="$emit('select', chat.id)"
+            class="px-4 py-3 hover:bg-green-50 cursor-pointer transition-colors"
+            :class="{ 'bg-green-100': currentChatId === chat.id }"
+          >
+            <div class="flex items-start gap-3">
+              <!-- Avatar/Icon with call indicator -->
+              <div class="relative">
+                <div
+                  class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-green-200 text-green-700"
+                >
+                  <svg v-if="getChatIcon(chat.type) === 'user'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <svg v-else-if="getChatIcon(chat.type) === 'users'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                  </svg>
+                </div>
+                <!-- Active call pulse indicator -->
+                <span class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full flex items-center justify-center">
+                  <svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                </span>
+              </div>
+
+              <!-- Content -->
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                  <span class="font-medium text-gray-900 truncate">
+                    {{ chat.name }}
+                  </span>
+                  <!-- Participant count -->
+                  <span class="text-xs text-green-600 font-medium">
+                    {{ getActiveConferenceForChat(chat.id)?.participant_count || 0 }} уч.
+                  </span>
+                </div>
+                <div class="flex items-center justify-between mt-1">
+                  <!-- Call status for direct chats -->
+                  <div v-if="chat.type === 'direct'" class="flex items-center gap-1">
+                    <span
+                      v-if="getCallStatus(chat.id).type === 'active'"
+                      class="text-xs font-medium text-green-600 flex items-center gap-1"
+                    >
+                      <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                      В звонке
+                    </span>
+                    <span
+                      v-else-if="getCallStatus(chat.id).type === 'hold'"
+                      class="text-xs font-medium text-yellow-600 flex items-center gap-1"
+                    >
+                      <span class="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
+                      На hold
+                    </span>
+                    <span v-else class="text-xs text-gray-500">
+                      Идёт звонок
+                    </span>
+                  </div>
+                  <span v-else class="text-xs text-gray-500">
+                    Идёт мероприятие
+                  </span>
+                  <!-- Join button -->
+                  <button
+                    v-if="!isUserInConference(chat.id)"
+                    @click.stop="handleJoinActiveConference(chat.id)"
+                    class="px-2 py-1 text-xs font-medium text-white bg-green-500 hover:bg-green-600 rounded transition-colors"
+                  >
+                    Присоединиться
+                  </button>
+                  <span v-else class="px-2 py-1 text-xs font-medium text-green-600 bg-green-100 rounded">
+                    Вы участвуете
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upcoming Events Section -->
       <div v-if="activeEvents.length > 0" class="border-b">
         <div class="px-4 py-2 bg-gradient-to-r from-indigo-50 to-purple-50">
           <div class="flex items-center justify-between">
@@ -220,22 +362,22 @@ async function handleJoinEvent(event: ScheduledConference) {
         </div>
       </div>
 
-      <!-- Chats Section Header (only if events are shown) -->
-      <div v-if="activeEvents.length > 0" class="px-4 py-2 bg-gray-50 border-b">
-        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Chats</h3>
+      <!-- Chats Section Header (only if events or active conferences are shown) -->
+      <div v-if="activeEvents.length > 0 || chatsWithActiveConferences.length > 0" class="px-4 py-2 bg-gray-50 border-b">
+        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Чаты</h3>
       </div>
 
-      <div v-if="loading && chats.length === 0" class="p-4 text-center text-gray-500">
-        Loading...
+      <div v-if="loading && props.chats.length === 0" class="p-4 text-center text-gray-500">
+        Загрузка...
       </div>
 
-      <div v-else-if="chats.length === 0" class="p-4 text-center text-gray-500">
-        No chats yet. Create one to start messaging!
+      <div v-else-if="props.chats.length === 0" class="p-4 text-center text-gray-500">
+        Нет чатов. Создайте новый чат!
       </div>
 
       <div v-else class="divide-y">
         <button
-          v-for="chat in chats"
+          v-for="chat in regularChats"
           :key="chat.id"
           @click="$emit('select', chat.id)"
           class="w-full p-4 flex items-start gap-3 hover:bg-gray-50 transition-colors text-left"
@@ -264,9 +406,14 @@ async function handleJoinEvent(event: ScheduledConference) {
           <!-- Content -->
           <div class="flex-1 min-w-0">
             <div class="flex items-center justify-between">
-              <span class="font-medium text-gray-900 truncate">
+              <span class="font-medium text-gray-900 truncate flex items-center gap-1">
                 {{ chat.name }}
-                <span v-if="chat.is_favorite" class="text-yellow-500 ml-1">★</span>
+                <span v-if="chat.is_favorite" class="text-yellow-500">★</span>
+                <span
+                  v-if="voiceStore.hasActiveConference(chat.id)"
+                  class="call-indicator"
+                  :title="`Идёт звонок (${voiceStore.getActiveConference(chat.id)?.participant_count || 0} участников)`"
+                >📞</span>
               </span>
               <span v-if="chat.last_message" class="text-xs text-gray-500">
                 {{ formatTime(chat.last_message.created_at) }}
@@ -297,3 +444,19 @@ async function handleJoinEvent(event: ScheduledConference) {
     />
   </aside>
 </template>
+
+<style scoped>
+.call-indicator {
+  animation: pulse-call 1.5s infinite;
+  font-size: 0.875rem;
+}
+
+@keyframes pulse-call {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+</style>

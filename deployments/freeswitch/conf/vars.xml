@@ -43,4 +43,8 @@
 
   <!-- Verto settings -->
   <X-PRE-PROCESS cmd="set" data="verto_ws_port=8081"/>
+
+  <!-- External RTP IP for NAT traversal (set via EXTERNAL_RTP_IP env var or use auto) -->
+  <!-- 'auto' will make FreeSWITCH detect the IP automatically -->
+  <X-PRE-PROCESS cmd="exec-set" data="external_rtp_ip=echo ${EXTERNAL_RTP_IP:-auto}"/>
 </include>

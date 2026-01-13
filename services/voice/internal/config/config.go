@@ -17,6 +17,9 @@ type Config struct {
 	// RabbitMQ
 	RabbitMQURL string
 
+	// Chat service gRPC
+	ChatServiceAddr string
+
 	// FreeSWITCH ESL
 	FreeSWITCH FreeSWITCHConfig
 
@@ -28,6 +31,9 @@ type Config struct {
 
 	// JWT
 	JWTSecret string
+
+	// Conference cleanup settings
+	EmptyConferenceTimeout int // seconds - timeout for empty conferences before auto-end
 }
 
 type FreeSWITCHConfig struct {
@@ -52,6 +58,7 @@ func Load() (*Config, error) {
 	eslPort, _ := strconv.Atoi(getEnv("FREESWITCH_ESL_PORT", "8021"))
 	httpPort, _ := strconv.Atoi(getEnv("HTTP_PORT", "8084"))
 	credentialsTTL, _ := strconv.Atoi(getEnv("VERTO_CREDENTIALS_TTL", "3600"))
+	emptyConfTimeout, _ := strconv.Atoi(getEnv("EMPTY_CONFERENCE_TIMEOUT", "30"))
 
 	turnURLs := strings.Split(getEnv("TURN_URLS", "turn:localhost:3478"), ",")
 
@@ -59,8 +66,9 @@ func Load() (*Config, error) {
 		GRPCAddr: getEnv("GRPC_ADDR", ":50054"),
 		HTTPPort: httpPort,
 
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://chatapp:secret@localhost:5435/chatapp?sslmode=disable"),
-		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://chatapp:secret@localhost:5672/"),
+		DatabaseURL:     getEnv("DATABASE_URL", "postgres://chatapp:secret@localhost:5435/chatapp?sslmode=disable"),
+		RabbitMQURL:     getEnv("RABBITMQ_URL", "amqp://chatapp:secret@localhost:5672/"),
+		ChatServiceAddr: getEnv("CHAT_SERVICE_ADDR", "chat-service:50051"),
 
 		FreeSWITCH: FreeSWITCHConfig{
 			ESLHost:     getEnv("FREESWITCH_ESL_HOST", "localhost"),
@@ -80,7 +88,8 @@ func Load() (*Config, error) {
 			CredentialsTTL: credentialsTTL,
 		},
 
-		JWTSecret: getEnv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production"),
+		JWTSecret:              getEnv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production"),
+		EmptyConferenceTimeout: emptyConfTimeout,
 	}, nil
 }
 

@@ -7,6 +7,7 @@ import type { Participant } from '@/types'
 
 const props = defineProps<{
   chatId: string
+  chatName?: string
 }>()
 
 const voiceStore = useVoiceStore()
@@ -27,6 +28,10 @@ const participants = computed(() => {
 
 const loading = computed(() => voiceStore.loading)
 const isInCall = computed(() => voiceStore.isInCall)
+
+// Active conference for this chat
+const activeConference = computed(() => voiceStore.getActiveConference(props.chatId))
+const hasActiveConference = computed(() => voiceStore.hasActiveConference(props.chatId))
 
 // Click outside handler
 function handleClickOutside(event: MouseEvent) {
@@ -52,8 +57,16 @@ function toggleDropdown(event: Event) {
 
 // Start call with all participants
 async function startCallAll() {
+  console.log('[AdHocCallButton] startCallAll called, chatId:', props.chatId, 'chatName:', props.chatName)
   showDropdown.value = false
-  await voiceStore.createAdHocFromChat(props.chatId)
+  try {
+    // Use startChatCall which creates conference + gets credentials + joins in one call
+    console.log('[AdHocCallButton] Calling voiceStore.startChatCall...')
+    const result = await voiceStore.startChatCall(props.chatId, props.chatName)
+    console.log('[AdHocCallButton] startChatCall result:', result)
+  } catch (err) {
+    console.error('[AdHocCallButton] startChatCall error:', err)
+  }
 }
 
 // Open participant selector
@@ -78,10 +91,23 @@ async function startCallSelected() {
   if (selectedParticipants.value.size === 0) return
   showDropdown.value = false
   showParticipantSelector.value = false
-  await voiceStore.createAdHocFromChat(
+  const conference = await voiceStore.createAdHocFromChat(
     props.chatId,
     Array.from(selectedParticipants.value)
   )
+  if (conference) {
+    await voiceStore.joinConference(conference.id)
+  }
+}
+
+// Join existing active conference
+async function joinExistingCall() {
+  if (!activeConference.value) return
+  try {
+    await voiceStore.joinConference(activeConference.value.id)
+  } catch (err) {
+    console.error('[AdHocCallButton] joinExistingCall error:', err)
+  }
 }
 
 // End current call
@@ -102,8 +128,27 @@ function getInitials(name?: string): string {
 
 <template>
   <div class="adhoc-call-button" ref="dropdownRef">
-    <!-- Main button -->
+    <!-- Join existing call button (when there's an active conference and we're not in it) -->
     <button
+      v-if="hasActiveConference && !isInCall"
+      class="main-btn join-btn"
+      :class="{ loading: loading }"
+      :disabled="loading"
+      @click="joinExistingCall"
+      :title="`Присоединиться к звонку (${activeConference?.participant_count || 0} участников)`"
+    >
+      <span v-if="loading" class="spinner"></span>
+      <template v-else>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+        </svg>
+        <span class="join-text">Join ({{ activeConference?.participant_count || 0 }})</span>
+      </template>
+    </button>
+
+    <!-- Main button (when no active conference or we're in call) -->
+    <button
+      v-else
       class="main-btn"
       :class="{ active: isInCall, loading: loading }"
       :disabled="loading"
@@ -230,6 +275,29 @@ function getInitials(name?: string): string {
 
 .main-btn.active:hover:not(:disabled) {
   background: #dc2626;
+}
+
+.main-btn.join-btn {
+  background: #3b82f6;
+  animation: pulse-join 2s infinite;
+}
+
+.main-btn.join-btn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.join-text {
+  margin-left: 4px;
+  font-size: 13px;
+}
+
+@keyframes pulse-join {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+  }
 }
 
 .main-btn.loading {
