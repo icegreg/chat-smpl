@@ -306,6 +306,10 @@ func (r *chatRepository) ListChatsCursor(ctx context.Context, userID uuid.UUID, 
 		chats = append(chats, chat)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
 	// Check if there are more results
 	hasMore := len(chats) > limit
 	if hasMore {

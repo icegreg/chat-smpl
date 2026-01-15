@@ -192,3 +192,107 @@ func SkipIfNotIntegration(t *testing.T) {
 		t.Skip("Skipping integration test. Set INTEGRATION_TESTS=true to run.")
 	}
 }
+
+// assertErrorResponse checks that response has expected error status
+func assertErrorResponse(t *testing.T, resp *http.Response, body []byte, expectedStatus int) {
+	t.Helper()
+	if resp.StatusCode != expectedStatus {
+		t.Errorf("Expected status %d, got %d. Body: %s", expectedStatus, resp.StatusCode, string(body))
+	}
+}
+
+// createTestUserWithPassword creates a test user with specific password
+func createTestUserWithPassword(t *testing.T, suffix, password string) *TestUser {
+	t.Helper()
+
+	email := fmt.Sprintf("test%s_%d@example.com", suffix, time.Now().UnixNano())
+	username := fmt.Sprintf("testuser%s_%d", suffix, time.Now().UnixNano())
+
+	registerReq := map[string]string{
+		"email":        email,
+		"username":     username,
+		"password":     password,
+		"display_name": "Test User " + suffix,
+	}
+
+	resp, body := doRequest(t, "POST", apiGatewayURL+"/api/auth/register", registerReq, "")
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		t.Fatalf("Failed to register user: %s, status: %d", string(body), resp.StatusCode)
+	}
+
+	var result struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("Failed to parse register response: %v", err)
+	}
+
+	// Get user info
+	resp, body = doRequest(t, "GET", apiGatewayURL+"/api/auth/me", nil, result.AccessToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Failed to get user info: %s", string(body))
+	}
+
+	var user TestUser
+	if err := json.Unmarshal(body, &user); err != nil {
+		t.Fatalf("Failed to parse user info: %v", err)
+	}
+
+	user.AccessToken = result.AccessToken
+	user.RefreshToken = result.RefreshToken
+	user.Email = email
+
+	return &user
+}
+
+// loginUser logs in a user and returns TestUser with tokens
+func loginUser(t *testing.T, email, password string) *TestUser {
+	t.Helper()
+
+	loginReq := map[string]string{
+		"email":    email,
+		"password": password,
+	}
+
+	resp, body := doRequest(t, "POST", apiGatewayURL+"/api/auth/login", loginReq, "")
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Failed to login: %s, status: %d", string(body), resp.StatusCode)
+	}
+
+	var result struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("Failed to parse login response: %v", err)
+	}
+
+	// Get user info
+	resp, body = doRequest(t, "GET", apiGatewayURL+"/api/auth/me", nil, result.AccessToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Failed to get user info: %s", string(body))
+	}
+
+	var user TestUser
+	if err := json.Unmarshal(body, &user); err != nil {
+		t.Fatalf("Failed to parse user info: %v", err)
+	}
+
+	user.AccessToken = result.AccessToken
+	user.RefreshToken = result.RefreshToken
+	user.Email = email
+
+	return &user
+}
+
+// deleteTestChat deletes a chat
+func deleteTestChat(t *testing.T, user *TestUser, chatID string) {
+	t.Helper()
+	resp, _ := doRequest(t, "DELETE", apiGatewayURL+"/api/chats/"+chatID, nil, user.AccessToken)
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		t.Logf("Warning: failed to delete chat %s, status: %d", chatID, resp.StatusCode)
+	}
+}
