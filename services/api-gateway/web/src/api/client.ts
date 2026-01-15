@@ -311,10 +311,14 @@ class ApiClient {
   }
 
   // Chat endpoints
-  async getChats(limit = 20, offset = 0): Promise<{ chats: Chat[]; total: number }> {
-    return this.request<{ chats: Chat[]; total: number }>(
+  async getChats(limit = 50, cursor?: string): Promise<{ chats: Chat[]; next_cursor: string; has_more: boolean; total: number }> {
+    let url = `/chats?limit=${limit}`
+    if (cursor) {
+      url += `&cursor=${encodeURIComponent(cursor)}`
+    }
+    return this.request<{ chats: Chat[]; next_cursor: string; has_more: boolean; total: number }>(
       'GET',
-      `/chats?limit=${limit}&offset=${offset}`
+      url
     )
   }
 

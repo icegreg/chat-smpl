@@ -228,12 +228,12 @@ func (h *ChatHandler) GetChat(w http.ResponseWriter, r *http.Request) {
 
 // ListChats godoc
 // @Summary List user's chats
-// @Description Returns paginated list of chats the user participates in
+// @Description Returns cursor-paginated list of chats the user participates in
 // @Tags chats
 // @Produce json
 // @Security Bearer
-// @Param page query int false "Page number" default(1)
-// @Param count query int false "Items per page" default(20)
+// @Param limit query int false "Number of chats to return" default(50)
+// @Param cursor query string false "Chat ID to start after (for pagination)"
 // @Success 200 {object} ChatListResponse "List of chats"
 // @Failure 401 {object} ErrorResponse "Unauthorized"
 // @Router /chats [get]
@@ -245,24 +245,23 @@ func (h *ChatHandler) ListChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	count, _ := strconv.Atoi(r.URL.Query().Get("count"))
-	if page <= 0 {
-		page = 1
-	}
-	if count <= 0 {
-		count = 20
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	cursor := r.URL.Query().Get("cursor")
+	if limit <= 0 {
+		limit = 50
 	}
 
-	resp, err := h.chatClient.ListChats(ctx, userID.String(), int32(page), int32(count))
+	resp, err := h.chatClient.ListChats(ctx, userID.String(), int32(limit), cursor)
 	if err != nil {
 		h.handleGRPCError(w, err)
 		return
 	}
 
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"chats":      resp.Chats,
-		"pagination": resp.Pagination,
+		"chats":       resp.Chats,
+		"next_cursor": resp.NextCursor,
+		"has_more":    resp.HasMore,
+		"total":       resp.Total,
 	})
 }
 

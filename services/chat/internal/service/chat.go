@@ -29,6 +29,7 @@ type ChatService interface {
 	CreateChat(ctx context.Context, name string, chatType model.ChatType, createdBy uuid.UUID, participantIDs []uuid.UUID) (*model.Chat, error)
 	GetChat(ctx context.Context, chatID, userID uuid.UUID) (*model.Chat, error)
 	ListChats(ctx context.Context, userID uuid.UUID, page, count int) ([]model.Chat, int, error)
+	ListChatsCursor(ctx context.Context, userID uuid.UUID, limit int, cursor string) (*repository.ListChatsResult, error)
 	UpdateChat(ctx context.Context, chatID uuid.UUID, name string, userID uuid.UUID) (*model.Chat, error)
 	DeleteChat(ctx context.Context, chatID, userID uuid.UUID) error
 	SearchChats(ctx context.Context, userID uuid.UUID, query string, page, count int) ([]model.Chat, int, error)
@@ -204,6 +205,10 @@ func (s *chatService) GetChat(ctx context.Context, chatID, userID uuid.UUID) (*m
 
 func (s *chatService) ListChats(ctx context.Context, userID uuid.UUID, page, count int) ([]model.Chat, int, error) {
 	return s.repo.ListChats(ctx, userID, page, count)
+}
+
+func (s *chatService) ListChatsCursor(ctx context.Context, userID uuid.UUID, limit int, cursor string) (*repository.ListChatsResult, error) {
+	return s.repo.ListChatsCursor(ctx, userID, limit, cursor)
 }
 
 func (s *chatService) UpdateChat(ctx context.Context, chatID uuid.UUID, name string, userID uuid.UUID) (*model.Chat, error) {

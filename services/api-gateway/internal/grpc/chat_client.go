@@ -59,7 +59,18 @@ func (c *ChatClient) GetChat(ctx context.Context, chatID, userID string) (*pb.Ch
 	})
 }
 
-func (c *ChatClient) ListChats(ctx context.Context, userID string, page, count int32) (*pb.ListChatsResponse, error) {
+// ListChats returns chats using cursor-based pagination
+// If cursor is empty, returns first page
+func (c *ChatClient) ListChats(ctx context.Context, userID string, limit int32, cursor string) (*pb.ListChatsResponse, error) {
+	return c.client.ListChats(ctx, &pb.ListChatsRequest{
+		UserId: userID,
+		Limit:  limit,
+		Cursor: cursor,
+	})
+}
+
+// ListChatsLegacy uses deprecated offset-based pagination
+func (c *ChatClient) ListChatsLegacy(ctx context.Context, userID string, page, count int32) (*pb.ListChatsResponse, error) {
 	return c.client.ListChats(ctx, &pb.ListChatsRequest{
 		UserId: userID,
 		Page:   page,

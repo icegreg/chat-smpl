@@ -277,6 +277,33 @@ func (s *ChatServer) ListChats(ctx context.Context, req *pb.ListChatsRequest) (*
 		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
 	}
 
+	// Use cursor-based pagination if limit is provided (new API)
+	limit := int(req.Limit)
+	if limit > 0 || req.Cursor != "" {
+		// Cursor-based pagination
+		if limit < 1 {
+			limit = 50 // default
+		}
+
+		result, err := s.chatService.ListChatsCursor(ctx, userID, limit, req.Cursor)
+		if err != nil {
+			return nil, handleError(err)
+		}
+
+		protoChats := make([]*pb.Chat, len(result.Chats))
+		for i, c := range result.Chats {
+			protoChats[i] = chatToProto(&c)
+		}
+
+		return &pb.ListChatsResponse{
+			Chats:      protoChats,
+			NextCursor: result.NextCursor,
+			HasMore:    result.HasMore,
+			Total:      int32(result.Total),
+		}, nil
+	}
+
+	// Legacy offset-based pagination (deprecated)
 	page := int(req.Page)
 	if page < 1 {
 		page = 1
@@ -303,6 +330,7 @@ func (s *ChatServer) ListChats(ctx context.Context, req *pb.ListChatsRequest) (*
 
 	return &pb.ListChatsResponse{
 		Chats: protoChats,
+		Total: int32(total),
 		Pagination: &pb.Pagination{
 			Page:       int32(page),
 			Count:      int32(count),

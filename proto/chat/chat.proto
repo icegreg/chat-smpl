@@ -231,13 +231,20 @@ message GetChatRequest {
 
 message ListChatsRequest {
     string user_id = 1;
-    int32 page = 2;
-    int32 count = 3;
+    int32 limit = 2;           // Number of chats to return (default 50)
+    string cursor = 3;         // Chat ID to start after (for cursor pagination)
+    // Deprecated: use limit and cursor instead
+    int32 page = 4 [deprecated = true];
+    int32 count = 5 [deprecated = true];
 }
 
 message ListChatsResponse {
     repeated Chat chats = 1;
-    Pagination pagination = 2;
+    string next_cursor = 2;    // Chat ID of last item, use as cursor for next page
+    bool has_more = 3;         // True if there are more chats after this page
+    int32 total = 4;           // Total number of chats (optional, for UI)
+    // Deprecated
+    Pagination pagination = 5 [deprecated = true];
 }
 
 message UpdateChatRequest {

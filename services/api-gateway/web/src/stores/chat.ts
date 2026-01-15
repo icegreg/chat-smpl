@@ -30,6 +30,12 @@ export const useChatStore = defineStore('chat', () => {
   const typingUsers = ref<Map<string, Set<string>>>(new Map())
   const typingTimeouts = ref<Map<string, number>>(new Map()) // chatId:userId -> timeout id
 
+  // Cursor-based pagination for chats
+  const chatsCursor = ref<string>('')
+  const chatsHasMore = ref(false)
+  const chatsTotal = ref(0)
+  const loadingMoreChats = ref(false)
+
   // Track last known seq_num per chat for reliable sync after reconnect
   const lastSeqNums = ref<Map<string, number>>(new Map())
   const isSyncing = ref(false)
@@ -426,15 +432,50 @@ export const useChatStore = defineStore('chat', () => {
   async function fetchChats() {
     loading.value = true
     error.value = null
+    // Reset cursor pagination state
+    chatsCursor.value = ''
+    chatsHasMore.value = false
+    chatsTotal.value = 0
     try {
-      const result = await api.getChats()
+      const result = await api.getChats(50)
       chats.value = result.chats || []
+      chatsCursor.value = result.next_cursor || ''
+      chatsHasMore.value = result.has_more || false
+      chatsTotal.value = result.total || 0
       // No need to subscribe to individual chat channels anymore
       // Events come through user's personal channel
     } catch (e) {
       error.value = e instanceof ApiError ? e.message : 'Failed to fetch chats'
     } finally {
       loading.value = false
+    }
+  }
+
+  async function loadMoreChats() {
+    if (!chatsHasMore.value || loadingMoreChats.value || !chatsCursor.value) {
+      return
+    }
+    loadingMoreChats.value = true
+    error.value = null
+    try {
+      const result = await api.getChats(50, chatsCursor.value)
+      const newChats = result.chats || []
+      // Append to existing chats, avoiding duplicates
+      for (const chat of newChats) {
+        if (!chats.value.some(c => c.id === chat.id)) {
+          chats.value.push(chat)
+        }
+      }
+      chatsCursor.value = result.next_cursor || ''
+      chatsHasMore.value = result.has_more || false
+      // Total stays the same or could be updated
+      if (result.total) {
+        chatsTotal.value = result.total
+      }
+    } catch (e) {
+      error.value = e instanceof ApiError ? e.message : 'Failed to load more chats'
+    } finally {
+      loadingMoreChats.value = false
     }
   }
 
@@ -831,8 +872,14 @@ export const useChatStore = defineStore('chat', () => {
     typingUsers,
     sortedChats,
     isSyncing,
+    // Cursor pagination for chats
+    chatsCursor,
+    chatsHasMore,
+    chatsTotal,
+    loadingMoreChats,
     initCentrifuge,
     fetchChats,
+    loadMoreChats,
     selectChat,
     createChat,
     deleteChat,

@@ -22,11 +22,20 @@ var (
 	ErrAccessDenied        = errors.New("access denied")
 )
 
+// ListChatsResult contains cursor-paginated chat list results
+type ListChatsResult struct {
+	Chats      []model.Chat
+	NextCursor string // chat_id of last item
+	HasMore    bool
+	Total      int
+}
+
 type ChatRepository interface {
 	// Chat operations
 	CreateChat(ctx context.Context, chat *model.Chat) error
 	GetChat(ctx context.Context, id uuid.UUID) (*model.Chat, error)
 	ListChats(ctx context.Context, userID uuid.UUID, page, count int) ([]model.Chat, int, error)
+	ListChatsCursor(ctx context.Context, userID uuid.UUID, limit int, cursor string) (*ListChatsResult, error)
 	UpdateChat(ctx context.Context, chat *model.Chat) error
 	DeleteChat(ctx context.Context, id uuid.UUID) error
 	SearchChats(ctx context.Context, userID uuid.UUID, query string, page, count int) ([]model.Chat, int, error)
@@ -217,6 +226,104 @@ func (r *chatRepository) ListChats(ctx context.Context, userID uuid.UUID, page, 
 	}
 
 	return chats, total, nil
+}
+
+// ListChatsCursor returns chats using cursor-based pagination
+// Cursor is the chat_id to start after (for keyset pagination)
+// Chats are ordered by updated_at DESC, then by id DESC for stable ordering
+func (r *chatRepository) ListChatsCursor(ctx context.Context, userID uuid.UUID, limit int, cursor string) (*ListChatsResult, error) {
+	if limit < 1 || limit > 100 {
+		limit = 50
+	}
+
+	// Get total count (optional, for UI)
+	countQuery := `
+		SELECT COUNT(*) FROM con_test.chats c
+		JOIN con_test.chat_participants cp ON c.id = cp.chat_id
+		WHERE cp.user_id = $1
+	`
+	var total int
+	if err := r.pool.QueryRow(ctx, countQuery, userID).Scan(&total); err != nil {
+		return nil, fmt.Errorf("failed to count chats: %w", err)
+	}
+
+	var rows pgx.Rows
+	var err error
+
+	if cursor == "" {
+		// First page - no cursor
+		query := `
+			SELECT c.id, c.name, c.chat_type, c.created_by, c.created_at, c.updated_at
+			FROM con_test.chats c
+			JOIN con_test.chat_participants cp ON c.id = cp.chat_id
+			WHERE cp.user_id = $1
+			ORDER BY c.updated_at DESC, c.id DESC
+			LIMIT $2
+		`
+		rows, err = r.pool.Query(ctx, query, userID, limit+1) // fetch one extra to check hasMore
+	} else {
+		// Parse cursor as UUID
+		cursorID, parseErr := uuid.Parse(cursor)
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid cursor: %w", parseErr)
+		}
+
+		// Get the updated_at of the cursor chat for keyset pagination
+		var cursorUpdatedAt time.Time
+		cursorQuery := `SELECT updated_at FROM con_test.chats WHERE id = $1`
+		if err := r.pool.QueryRow(ctx, cursorQuery, cursorID).Scan(&cursorUpdatedAt); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("cursor chat not found")
+			}
+			return nil, fmt.Errorf("failed to get cursor chat: %w", err)
+		}
+
+		// Keyset pagination: get chats after the cursor
+		// (updated_at, id) < (cursor_updated_at, cursor_id)
+		query := `
+			SELECT c.id, c.name, c.chat_type, c.created_by, c.created_at, c.updated_at
+			FROM con_test.chats c
+			JOIN con_test.chat_participants cp ON c.id = cp.chat_id
+			WHERE cp.user_id = $1
+			  AND (c.updated_at, c.id) < ($2, $3)
+			ORDER BY c.updated_at DESC, c.id DESC
+			LIMIT $4
+		`
+		rows, err = r.pool.Query(ctx, query, userID, cursorUpdatedAt, cursorID, limit+1)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to list chats: %w", err)
+	}
+	defer rows.Close()
+
+	var chats []model.Chat
+	for rows.Next() {
+		var chat model.Chat
+		if err := rows.Scan(&chat.ID, &chat.Name, &chat.ChatType, &chat.CreatedBy, &chat.CreatedAt, &chat.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan chat: %w", err)
+		}
+		chats = append(chats, chat)
+	}
+
+	// Check if there are more results
+	hasMore := len(chats) > limit
+	if hasMore {
+		chats = chats[:limit] // Remove the extra item
+	}
+
+	// Set next cursor to the last item's ID
+	var nextCursor string
+	if len(chats) > 0 && hasMore {
+		nextCursor = chats[len(chats)-1].ID.String()
+	}
+
+	return &ListChatsResult{
+		Chats:      chats,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      total,
+	}, nil
 }
 
 func (r *chatRepository) UpdateChat(ctx context.Context, chat *model.Chat) error {
