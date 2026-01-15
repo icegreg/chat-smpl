@@ -28,6 +28,7 @@ type UserRepository interface {
 	GetByUsername(ctx context.Context, username string) (*model.User, error)
 	GetByExtension(ctx context.Context, extension string) (*model.User, error)
 	List(ctx context.Context, page, count int) ([]model.User, int, error)
+	Search(ctx context.Context, query string, page, count int) ([]model.User, int, error)
 	Update(ctx context.Context, user *model.User) error
 	Delete(ctx context.Context, id uuid.UUID) error
 
@@ -267,6 +268,76 @@ func (r *userRepository) List(ctx context.Context, page, count int) ([]model.Use
 	rows, err := r.pool.Query(ctx, query, count, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []model.User
+	for rows.Next() {
+		var user model.User
+		if err := rows.Scan(
+			&user.ID,
+			&user.Username,
+			&user.Email,
+			&user.DisplayName,
+			&user.AvatarURL,
+			&user.Extension,
+			&user.SIPPassword,
+			&user.PasswordHash,
+			&user.Role,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, user)
+	}
+
+	return users, total, nil
+}
+
+func (r *userRepository) Search(ctx context.Context, query string, page, count int) ([]model.User, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if count < 1 || count > 100 {
+		count = 20
+	}
+
+	offset := (page - 1) * count
+	searchPattern := "%" + query + "%"
+
+	// Get total count with search filter
+	var total int
+	countQuery := `
+		SELECT COUNT(*) FROM con_test.users
+		WHERE username ILIKE $1
+		   OR display_name ILIKE $1
+	`
+	if err := r.pool.QueryRow(ctx, countQuery, searchPattern).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count users: %w", err)
+	}
+
+	// Get users with search filter
+	searchQuery := `
+		SELECT id, username, email, display_name, avatar_url, extension, sip_password, password_hash, role, created_at, updated_at
+		FROM con_test.users
+		WHERE username ILIKE $1
+		   OR display_name ILIKE $1
+		ORDER BY
+			CASE
+				WHEN username ILIKE $2 THEN 0
+				WHEN display_name ILIKE $2 THEN 1
+				ELSE 2
+			END,
+			display_name, username
+		LIMIT $3 OFFSET $4
+	`
+	// $2 is exact prefix match for better ranking
+	prefixPattern := query + "%"
+
+	rows, err := r.pool.Query(ctx, searchQuery, searchPattern, prefixPattern, count, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to search users: %w", err)
 	}
 	defer rows.Close()
 

@@ -51,6 +51,11 @@ type FileService interface {
 	GetFilesByGroup(ctx context.Context, groupID uuid.UUID) ([]model.FileLink, error)
 	RemoveUserFromAllGroupFiles(ctx context.Context, groupIDs []uuid.UUID, userID uuid.UUID) error
 
+	// File links soft delete (for message deletion/restoration)
+	MarkLinksDeleted(ctx context.Context, linkIDs []uuid.UUID) error
+	RestoreLinks(ctx context.Context, linkIDs []uuid.UUID) error
+	PermanentlyDeleteLinks(ctx context.Context, linkIDs []uuid.UUID) (deletedLinks int, deletedFiles int, err error)
+
 	// Chat files
 	GetChatFiles(ctx context.Context, chatID uuid.UUID, limit, offset int) ([]*model.ChatFileDTO, int, error)
 }
@@ -541,4 +546,63 @@ func (s *fileService) RemoveUserFromAllGroupFiles(ctx context.Context, groupIDs 
 // GetChatFiles returns files that were attached to messages in a specific chat
 func (s *fileService) GetChatFiles(ctx context.Context, chatID uuid.UUID, limit, offset int) ([]*model.ChatFileDTO, int, error) {
 	return s.repo.GetChatFiles(ctx, chatID, limit, offset)
+}
+
+// MarkLinksDeleted marks file links as soft deleted (for message deletion)
+func (s *fileService) MarkLinksDeleted(ctx context.Context, linkIDs []uuid.UUID) error {
+	if len(linkIDs) == 0 {
+		return nil
+	}
+	return s.repo.BatchSoftDeleteFileLinks(ctx, linkIDs)
+}
+
+// RestoreLinks restores soft-deleted file links (for message restoration)
+func (s *fileService) RestoreLinks(ctx context.Context, linkIDs []uuid.UUID) error {
+	if len(linkIDs) == 0 {
+		return nil
+	}
+	return s.repo.RestoreFileLinks(ctx, linkIDs)
+}
+
+// PermanentlyDeleteLinks permanently deletes file links and orphan files
+func (s *fileService) PermanentlyDeleteLinks(ctx context.Context, linkIDs []uuid.UUID) (deletedLinks int, deletedFiles int, err error) {
+	if len(linkIDs) == 0 {
+		return 0, 0, nil
+	}
+
+	// Find orphan files (files with no remaining active links after these are deleted)
+	orphanFileIDs, err := s.repo.GetOrphanFileIDs(ctx, linkIDs)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to find orphan files: %w", err)
+	}
+
+	// Delete the file links
+	deletedLinks, err = s.repo.BatchDeleteFileLinks(ctx, linkIDs)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to delete file links: %w", err)
+	}
+
+	// Delete orphan files from storage and database
+	for _, fileID := range orphanFileIDs {
+		file, err := s.repo.GetFile(ctx, fileID)
+		if err != nil {
+			continue // Skip if file not found
+		}
+
+		// Delete from storage
+		if err := s.storage.Delete(file.FilePath); err != nil {
+			// Log error but continue - the database record will still be cleaned up
+			fmt.Printf("Warning: failed to delete file from storage: %v\n", err)
+		}
+
+		// Delete from database
+		if err := s.repo.DeleteFile(ctx, fileID); err != nil {
+			fmt.Printf("Warning: failed to delete file record: %v\n", err)
+			continue
+		}
+
+		deletedFiles++
+	}
+
+	return deletedLinks, deletedFiles, nil
 }

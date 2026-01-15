@@ -1,4 +1,4 @@
-import { WebDriver, By } from 'selenium-webdriver'
+import { WebDriver, By, until } from 'selenium-webdriver'
 import { BasePage } from './BasePage.js'
 
 export class ChatPage extends BasePage {
@@ -26,7 +26,7 @@ export class ChatPage extends BasePage {
   private readonly chatHeaderTitle = By.css('main h3.font-semibold')
   private readonly chatHeaderClickable = By.css('[data-testid="chat-header-clickable"]')
   private readonly participantsPanel = By.css('main .w-64.border-l')
-  private readonly participantsPanelTitle = By.xpath('//h4[contains(text(), "Participants")]')
+  private readonly participantsPanelTitle = By.xpath('//h4[contains(text(), "Участники")]')
   private readonly participantsPanelCloseBtn = By.css('main .w-64.border-l button')
   private readonly participantListItems = By.css('main .w-64.border-l ul li')
 
@@ -1495,6 +1495,270 @@ export class ChatPage extends BasePage {
   }
 
   // ========== Participant Management ==========
+
+  // UI Locators for participant management
+  private readonly addParticipantButton = By.xpath('//button[contains(text(), "Добавить участника")]')
+  private readonly addParticipantIdInput = By.css('main .w-64.border-l input[placeholder="ID пользователя"]')
+  private readonly addParticipantRoleSelect = By.css('main .w-64.border-l select')
+  private readonly addParticipantSubmitBtn = By.xpath('//button[contains(text(), "Добавить") and contains(@class, "bg-indigo-600")]')
+  private readonly addParticipantCancelBtn = By.xpath('//button[contains(text(), "Отмена")]')
+  private readonly addParticipantError = By.css('main .w-64.border-l .text-red-600')
+  private readonly deleteChatButton = By.css('button[title="Удалить чат"]')
+
+  /**
+   * Open participants panel by clicking chat header
+   * If panel is already open, do nothing
+   */
+  async openParticipantsPanel(): Promise<void> {
+    // Check if panel is already open
+    const isOpen = await this.isParticipantsPanelVisible()
+    if (!isOpen) {
+      await this.clickChatHeader()
+      await this.waitForParticipantsPanel()
+    }
+  }
+
+  /**
+   * Check if add participant button is visible (indicates moderator role)
+   */
+  async isAddParticipantButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.addParticipantButton)
+  }
+
+  /**
+   * Click the add participant button to show the form
+   */
+  async clickAddParticipantButton(): Promise<void> {
+    await this.click(this.addParticipantButton)
+    await this.sleep(300)
+  }
+
+  /**
+   * Enter user ID in the add participant form
+   */
+  async enterNewParticipantId(userId: string): Promise<void> {
+    await this.type(this.addParticipantIdInput, userId)
+  }
+
+  /**
+   * Select role for new participant
+   */
+  async selectParticipantRole(role: 'member' | 'admin' | 'readonly'): Promise<void> {
+    const select = await this.waitForElement(this.addParticipantRoleSelect)
+    await select.sendKeys(role === 'member' ? 'Участник' : role === 'admin' ? 'Админ' : 'Только чтение')
+  }
+
+  /**
+   * Submit the add participant form
+   */
+  async submitAddParticipant(): Promise<void> {
+    await this.click(this.addParticipantSubmitBtn)
+    await this.sleep(1000)
+  }
+
+  /**
+   * Cancel add participant form
+   */
+  async cancelAddParticipant(): Promise<void> {
+    await this.click(this.addParticipantCancelBtn)
+  }
+
+  /**
+   * Get add participant error message
+   */
+  async getAddParticipantError(): Promise<string> {
+    try {
+      return await this.getText(this.addParticipantError)
+    } catch {
+      return ''
+    }
+  }
+
+  /**
+   * Add participant via UI (full flow)
+   */
+  async addParticipantViaUI(userId: string, role: 'member' | 'admin' | 'readonly' = 'member'): Promise<void> {
+    // Make sure participants panel is open
+    if (!(await this.isParticipantsPanelVisible())) {
+      await this.openParticipantsPanel()
+    }
+
+    await this.clickAddParticipantButton()
+    await this.enterNewParticipantId(userId)
+    await this.selectParticipantRole(role)
+    await this.submitAddParticipant()
+  }
+
+  /**
+   * Get list of participant names from the panel
+   */
+  async getParticipantNames(): Promise<string[]> {
+    const items = await this.driver.findElements(this.participantListItems)
+    const names: string[] = []
+    for (const item of items) {
+      try {
+        const nameEl = await item.findElement(By.css('p.font-medium'))
+        names.push(await nameEl.getText())
+      } catch {
+        // Ignore items without name
+      }
+    }
+    return names
+  }
+
+  /**
+   * Remove participant by hovering and clicking the remove button
+   */
+  async removeParticipantViaUI(participantName: string): Promise<void> {
+    const items = await this.driver.findElements(this.participantListItems)
+    console.log(`Found ${items.length} participant items`)
+
+    for (const item of items) {
+      try {
+        const nameEl = await item.findElement(By.css('p.font-medium'))
+        const name = await nameEl.getText()
+        console.log(`Checking participant: "${name}"`)
+
+        if (name.includes(participantName)) {
+          console.log(`Found target participant: "${name}"`)
+
+          // Find the remove button
+          const removeBtn = await item.findElement(By.css('button[title="Удалить участника"]'))
+          console.log('Found remove button')
+
+          // Make the button visible and clickable with JavaScript
+          await this.driver.executeScript(`
+            arguments[0].style.opacity = "1";
+            arguments[0].style.visibility = "visible";
+            arguments[0].style.display = "block";
+          `, removeBtn)
+          await this.sleep(200)
+
+          // Click the button using JavaScript
+          console.log('Clicking remove button...')
+          await this.driver.executeScript('arguments[0].click();', removeBtn)
+          console.log('Remove button clicked')
+
+          // Handle confirmation dialog - wait for alert to appear
+          console.log('Waiting for confirmation dialog...')
+          await this.driver.wait(until.alertIsPresent(), 5000)
+          const alert = await this.driver.switchTo().alert()
+          console.log('Alert found, accepting...')
+          await alert.accept()
+          console.log('Alert accepted, waiting for API call...')
+
+          // Wait for API call to complete and UI to update
+          await this.sleep(3000)
+          return
+        }
+      } catch (e) {
+        // Continue to next item
+        console.log(`Error processing item: ${e}`)
+      }
+    }
+    throw new Error(`Participant "${participantName}" not found in panel`)
+  }
+
+  /**
+   * Wait for participant to appear in the panel
+   */
+  async waitForParticipantInPanel(participantName: string, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const names = await this.getParticipantNames()
+      if (names.some(n => n.includes(participantName))) {
+        return
+      }
+      await this.sleep(500)
+    }
+    throw new Error(`Participant "${participantName}" not found within timeout`)
+  }
+
+  /**
+   * Wait for participant to disappear from the panel
+   */
+  async waitForParticipantRemoved(participantName: string, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const names = await this.getParticipantNames()
+      if (!names.some(n => n.includes(participantName))) {
+        return
+      }
+      await this.sleep(500)
+    }
+    throw new Error(`Participant "${participantName}" still present after timeout`)
+  }
+
+  /**
+   * Check if delete chat button is visible (indicates moderator role)
+   */
+  async isDeleteChatButtonVisible(): Promise<boolean> {
+    return this.isDisplayed(this.deleteChatButton)
+  }
+
+  /**
+   * Click delete chat button and confirm
+   */
+  async deleteChatViaUI(): Promise<void> {
+    await this.click(this.deleteChatButton)
+    await this.sleep(500)
+    // Handle confirmation dialog
+    await this.driver.switchTo().alert().accept()
+    await this.sleep(1000)
+  }
+
+  /**
+   * Delete chat via API
+   */
+  async deleteChatViaApi(): Promise<void> {
+    const chatId = await this.getCurrentChatId()
+    if (!chatId) {
+      throw new Error('Cannot delete chat - not in a chat room')
+    }
+
+    await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/chats/${chatId}', {
+            method: 'DELETE',
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            reject('API error: ' + response.status + ' ' + error);
+            return;
+          }
+          resolve({ success: true });
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `)
+
+    await this.sleep(1000)
+  }
+
+  /**
+   * Wait for chat to be removed from the list
+   */
+  async waitForChatRemoved(chatName: string, timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      const names = await this.getChatNames()
+      if (!names.some(n => n.includes(chatName))) {
+        return
+      }
+      await this.sleep(500)
+    }
+    throw new Error(`Chat "${chatName}" still present after timeout`)
+  }
 
   /**
    * Add a participant to the current chat via API
@@ -2965,5 +3229,206 @@ export class ChatPage extends BasePage {
       console.log('Close button failed, trying toggle button')
       await this.clickConferenceChatToggle()
     }
+  }
+
+  // ==================== Message Delete & Restore ====================
+
+  private readonly messageDeleted = By.css('[data-testid="message-deleted"]')
+  private readonly messageRestoreButton = By.css('[data-testid="message-deleted"] button')
+
+  /**
+   * Check if any message is marked as deleted
+   */
+  async hasDeletedMessage(): Promise<boolean> {
+    return this.isDisplayed(this.messageDeleted)
+  }
+
+  /**
+   * Get count of deleted messages
+   */
+  async getDeletedMessageCount(): Promise<number> {
+    const elements = await this.driver.findElements(this.messageDeleted)
+    return elements.length
+  }
+
+  /**
+   * Get deleted message text (e.g., "Сообщение удалено" or "Удалено модератором")
+   */
+  async getDeletedMessageText(): Promise<string> {
+    try {
+      const element = await this.driver.findElement(this.messageDeleted)
+      return await element.getText()
+    } catch {
+      return ''
+    }
+  }
+
+  /**
+   * Check if deleted message has restore button
+   */
+  async hasRestoreButton(): Promise<boolean> {
+    return this.isDisplayed(this.messageRestoreButton)
+  }
+
+  /**
+   * Click restore button on deleted message
+   */
+  async clickRestoreButton(): Promise<void> {
+    await this.forceClick(this.messageRestoreButton)
+    await this.sleep(500)
+  }
+
+  /**
+   * Delete message via API from browser context
+   */
+  async deleteMessageViaApi(messageId: string): Promise<void> {
+    await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/chats/messages/${messageId}', {
+            method: 'DELETE',
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok && response.status !== 204) {
+            reject('Delete failed: ' + response.status);
+            return;
+          }
+          resolve(true);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `)
+    await this.sleep(500)
+  }
+
+  /**
+   * Restore message via API from browser context
+   */
+  async restoreMessageViaApi(messageId: string): Promise<void> {
+    await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          if (!token) {
+            reject('No access token');
+            return;
+          }
+          const response = await fetch('/api/chats/messages/${messageId}/restore', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            }
+          });
+          if (!response.ok) {
+            const text = await response.text();
+            reject('Restore failed: ' + response.status + ' ' + text);
+            return;
+          }
+          const data = await response.json();
+          resolve(data);
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `)
+    await this.sleep(500)
+  }
+
+  /**
+   * Get message ID by index
+   */
+  async getMessageId(index: number = 0): Promise<string | null> {
+    const result = await this.driver.executeScript(`
+      return new Promise(async (resolve, reject) => {
+        try {
+          const token = localStorage.getItem('access_token');
+          const chatId = window.location.pathname.split('/').pop() ||
+                        document.querySelector('[data-chat-id]')?.getAttribute('data-chat-id');
+
+          if (!token || !chatId) {
+            // Try to get from Vue store
+            const store = window.__PINIA__?.state?.value?.chat;
+            if (store && store.messages && store.messages.length > ${index}) {
+              resolve(store.messages[${index}].id);
+              return;
+            }
+            reject('Cannot get chat context');
+            return;
+          }
+
+          const response = await fetch('/api/chats/' + chatId + '/messages?page=1&count=50', {
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+          if (!response.ok) {
+            reject('Failed to get messages: ' + response.status);
+            return;
+          }
+          const data = await response.json();
+          if (data.messages && data.messages.length > ${index}) {
+            resolve(data.messages[${index}].id);
+          } else {
+            resolve(null);
+          }
+        } catch (e) {
+          reject(e.message);
+        }
+      });
+    `) as string | null
+    return result
+  }
+
+  /**
+   * Wait for deleted message to appear
+   */
+  async waitForDeletedMessage(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (await this.hasDeletedMessage()) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Deleted message did not appear within timeout')
+  }
+
+  /**
+   * Wait for deleted message to disappear (after restore)
+   */
+  async waitForNoDeletedMessage(timeout: number = 10000): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      if (!(await this.hasDeletedMessage())) {
+        return
+      }
+      await this.sleep(300)
+    }
+    throw new Error('Deleted message still visible after timeout')
+  }
+
+  /**
+   * Check if deleted message shows moderated deletion icon
+   */
+  async isModeratedDeletion(): Promise<boolean> {
+    const text = await this.getDeletedMessageText()
+    return text.includes('модератор') || text.includes('🛡️')
+  }
+
+  /**
+   * Check if deleted message shows regular deletion icon
+   */
+  async isRegularDeletion(): Promise<boolean> {
+    const text = await this.getDeletedMessageText()
+    return text.includes('🗑️') && !text.includes('модератор')
   }
 }

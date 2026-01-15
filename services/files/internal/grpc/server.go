@@ -334,3 +334,51 @@ func (s *FilesServer) RemoveUserFromAllGroupFiles(ctx context.Context, req *pb.R
 
 	return &emptypb.Empty{}, nil
 }
+
+// ============ File Links Soft Delete ============
+
+// MarkLinksDeleted marks file links as soft deleted (for message deletion)
+func (s *FilesServer) MarkLinksDeleted(ctx context.Context, req *pb.MarkLinksDeletedRequest) (*emptypb.Empty, error) {
+	linkIDs, err := parseUUIDs(req.LinkIds)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid link_id")
+	}
+
+	if err := s.fileService.MarkLinksDeleted(ctx, linkIDs); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// RestoreLinks restores soft-deleted file links (for message restoration)
+func (s *FilesServer) RestoreLinks(ctx context.Context, req *pb.RestoreLinksRequest) (*emptypb.Empty, error) {
+	linkIDs, err := parseUUIDs(req.LinkIds)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid link_id")
+	}
+
+	if err := s.fileService.RestoreLinks(ctx, linkIDs); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// PermanentlyDeleteLinks permanently deletes file links and orphan files (for cleanup job)
+func (s *FilesServer) PermanentlyDeleteLinks(ctx context.Context, req *pb.PermanentlyDeleteLinksRequest) (*pb.PermanentlyDeleteLinksResponse, error) {
+	linkIDs, err := parseUUIDs(req.LinkIds)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid link_id")
+	}
+
+	deletedLinks, deletedFiles, err := s.fileService.PermanentlyDeleteLinks(ctx, linkIDs)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return &pb.PermanentlyDeleteLinksResponse{
+		DeletedLinks: int32(deletedLinks),
+		DeletedFiles: int32(deletedFiles),
+	}, nil
+}

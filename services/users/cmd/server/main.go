@@ -15,10 +15,12 @@ import (
 	"github.com/icegreg/chat-smpl/pkg/jwt"
 	"github.com/icegreg/chat-smpl/pkg/logger"
 	"github.com/icegreg/chat-smpl/pkg/metrics"
+	"github.com/icegreg/chat-smpl/pkg/migrate"
 	"github.com/icegreg/chat-smpl/pkg/postgres"
 	"github.com/icegreg/chat-smpl/services/users/internal/handler"
 	"github.com/icegreg/chat-smpl/services/users/internal/repository"
 	"github.com/icegreg/chat-smpl/services/users/internal/service"
+	migrations "github.com/icegreg/chat-smpl/services/users/migrations"
 	"go.uber.org/zap"
 )
 
@@ -58,6 +60,15 @@ func main() {
 		logger.Fatal("failed to connect to database", zap.Error(err))
 	}
 	defer postgres.Close(pool)
+
+	// Run database migrations
+	if err := migrate.RunWithDSN(cfg.DatabaseURL, migrate.Config{
+		ServiceName:    "users",
+		MigrationsFS:   migrations.FS,
+		MigrationsPath: ".",
+	}); err != nil {
+		logger.Fatal("failed to run migrations", zap.Error(err))
+	}
 
 	// Initialize JWT manager
 	jwtManager := jwt.NewManager(jwt.DefaultConfig(cfg.JWTSecret))

@@ -202,7 +202,18 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		count = 20
 	}
 
-	resp, err := h.userService.List(r.Context(), page, count)
+	// Check for search query
+	searchQuery := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	var resp *model.PaginatedResponse[model.UserDTO]
+	var err error
+
+	if searchQuery != "" {
+		resp, err = h.userService.Search(r.Context(), searchQuery, page, count)
+	} else {
+		resp, err = h.userService.List(r.Context(), page, count)
+	}
+
 	if err != nil {
 		logger.Error("failed to list users", zap.Error(err))
 		h.respondError(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Internal server error")

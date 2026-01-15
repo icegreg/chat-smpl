@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -10,6 +10,7 @@ COPY go.mod go.sum ./
 COPY proto/chat ./proto/chat
 COPY proto/voice ./proto/voice
 COPY pkg/metrics ./pkg/metrics
+COPY pkg/migrate ./pkg/migrate
 RUN go mod download
 
 # Copy source code

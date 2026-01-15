@@ -21,6 +21,7 @@ const (
 	RoutingKeyMessageCreated  = "message.created"
 	RoutingKeyMessageUpdated  = "message.updated"
 	RoutingKeyMessageDeleted  = "message.deleted"
+	RoutingKeyMessageRestored = "message.restored"
 	RoutingKeyTyping          = "typing"
 	RoutingKeyReactionAdded   = "reaction.added"
 	RoutingKeyReactionRemoved = "reaction.removed"
@@ -62,8 +63,16 @@ type MessageData struct {
 }
 
 type MessageDeletedData struct {
+	MessageID           string `json:"message_id"`
+	ChatID              string `json:"chat_id"`
+	IsModeratedDeletion bool   `json:"is_moderated_deletion"`
+}
+
+type MessageRestoredData struct {
 	MessageID string `json:"message_id"`
 	ChatID    string `json:"chat_id"`
+	SenderID  string `json:"sender_id"`
+	Content   string `json:"content"`
 }
 
 type TypingData struct {
@@ -95,7 +104,8 @@ type Publisher interface {
 	PublishChatDeleted(ctx context.Context, chatID, deletedBy uuid.UUID, participants []uuid.UUID) error
 	PublishMessageCreated(ctx context.Context, message *model.Message, participants []uuid.UUID) error
 	PublishMessageUpdated(ctx context.Context, message *model.Message, participants []uuid.UUID) error
-	PublishMessageDeleted(ctx context.Context, messageID, chatID, deletedBy uuid.UUID, participants []uuid.UUID) error
+	PublishMessageDeleted(ctx context.Context, messageID, chatID, deletedBy uuid.UUID, isModeratedDeletion bool, participants []uuid.UUID) error
+	PublishMessageRestored(ctx context.Context, message *model.Message) error
 	PublishTyping(ctx context.Context, chatID, userID uuid.UUID, isTyping bool, participants []uuid.UUID) error
 	PublishReactionAdded(ctx context.Context, messageID, chatID, userID uuid.UUID, emoji string, participants []uuid.UUID) error
 	PublishReactionRemoved(ctx context.Context, messageID, chatID, userID uuid.UUID, emoji string, participants []uuid.UUID) error
@@ -278,7 +288,7 @@ func (p *publisher) PublishMessageUpdated(ctx context.Context, message *model.Me
 	return nil
 }
 
-func (p *publisher) PublishMessageDeleted(ctx context.Context, messageID, chatID, deletedBy uuid.UUID, participants []uuid.UUID) error {
+func (p *publisher) PublishMessageDeleted(ctx context.Context, messageID, chatID, deletedBy uuid.UUID, isModeratedDeletion bool, participants []uuid.UUID) error {
 	event := ChatEvent{
 		Type:         RoutingKeyMessageDeleted,
 		Timestamp:    time.Now(),
@@ -286,8 +296,9 @@ func (p *publisher) PublishMessageDeleted(ctx context.Context, messageID, chatID
 		ChatID:       chatID.String(),
 		Participants: uuidSliceToStrings(participants),
 		Data: MessageDeletedData{
-			MessageID: messageID.String(),
-			ChatID:    chatID.String(),
+			MessageID:           messageID.String(),
+			ChatID:              chatID.String(),
+			IsModeratedDeletion: isModeratedDeletion,
 		},
 	}
 
@@ -296,7 +307,34 @@ func (p *publisher) PublishMessageDeleted(ctx context.Context, messageID, chatID
 		return err
 	}
 
-	logger.Debug("published message.deleted event", zap.String("message_id", messageID.String()))
+	logger.Debug("published message.deleted event", zap.String("message_id", messageID.String()), zap.Bool("is_moderated", isModeratedDeletion))
+	return nil
+}
+
+func (p *publisher) PublishMessageRestored(ctx context.Context, message *model.Message) error {
+	// Get participants for this chat - we need repository access for this
+	// For now, we'll just use the sender as the only participant in the event
+	// The actual participant list should be passed from the service layer
+	event := ChatEvent{
+		Type:         RoutingKeyMessageRestored,
+		Timestamp:    time.Now(),
+		ActorID:      message.SenderID.String(),
+		ChatID:       message.ChatID.String(),
+		Participants: []string{}, // Will be populated by the message receiver based on chat
+		Data: MessageRestoredData{
+			MessageID: message.ID.String(),
+			ChatID:    message.ChatID.String(),
+			SenderID:  message.SenderID.String(),
+			Content:   message.Content,
+		},
+	}
+
+	if err := p.rmqPublisher.Publish(ctx, RoutingKeyMessageRestored, event); err != nil {
+		logger.Error("failed to publish message.restored event", zap.Error(err), zap.String("message_id", message.ID.String()))
+		return err
+	}
+
+	logger.Debug("published message.restored event", zap.String("message_id", message.ID.String()))
 	return nil
 }
 
@@ -478,7 +516,11 @@ func (p *NoOpPublisher) PublishMessageUpdated(ctx context.Context, message *mode
 	return nil
 }
 
-func (p *NoOpPublisher) PublishMessageDeleted(ctx context.Context, messageID, chatID, deletedBy uuid.UUID, participants []uuid.UUID) error {
+func (p *NoOpPublisher) PublishMessageDeleted(ctx context.Context, messageID, chatID, deletedBy uuid.UUID, isModeratedDeletion bool, participants []uuid.UUID) error {
+	return nil
+}
+
+func (p *NoOpPublisher) PublishMessageRestored(ctx context.Context, message *model.Message) error {
 	return nil
 }
 

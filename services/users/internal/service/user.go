@@ -36,6 +36,7 @@ type UserService interface {
 	Create(ctx context.Context, req model.CreateUserRequest) (*model.UserDTO, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*model.UserDTO, error)
 	List(ctx context.Context, page, count int) (*model.PaginatedResponse[model.UserDTO], error)
+	Search(ctx context.Context, query string, page, count int) (*model.PaginatedResponse[model.UserDTO], error)
 	Update(ctx context.Context, id uuid.UUID, req model.UpdateUserRequest) (*model.UserDTO, error)
 	UpdateRole(ctx context.Context, id uuid.UUID, role model.Role) (*model.UserDTO, error)
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -238,6 +239,33 @@ func (s *userService) GetByID(ctx context.Context, id uuid.UUID) (*model.UserDTO
 
 func (s *userService) List(ctx context.Context, page, count int) (*model.PaginatedResponse[model.UserDTO], error) {
 	users, total, err := s.repo.List(ctx, page, count)
+	if err != nil {
+		return nil, err
+	}
+
+	dtos := make([]model.UserDTO, len(users))
+	for i, user := range users {
+		dtos[i] = user.ToDTO()
+	}
+
+	totalPages := total / count
+	if total%count > 0 {
+		totalPages++
+	}
+
+	return &model.PaginatedResponse[model.UserDTO]{
+		Data: dtos,
+		Pagination: model.Pagination{
+			Page:       page,
+			Count:      count,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	}, nil
+}
+
+func (s *userService) Search(ctx context.Context, query string, page, count int) (*model.PaginatedResponse[model.UserDTO], error) {
+	users, total, err := s.repo.Search(ctx, query, page, count)
 	if err != nil {
 		return nil, err
 	}

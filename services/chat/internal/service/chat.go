@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -14,9 +17,11 @@ import (
 )
 
 var (
-	ErrAccessDenied    = errors.New("access denied")
-	ErrNotParticipant  = errors.New("not a participant")
-	ErrCannotWriteChat = errors.New("cannot write to this chat")
+	ErrAccessDenied      = errors.New("access denied")
+	ErrNotParticipant    = errors.New("not a participant")
+	ErrCannotWriteChat   = errors.New("cannot write to this chat")
+	ErrMessageNotDeleted = errors.New("message is not deleted")
+	ErrRetentionExpired  = errors.New("message cannot be restored: retention period expired")
 )
 
 type ChatService interface {
@@ -97,6 +102,10 @@ type ChatService interface {
 	RemoveParticipantFromFileGroups(ctx context.Context, chatID, userID uuid.UUID) error
 	AttachFileLinkToChat(ctx context.Context, chatID, fileLinkID, attachedBy uuid.UUID) error
 	GetChatFileLinks(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileLink, error)
+
+	// Message deletion/restoration
+	RestoreMessage(ctx context.Context, messageID, userID uuid.UUID) (*model.Message, error)
+	RemoveFromQuote(ctx context.Context, quotingMessageID, quotedMessageID, userID uuid.UUID) error
 }
 
 type chatService struct {
@@ -485,7 +494,11 @@ func (s *chatService) DeleteMessage(ctx context.Context, messageID, userID uuid.
 		return err
 	}
 
-	if message.SenderID != userID {
+	// Determine if this is a moderated deletion
+	isAuthor := message.SenderID == userID
+	isModeratedDeletion := false
+
+	if !isAuthor {
 		participant, err := s.repo.GetParticipant(ctx, message.ChatID, userID)
 		if err != nil {
 			return err
@@ -493,15 +506,34 @@ func (s *chatService) DeleteMessage(ctx context.Context, messageID, userID uuid.
 		if !participant.Role.CanModerate() {
 			return ErrAccessDenied
 		}
+		isModeratedDeletion = true
 	}
 
-	if err := s.repo.DeleteMessage(ctx, messageID); err != nil {
+	// Get file link IDs before deletion
+	fileLinkIDs, err := s.repo.GetFileLinkIDsForMessage(ctx, messageID)
+	if err != nil {
+		return fmt.Errorf("failed to get file links: %w", err)
+	}
+
+	// Delete the message with metadata
+	if err := s.repo.DeleteMessage(ctx, messageID, userID, isModeratedDeletion); err != nil {
 		return err
+	}
+
+	// Mark file links as deleted via Files Service
+	if len(fileLinkIDs) > 0 && s.filesClient != nil {
+		linkIDStrings := make([]string, len(fileLinkIDs))
+		for i, id := range fileLinkIDs {
+			linkIDStrings[i] = id.String()
+		}
+		_, _ = s.filesClient.MarkLinksDeleted(ctx, &filesPb.MarkLinksDeletedRequest{
+			LinkIds: linkIDStrings,
+		})
 	}
 
 	// Get participants for event
 	participants, _ := s.repo.GetParticipantIDs(ctx, message.ChatID)
-	_ = s.publisher.PublishMessageDeleted(ctx, messageID, message.ChatID, userID, participants)
+	_ = s.publisher.PublishMessageDeleted(ctx, messageID, message.ChatID, userID, isModeratedDeletion, participants)
 
 	return nil
 }
@@ -1350,4 +1382,113 @@ func (s *chatService) AttachFileLinkToChat(ctx context.Context, chatID, fileLink
 // GetChatFileLinks returns all file links attached to a chat
 func (s *chatService) GetChatFileLinks(ctx context.Context, chatID uuid.UUID) ([]model.ChatFileLink, error) {
 	return s.repo.GetChatFileLinks(ctx, chatID)
+}
+
+// RestoreMessage restores a soft-deleted message within retention period
+func (s *chatService) RestoreMessage(ctx context.Context, messageID, userID uuid.UUID) (*model.Message, error) {
+	// Get message to check if it's deleted and get metadata
+	msg, err := s.repo.GetMessage(ctx, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get message: %w", err)
+	}
+
+	// Check if message is actually deleted
+	if !msg.IsDeleted {
+		return nil, ErrMessageNotDeleted
+	}
+
+	// Check if user has permission to restore (author or moderator)
+	canRestore := msg.SenderID == userID
+	if !canRestore {
+		// Check if user is moderator in this chat
+		participant, err := s.repo.GetParticipant(ctx, msg.ChatID, userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get participant: %w", err)
+		}
+		if participant.Role.CanModerate() {
+			canRestore = true
+		}
+	}
+	if !canRestore {
+		return nil, ErrAccessDenied
+	}
+
+	// Check retention period
+	if msg.DeletedAt != nil {
+		retentionDays := getRetentionDays()
+		cutoffTime := time.Now().AddDate(0, 0, -retentionDays)
+		if msg.DeletedAt.Before(cutoffTime) {
+			return nil, ErrRetentionExpired
+		}
+	}
+
+	// Restore the message in repository
+	if err := s.repo.RestoreMessage(ctx, messageID); err != nil {
+		return nil, fmt.Errorf("failed to restore message: %w", err)
+	}
+
+	// Fetch the restored message
+	restoredMsg, err := s.repo.GetMessage(ctx, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get restored message: %w", err)
+	}
+
+	// Restore file links if any
+	if s.filesClient != nil {
+		fileLinkIDs, err := s.repo.GetFileLinkIDsForMessage(ctx, messageID)
+		if err == nil && len(fileLinkIDs) > 0 {
+			linkIDStrings := make([]string, len(fileLinkIDs))
+			for i, id := range fileLinkIDs {
+				linkIDStrings[i] = id.String()
+			}
+			_, _ = s.filesClient.RestoreLinks(ctx, &filesPb.RestoreLinksRequest{
+				LinkIds: linkIDStrings,
+			})
+		}
+	}
+
+	// Publish message restored event
+	if s.publisher != nil {
+		_ = s.publisher.PublishMessageRestored(ctx, restoredMsg)
+	}
+
+	return restoredMsg, nil
+}
+
+// RemoveFromQuote removes a message from being quoted by another message (moderator only)
+func (s *chatService) RemoveFromQuote(ctx context.Context, quotingMessageID, quotedMessageID, userID uuid.UUID) error {
+	// Get the quoting message to find its chat
+	msg, err := s.repo.GetMessage(ctx, quotingMessageID)
+	if err != nil {
+		return fmt.Errorf("failed to get message: %w", err)
+	}
+
+	// Check if user is moderator in this chat
+	participant, err := s.repo.GetParticipant(ctx, msg.ChatID, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get participant: %w", err)
+	}
+	if !participant.Role.CanModerate() {
+		return ErrAccessDenied
+	}
+
+	// Remove the reply relationship
+	if err := s.repo.RemoveMessageFromReplies(ctx, quotingMessageID, quotedMessageID); err != nil {
+		return fmt.Errorf("failed to remove from replies: %w", err)
+	}
+
+	return nil
+}
+
+// getRetentionDays returns the message retention period in days from environment
+func getRetentionDays() int {
+	daysStr := os.Getenv("MESSAGE_RETENTION_DAYS")
+	if daysStr == "" {
+		return 30 // default 30 days
+	}
+	days, err := strconv.Atoi(daysStr)
+	if err != nil || days <= 0 {
+		return 30
+	}
+	return days
 }

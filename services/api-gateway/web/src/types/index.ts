@@ -88,6 +88,10 @@ export interface Message {
   forwarded_from_chat_id?: string // Original chat ID if forwarded
   is_edited?: boolean
   is_forwarded?: boolean
+  is_deleted?: boolean // True if message is soft-deleted
+  deleted_at?: string | ProtobufTimestamp // Timestamp when message was deleted
+  deleted_by?: string // User ID who deleted the message
+  is_moderated_deletion?: boolean // True if deleted by moderator (not author)
   created_at: string
   updated_at?: string
   sent_at?: string | ProtobufTimestamp
@@ -154,6 +158,18 @@ export interface ForwardMessageRequest {
 export interface PaginatedResponse<T> {
   items: T[]
   total: number
+}
+
+export interface Pagination {
+  page: number
+  count: number
+  total: number
+  total_pages: number
+}
+
+export interface UsersSearchResponse {
+  users: User[]
+  pagination: Pagination
 }
 
 export interface CentrifugoEvent {

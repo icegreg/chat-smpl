@@ -16,12 +16,14 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
+	"github.com/icegreg/chat-smpl/pkg/migrate"
 	pb "github.com/icegreg/chat-smpl/proto/files"
 	filesgrpc "github.com/icegreg/chat-smpl/services/files/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/files/internal/handler"
 	"github.com/icegreg/chat-smpl/services/files/internal/repository"
 	"github.com/icegreg/chat-smpl/services/files/internal/service"
 	"github.com/icegreg/chat-smpl/services/files/internal/storage"
+	migrations "github.com/icegreg/chat-smpl/services/files/migrations"
 )
 
 func main() {
@@ -60,6 +62,15 @@ func main() {
 	}
 
 	log.Info("connected to database")
+
+	// Run database migrations
+	if err := migrate.RunWithDSN(dbURL, migrate.Config{
+		ServiceName:    "files",
+		MigrationsFS:   migrations.FS,
+		MigrationsPath: ".",
+	}); err != nil {
+		log.Fatal("failed to run migrations", "error", err)
+	}
 
 	// Initialize storage
 	storagePath := getEnv("STORAGE_PATH", "./uploads")

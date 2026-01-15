@@ -46,6 +46,16 @@ service FilesService {
 
     // Remove user from all groups and revoke permissions on group files
     rpc RemoveUserFromAllGroupFiles(RemoveUserFromAllGroupFilesRequest) returns (google.protobuf.Empty);
+
+    // ============ File Links Soft Delete ============
+    // Mark file links as deleted (soft delete for message deletion)
+    rpc MarkLinksDeleted(MarkLinksDeletedRequest) returns (google.protobuf.Empty);
+
+    // Restore soft-deleted file links (for message restoration)
+    rpc RestoreLinks(RestoreLinksRequest) returns (google.protobuf.Empty);
+
+    // Permanently delete file links and orphan files (for cleanup job)
+    rpc PermanentlyDeleteLinks(PermanentlyDeleteLinksRequest) returns (PermanentlyDeleteLinksResponse);
 }
 
 // AddLocalFile - add a file from server's local filesystem
@@ -181,4 +191,26 @@ message GetFilesByGroupResponse {
 message RemoveUserFromAllGroupFilesRequest {
     repeated string group_ids = 1;
     string user_id = 2;
+}
+
+// ============ File Links Soft Delete Messages ============
+
+// MarkLinksDeleted - mark file links as soft deleted
+message MarkLinksDeletedRequest {
+    repeated string link_ids = 1;  // File link IDs to mark as deleted
+}
+
+// RestoreLinks - restore soft-deleted file links
+message RestoreLinksRequest {
+    repeated string link_ids = 1;  // File link IDs to restore
+}
+
+// PermanentlyDeleteLinks - permanently delete links and orphan files
+message PermanentlyDeleteLinksRequest {
+    repeated string link_ids = 1;  // File link IDs to permanently delete
+}
+
+message PermanentlyDeleteLinksResponse {
+    int32 deleted_links = 1;       // Number of file links deleted
+    int32 deleted_files = 2;       // Number of orphan files deleted from storage
 }

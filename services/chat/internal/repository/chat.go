@@ -46,7 +46,9 @@ type ChatRepository interface {
 	ListMessages(ctx context.Context, chatID uuid.UUID, page, count int, before, after *time.Time) ([]model.Message, int, error)
 	GetMessagesSince(ctx context.Context, chatID uuid.UUID, afterSeqNum int64, limit int) ([]model.Message, error)
 	UpdateMessage(ctx context.Context, message *model.Message) error
-	DeleteMessage(ctx context.Context, id uuid.UUID) error
+	DeleteMessage(ctx context.Context, id, deletedBy uuid.UUID, isModeratedDeletion bool) error
+	RestoreMessage(ctx context.Context, id uuid.UUID) error
+	GetDeletedMessagesOlderThan(ctx context.Context, cutoffTime time.Time, limit int) ([]uuid.UUID, error)
 	GetThreadMessages(ctx context.Context, parentID uuid.UUID, page, count int) ([]model.Message, int, error)
 	GetThreadCount(ctx context.Context, messageID uuid.UUID) (int, error)
 
@@ -103,6 +105,9 @@ type ChatRepository interface {
 	GetMessageReplies(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error)
 	GetMessageRepliesBatch(ctx context.Context, messageIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
 	GetMessagesById(ctx context.Context, ids []uuid.UUID) ([]model.Message, error)
+	RemoveMessageFromReplies(ctx context.Context, quotingMessageID, quotedMessageID uuid.UUID) error
+	GetFileLinkIDsForMessage(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error)
+	PermanentlyDeleteMessage(ctx context.Context, id uuid.UUID) error
 
 	// Chat file group operations
 	CreateChatFileGroup(ctx context.Context, group *model.ChatFileGroup) error
@@ -700,11 +705,134 @@ func (r *chatRepository) UpdateMessage(ctx context.Context, message *model.Messa
 	return nil
 }
 
-func (r *chatRepository) DeleteMessage(ctx context.Context, id uuid.UUID) error {
-	query := `UPDATE con_test.messages SET is_deleted = true, updated_at = $2 WHERE id = $1`
-	result, err := r.pool.Exec(ctx, query, id, time.Now())
+func (r *chatRepository) DeleteMessage(ctx context.Context, id, deletedBy uuid.UUID, isModeratedDeletion bool) error {
+	now := time.Now()
+
+	// Get current content before deletion
+	var currentContent string
+	err := r.pool.QueryRow(ctx, `SELECT content FROM con_test.messages WHERE id = $1`, id).Scan(&currentContent)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrMessageNotFound
+		}
+		return fmt.Errorf("failed to get message content: %w", err)
+	}
+
+	// Update message with soft delete metadata
+	query := `
+		UPDATE con_test.messages
+		SET is_deleted = true,
+			deleted_at = $2,
+			deleted_by = $3,
+			is_moderated_deletion = $4,
+			original_content = content,
+			content = '',
+			updated_at = $2
+		WHERE id = $1
+	`
+	result, err := r.pool.Exec(ctx, query, id, now, deletedBy, isModeratedDeletion)
 	if err != nil {
 		return fmt.Errorf("failed to delete message: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrMessageNotFound
+	}
+	return nil
+}
+
+func (r *chatRepository) RestoreMessage(ctx context.Context, id uuid.UUID) error {
+	now := time.Now()
+	query := `
+		UPDATE con_test.messages
+		SET is_deleted = false,
+			content = COALESCE(original_content, ''),
+			deleted_at = NULL,
+			deleted_by = NULL,
+			is_moderated_deletion = false,
+			original_content = NULL,
+			updated_at = $2
+		WHERE id = $1 AND is_deleted = true
+	`
+	result, err := r.pool.Exec(ctx, query, id, now)
+	if err != nil {
+		return fmt.Errorf("failed to restore message: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrMessageNotFound
+	}
+	return nil
+}
+
+func (r *chatRepository) GetDeletedMessagesOlderThan(ctx context.Context, cutoffTime time.Time, limit int) ([]uuid.UUID, error) {
+	query := `
+		SELECT id
+		FROM con_test.messages
+		WHERE is_deleted = true
+		  AND deleted_at IS NOT NULL
+		  AND deleted_at < $1
+		ORDER BY deleted_at ASC
+		LIMIT $2
+	`
+	rows, err := r.pool.Query(ctx, query, cutoffTime, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get old deleted messages: %w", err)
+	}
+	defer rows.Close()
+
+	var messageIDs []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan message id: %w", err)
+		}
+		messageIDs = append(messageIDs, id)
+	}
+
+	return messageIDs, nil
+}
+
+func (r *chatRepository) RemoveMessageFromReplies(ctx context.Context, quotingMessageID, quotedMessageID uuid.UUID) error {
+	query := `DELETE FROM con_test.message_replies WHERE message_id = $1 AND reply_to_message_id = $2`
+	result, err := r.pool.Exec(ctx, query, quotingMessageID, quotedMessageID)
+	if err != nil {
+		return fmt.Errorf("failed to remove from replies: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return errors.New("reply relationship not found")
+	}
+	return nil
+}
+
+func (r *chatRepository) GetFileLinkIDsForMessage(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error) {
+	query := `
+		SELECT file_link_id
+		FROM con_test.message_file_attachments
+		WHERE message_id = $1
+		ORDER BY sort_order
+	`
+	rows, err := r.pool.Query(ctx, query, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file link IDs: %w", err)
+	}
+	defer rows.Close()
+
+	var linkIDs []uuid.UUID
+	for rows.Next() {
+		var linkID uuid.UUID
+		if err := rows.Scan(&linkID); err != nil {
+			return nil, fmt.Errorf("failed to scan file link ID: %w", err)
+		}
+		linkIDs = append(linkIDs, linkID)
+	}
+	return linkIDs, nil
+}
+
+func (r *chatRepository) PermanentlyDeleteMessage(ctx context.Context, id uuid.UUID) error {
+	// This will cascade delete message_file_attachments, message_replies, reactions, etc.
+	query := `DELETE FROM con_test.messages WHERE id = $1`
+	result, err := r.pool.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to permanently delete message: %w", err)
 	}
 	if result.RowsAffected() == 0 {
 		return ErrMessageNotFound

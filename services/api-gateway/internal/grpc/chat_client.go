@@ -432,3 +432,21 @@ func (c *ChatClient) CreateSubthread(ctx context.Context, parentThreadID, title 
 		CreatedBy:      createdBy,
 	})
 }
+
+// Message deletion/restoration operations
+
+func (c *ChatClient) RestoreMessage(ctx context.Context, messageID, userID string) (*pb.Message, error) {
+	return c.client.RestoreMessage(ctx, &pb.RestoreMessageRequest{
+		MessageId: messageID,
+		UserId:    userID,
+	})
+}
+
+func (c *ChatClient) RemoveFromQuote(ctx context.Context, messageID, quotedMessageID, userID string) error {
+	_, err := c.client.RemoveFromQuote(ctx, &pb.RemoveFromQuoteRequest{
+		MessageId:       messageID,
+		QuotedMessageId: quotedMessageID,
+		UserId:          userID,
+	})
+	return err
+}

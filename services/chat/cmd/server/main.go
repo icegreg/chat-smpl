@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
+	"github.com/icegreg/chat-smpl/pkg/migrate"
 	"github.com/icegreg/chat-smpl/pkg/postgres"
 	"github.com/icegreg/chat-smpl/pkg/rabbitmq"
 	pb "github.com/icegreg/chat-smpl/proto/chat"
@@ -21,6 +22,7 @@ import (
 	chatgrpc "github.com/icegreg/chat-smpl/services/chat/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/chat/internal/repository"
 	"github.com/icegreg/chat-smpl/services/chat/internal/service"
+	migrations "github.com/icegreg/chat-smpl/services/chat/migrations"
 	"go.uber.org/zap"
 )
 
@@ -61,6 +63,15 @@ func main() {
 		logger.Fatal("failed to connect to database", zap.Error(err))
 	}
 	defer postgres.Close(pool)
+
+	// Run database migrations
+	if err := migrate.RunWithDSN(cfg.DatabaseURL, migrate.Config{
+		ServiceName:    "chat",
+		MigrationsFS:   migrations.FS,
+		MigrationsPath: ".",
+	}); err != nil {
+		logger.Fatal("failed to run migrations", zap.Error(err))
+	}
 
 	// Connect to RabbitMQ
 	var publisher events.Publisher

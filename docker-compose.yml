@@ -14,7 +14,6 @@ services:
       - "5435:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chatapp -d chatapp"]
       interval: 5s
@@ -22,6 +21,26 @@ services:
       retries: 5
     networks:
       - chatapp-network
+
+  db-migrate:
+    image: postgres:16-alpine
+    container_name: chatapp-db-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: chatapp
+      DB_PASSWORD: secret
+      DB_NAME: chatapp
+    volumes:
+      - ./migrations:/migrations:ro
+      - ./scripts/run-migrations.sh:/run-migrations.sh:ro
+    entrypoint: ["/bin/sh", "/run-migrations.sh"]
+    networks:
+      - chatapp-network
+    restart: "no"
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -113,12 +132,37 @@ services:
       - RABBITMQ_URL=amqp://chatapp:secret@rabbitmq:5672/
       - GRPC_PORT=50051
       - FILES_SERVICE_ADDR=files-service:50053
+      - MESSAGE_RETENTION_DAYS=${MESSAGE_RETENTION_DAYS:-30}
     ports:
       - "50051:50051"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      files-service:
+        condition: service_started
+    networks:
+      - chatapp-network
+
+  # Message cleanup job - run manually or via cron
+  # Usage: docker-compose --profile cleanup run --rm message-cleanup
+  # Or with dry-run: docker-compose --profile cleanup run --rm -e CLEANUP_DRY_RUN=true message-cleanup
+  message-cleanup:
+    profiles:
+      - cleanup
+    build:
+      context: .
+      dockerfile: services/chat/Dockerfile.cleanup
+    container_name: chatapp-message-cleanup
+    environment:
+      - DATABASE_URL=postgres://chatapp:secret@postgres:5432/chatapp?sslmode=disable
+      - FILES_SERVICE_ADDR=files-service:50053
+      - MESSAGE_RETENTION_DAYS=${MESSAGE_RETENTION_DAYS:-30}
+      - CLEANUP_BATCH_SIZE=${CLEANUP_BATCH_SIZE:-100}
+      - CLEANUP_DRY_RUN=${CLEANUP_DRY_RUN:-false}
+    depends_on:
+      postgres:
         condition: service_healthy
       files-service:
         condition: service_started

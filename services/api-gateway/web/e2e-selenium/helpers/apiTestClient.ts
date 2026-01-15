@@ -408,10 +408,33 @@ export class ApiTestClient {
   }
 
   /**
-   * Удалить сообщение
+   * Удалить сообщение (soft delete)
    */
   async deleteMessage(messageId: string): Promise<void> {
     await this.request('DELETE', `/api/chats/messages/${messageId}`)
+  }
+
+  /**
+   * Восстановить удалённое сообщение
+   */
+  async restoreMessage(messageId: string): Promise<any> {
+    const { data } = await this.request('POST', `/api/chats/messages/${messageId}/restore`)
+    return data
+  }
+
+  /**
+   * Найти сообщение по ID в чате
+   */
+  async findMessageInChat(chatId: string, messageId: string): Promise<any | null> {
+    const { messages } = await this.getMessages(chatId, 1, 100)
+    return messages.find((m: any) => m.id === messageId) || null
+  }
+
+  /**
+   * Удалить сообщение из цитирования (только для модераторов)
+   */
+  async removeFromQuote(messageId: string, quotedMessageId: string): Promise<void> {
+    await this.request('DELETE', `/api/chats/messages/${messageId}/quote/${quotedMessageId}`)
   }
 
   /**

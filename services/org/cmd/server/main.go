@@ -12,8 +12,10 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"github.com/icegreg/chat-smpl/pkg/logger"
+	"github.com/icegreg/chat-smpl/pkg/migrate"
 	"github.com/icegreg/chat-smpl/pkg/postgres"
 	pb "github.com/icegreg/chat-smpl/proto/org"
+	migrations "github.com/icegreg/chat-smpl/services/org/migrations"
 	orggrpc "github.com/icegreg/chat-smpl/services/org/internal/grpc"
 	"github.com/icegreg/chat-smpl/services/org/internal/repository"
 	"github.com/icegreg/chat-smpl/services/org/internal/service"
@@ -55,6 +57,15 @@ func main() {
 	defer pool.Close()
 
 	log.Info("connected to database")
+
+	// Run database migrations
+	if err := migrate.RunWithDSN(cfg.DatabaseURL, migrate.Config{
+		ServiceName:    "org",
+		MigrationsFS:   migrations.FS,
+		MigrationsPath: ".",
+	}); err != nil {
+		log.Fatal("failed to run migrations", "error", err)
+	}
 
 	// Initialize layers
 	orgRepo := repository.NewOrgRepository(pool)

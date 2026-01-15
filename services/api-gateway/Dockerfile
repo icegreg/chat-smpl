@@ -8,7 +8,7 @@ RUN npm ci
 COPY services/api-gateway/web/ ./
 RUN npm run build
 
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -18,6 +18,7 @@ COPY go.mod go.sum ./
 COPY proto/chat ./proto/chat
 COPY proto/voice ./proto/voice
 COPY pkg/metrics ./pkg/metrics
+COPY pkg/migrate ./pkg/migrate
 RUN go mod download
 
 # Install protoc plugins
@@ -26,11 +27,11 @@ RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0 && \
 
 COPY . .
 
-# Generate voice proto files
+# Generate proto files (chat, files, voice)
 RUN protoc -I /usr/include -I . \
     --go_out=. --go_opt=paths=source_relative \
     --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-    proto/voice/*.proto
+    proto/chat/*.proto proto/files/*.proto proto/voice/*.proto
 
 # Install swag for swagger generation
 RUN go install github.com/swaggo/swag/cmd/swag@latest

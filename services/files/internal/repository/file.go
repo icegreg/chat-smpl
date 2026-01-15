@@ -38,6 +38,10 @@ type FileRepository interface {
 	GetFileLinkByFileID(ctx context.Context, fileID uuid.UUID) (*model.FileLink, error)
 	DeleteFileLink(ctx context.Context, id uuid.UUID) error
 	SoftDeleteFileLink(ctx context.Context, id uuid.UUID) error
+	BatchSoftDeleteFileLinks(ctx context.Context, ids []uuid.UUID) error
+	RestoreFileLinks(ctx context.Context, ids []uuid.UUID) error
+	GetOrphanFileIDs(ctx context.Context, linkIDs []uuid.UUID) ([]uuid.UUID, error)
+	BatchDeleteFileLinks(ctx context.Context, ids []uuid.UUID) (int, error)
 
 	// Individual permissions
 	CreateFileLinkPermission(ctx context.Context, perm *model.FileLinkPermission) error
@@ -242,6 +246,75 @@ func (r *fileRepository) SoftDeleteFileLink(ctx context.Context, id uuid.UUID) e
 		return ErrFileLinkNotFound
 	}
 	return nil
+}
+
+func (r *fileRepository) BatchSoftDeleteFileLinks(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	query := `UPDATE con_test.file_links SET is_deleted = true WHERE id = ANY($1)`
+	_, err := r.pool.Exec(ctx, query, ids)
+	if err != nil {
+		return fmt.Errorf("failed to batch soft delete file links: %w", err)
+	}
+	return nil
+}
+
+func (r *fileRepository) RestoreFileLinks(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	query := `UPDATE con_test.file_links SET is_deleted = false WHERE id = ANY($1)`
+	_, err := r.pool.Exec(ctx, query, ids)
+	if err != nil {
+		return fmt.Errorf("failed to restore file links: %w", err)
+	}
+	return nil
+}
+
+func (r *fileRepository) GetOrphanFileIDs(ctx context.Context, linkIDs []uuid.UUID) ([]uuid.UUID, error) {
+	if len(linkIDs) == 0 {
+		return nil, nil
+	}
+	// Find files that have no active (non-deleted) links remaining after deleting the given linkIDs
+	query := `
+		SELECT DISTINCT fl.file_id
+		FROM con_test.file_links fl
+		WHERE fl.id = ANY($1)
+		  AND NOT EXISTS (
+			SELECT 1 FROM con_test.file_links other
+			WHERE other.file_id = fl.file_id
+			  AND other.id != ALL($1)
+			  AND other.is_deleted = false
+		  )
+	`
+	rows, err := r.pool.Query(ctx, query, linkIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get orphan file IDs: %w", err)
+	}
+	defer rows.Close()
+
+	var fileIDs []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan file ID: %w", err)
+		}
+		fileIDs = append(fileIDs, id)
+	}
+	return fileIDs, nil
+}
+
+func (r *fileRepository) BatchDeleteFileLinks(ctx context.Context, ids []uuid.UUID) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	query := `DELETE FROM con_test.file_links WHERE id = ANY($1)`
+	result, err := r.pool.Exec(ctx, query, ids)
+	if err != nil {
+		return 0, fmt.Errorf("failed to batch delete file links: %w", err)
+	}
+	return int(result.RowsAffected()), nil
 }
 
 // Permissions

@@ -59,6 +59,29 @@ func (m *MockUserRepository) List(ctx context.Context, page, count int) ([]model
 	return args.Get(0).([]model.User), args.Int(1), args.Error(2)
 }
 
+func (m *MockUserRepository) Search(ctx context.Context, query string, page, count int) ([]model.User, int, error) {
+	args := m.Called(ctx, query, page, count)
+	return args.Get(0).([]model.User), args.Int(1), args.Error(2)
+}
+
+func (m *MockUserRepository) GetByExtension(ctx context.Context, extension string) (*model.User, error) {
+	args := m.Called(ctx, extension)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*model.User), args.Error(1)
+}
+
+func (m *MockUserRepository) GetNextExtension(ctx context.Context) (string, error) {
+	args := m.Called(ctx)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockUserRepository) AssignExtension(ctx context.Context, userID uuid.UUID) (string, error) {
+	args := m.Called(ctx, userID)
+	return args.String(0), args.Error(1)
+}
+
 func (m *MockUserRepository) Update(ctx context.Context, user *model.User) error {
 	args := m.Called(ctx, user)
 	return args.Error(0)

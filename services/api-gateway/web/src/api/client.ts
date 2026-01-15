@@ -29,6 +29,7 @@ import type {
   ConferenceHistory,
   ModeratorAction,
   ChatFile,
+  UsersSearchResponse,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -301,6 +302,14 @@ class ApiClient {
     return this.request<User>('PUT', '/auth/me', data)
   }
 
+  // User search
+  async searchUsers(query: string, page = 1, count = 20): Promise<UsersSearchResponse> {
+    return this.request<UsersSearchResponse>(
+      'GET',
+      `/users?q=${encodeURIComponent(query)}&page=${page}&count=${count}`
+    )
+  }
+
   // Chat endpoints
   async getChats(limit = 20, offset = 0): Promise<{ chats: Chat[]; total: number }> {
     return this.request<{ chats: Chat[]; total: number }>(
@@ -362,6 +371,14 @@ class ApiClient {
 
   async deleteMessage(messageId: string): Promise<void> {
     return this.request<void>('DELETE', `/chats/messages/${messageId}`)
+  }
+
+  async restoreMessage(messageId: string): Promise<Message> {
+    return this.request<Message>('POST', `/chats/messages/${messageId}/restore`)
+  }
+
+  async removeFromQuote(messageId: string, quotedMessageId: string): Promise<void> {
+    return this.request<void>('DELETE', `/chats/messages/${messageId}/quote/${quotedMessageId}`)
   }
 
   // Sync messages after reconnect

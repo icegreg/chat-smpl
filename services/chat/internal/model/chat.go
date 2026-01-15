@@ -77,6 +77,10 @@ type Message struct {
 	SentAt                 time.Time   `json:"sent_at" db:"sent_at"`
 	UpdatedAt              *time.Time  `json:"updated_at,omitempty" db:"updated_at"`
 	IsDeleted              bool        `json:"is_deleted" db:"is_deleted"`
+	DeletedAt              *time.Time  `json:"deleted_at,omitempty" db:"deleted_at"`
+	DeletedBy              *uuid.UUID  `json:"deleted_by,omitempty" db:"deleted_by"`
+	IsModeratedDeletion    bool        `json:"is_moderated_deletion" db:"is_moderated_deletion"`
+	OriginalContent        *string     `json:"-" db:"original_content"` // Not exposed in API, used for restoration
 	IsSystem               bool        `json:"is_system" db:"is_system"`
 	SeqNum                 int64       `json:"seq_num" db:"seq_num"` // Sequence number for reliable sync
 	ForwardedFromMessageID *uuid.UUID  `json:"forwarded_from_message_id,omitempty" db:"forwarded_from_message_id"`

@@ -106,6 +106,8 @@ func (h *ChatHandler) Routes() chi.Router {
 	r.Post("/{chatId}/messages", h.SendMessage)
 	r.Put("/messages/{messageId}", h.UpdateMessage)
 	r.Delete("/messages/{messageId}", h.DeleteMessage)
+	r.Post("/messages/{messageId}/restore", h.RestoreMessage)
+	r.Delete("/messages/{messageId}/quote/{quotedMessageId}", h.RemoveFromQuote)
 
 	// Reaction routes
 	r.Post("/messages/{messageId}/reactions", h.AddReaction)
@@ -458,7 +460,7 @@ func (h *ChatHandler) RemoveParticipant(w http.ResponseWriter, r *http.Request) 
 	chatID := chi.URLParam(r, "chatId")
 	targetUserID := chi.URLParam(r, "userId")
 
-	if err := h.chatClient.RemoveParticipant(ctx, chatID, userID.String(), targetUserID); err != nil {
+	if err := h.chatClient.RemoveParticipant(ctx, chatID, targetUserID, userID.String()); err != nil {
 		h.handleGRPCError(w, err)
 		return
 	}
@@ -1616,4 +1618,66 @@ func (h *ChatHandler) enrichMessagesWithFiles(ctx context.Context, messages []*p
 	}
 
 	return result
+}
+
+// RestoreMessage godoc
+// @Summary Restore a deleted message
+// @Description Restores a soft-deleted message within retention period
+// @Tags messages
+// @Security Bearer
+// @Param messageId path string true "Message ID"
+// @Success 200 {object} pb.Message "Message restored successfully"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "No permission to restore"
+// @Failure 404 {object} ErrorResponse "Message not found"
+// @Failure 412 {object} ErrorResponse "Message is not deleted or retention expired"
+// @Router /chats/messages/{messageId}/restore [post]
+func (h *ChatHandler) RestoreMessage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	messageID := chi.URLParam(r, "messageId")
+
+	msg, err := h.chatClient.RestoreMessage(ctx, messageID, userID.String())
+	if err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, msg)
+}
+
+// RemoveFromQuote godoc
+// @Summary Remove message from quote (moderator only)
+// @Description Removes a quoted message reference from another message
+// @Tags messages
+// @Security Bearer
+// @Param messageId path string true "Message ID with quote"
+// @Param quotedMessageId path string true "Quoted Message ID to remove"
+// @Success 204 "Quote removed"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 403 {object} ErrorResponse "No permission (moderator required)"
+// @Failure 404 {object} ErrorResponse "Message not found"
+// @Router /chats/messages/{messageId}/quote/{quotedMessageId} [delete]
+func (h *ChatHandler) RemoveFromQuote(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	messageID := chi.URLParam(r, "messageId")
+	quotedMessageID := chi.URLParam(r, "quotedMessageId")
+
+	if err := h.chatClient.RemoveFromQuote(ctx, messageID, quotedMessageID, userID.String()); err != nil {
+		h.handleGRPCError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

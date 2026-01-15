@@ -31,6 +31,8 @@ service ChatService {
     rpc SyncMessages(SyncMessagesRequest) returns (SyncMessagesResponse);
     rpc UpdateMessage(UpdateMessageRequest) returns (Message);
     rpc DeleteMessage(DeleteMessageRequest) returns (google.protobuf.Empty);
+    rpc RestoreMessage(RestoreMessageRequest) returns (Message);
+    rpc RemoveFromQuote(RemoveFromQuoteRequest) returns (google.protobuf.Empty);
     rpc GetThreadMessages(GetThreadMessagesRequest) returns (ListMessagesResponse);
     rpc ForwardMessage(ForwardMessageRequest) returns (Message);
 
@@ -146,6 +148,9 @@ message Message {
     bool is_system = 19;    // True for system-generated messages
     repeated string reply_to_ids = 20;      // IDs of messages this is replying to
     repeated Message reply_to_messages = 21; // Full message data for replies (populated on read)
+    google.protobuf.Timestamp deleted_at = 22;  // When message was deleted (null if not deleted)
+    string deleted_by = 23;                      // UUID of user who deleted (author or moderator)
+    bool is_moderated_deletion = 24;             // True if deleted by moderator, false if by author
 }
 
 message Thread {
@@ -344,6 +349,17 @@ message UpdateMessageRequest {
 message DeleteMessageRequest {
     string message_id = 1;
     string user_id = 2;
+}
+
+message RestoreMessageRequest {
+    string message_id = 1;
+    string user_id = 2;
+}
+
+message RemoveFromQuoteRequest {
+    string message_id = 1;        // Message that contains the quote
+    string quoted_message_id = 2; // Message to remove from quotes
+    string user_id = 3;           // User performing the action (must be moderator)
 }
 
 message GetThreadMessagesRequest {

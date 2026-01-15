@@ -105,6 +105,30 @@ async function deleteMessage() {
   }
 }
 
+async function restoreMessage() {
+  try {
+    await chatStore.restoreMessage(props.message.id)
+  } catch (error) {
+    console.error('Failed to restore message:', error)
+  }
+}
+
+function canRestore(): boolean {
+  // Can restore if message is deleted and user is author or moderator
+  if (!props.message.is_deleted) return false
+  // Author can always restore their own messages
+  if (props.isOwn) return true
+  // Moderators can restore any message - check user role
+  return props.currentUser.role === 'owner' || props.currentUser.role === 'moderator'
+}
+
+function getDeletedMessageText(): string {
+  if (props.message.is_moderated_deletion) {
+    return '🛡️ Удалено модератором'
+  }
+  return '🗑️ Сообщение удалено'
+}
+
 async function addReaction(emoji: string) {
   await chatStore.addReaction(props.message.id, emoji)
   showActions.value = false
@@ -387,13 +411,31 @@ function getReplyToMessages(): Message[] {
           </div>
         </div>
 
+        <!-- Deleted message display -->
+        <div v-else-if="message.is_deleted" class="flex items-center gap-2" data-testid="message-deleted">
+          <span class="italic" :class="isOwn ? 'text-indigo-200' : 'text-gray-400'">
+            {{ getDeletedMessageText() }}
+          </span>
+          <!-- Restore button -->
+          <button
+            v-if="canRestore()"
+            @click="restoreMessage"
+            class="text-xs px-2 py-0.5 rounded transition-colors"
+            :class="isOwn ? 'bg-indigo-400 hover:bg-indigo-300 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-600'"
+            title="Восстановить сообщение"
+            data-testid="restore-button"
+          >
+            ↩️ Восстановить
+          </button>
+        </div>
+
         <!-- Normal display -->
         <p v-else-if="message.content" class="whitespace-pre-wrap break-words" :class="{ 'text-left': !isOwn }">
           {{ message.content }}
         </p>
 
-        <!-- File attachments -->
-        <div v-if="message.file_attachments?.length" class="mt-2 space-y-2">
+        <!-- File attachments (hidden for deleted messages) -->
+        <div v-if="message.file_attachments?.length && !message.is_deleted" class="mt-2 space-y-2">
           <template v-for="attachment in message.file_attachments" :key="attachment.link_id">
             <!-- Image preview -->
             <a
@@ -445,9 +487,9 @@ function getReplyToMessages(): Message[] {
           </template>
         </div>
 
-        <!-- Actions -->
+        <!-- Actions (hidden for deleted messages) -->
         <div
-          v-if="showActions && !isEditing"
+          v-if="showActions && !isEditing && !message.is_deleted"
           class="absolute -top-8 flex items-center gap-1 bg-white border rounded-lg shadow-lg p-1"
           :class="isOwn ? 'right-0' : 'left-0'"
         >

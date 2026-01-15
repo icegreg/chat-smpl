@@ -224,7 +224,10 @@ export const useChatStore = defineStore('chat', () => {
         handleMessageUpdate(event.data as Message)
         break
       case 'message.deleted':
-        handleMessageDelete((event.data as { message_id: string }).message_id)
+        handleMessageDelete(event.data as { message_id: string; chat_id: string; is_moderated_deletion?: boolean })
+        break
+      case 'message.restored':
+        handleMessageRestored(event.data as Message)
         break
       case 'typing':
         handleTyping(event.chat_id, event.actor_id, (event.data as { is_typing: boolean }).is_typing)
@@ -289,10 +292,32 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function handleMessageDelete(messageId: string) {
-    const index = messages.value.findIndex((m) => m.id === messageId)
+  function handleMessageDelete(data: { message_id: string; chat_id: string; is_moderated_deletion?: boolean }) {
+    const index = messages.value.findIndex((m) => m.id === data.message_id)
     if (index !== -1) {
-      messages.value.splice(index, 1)
+      // Mark as deleted instead of removing (soft delete)
+      messages.value[index] = {
+        ...messages.value[index],
+        is_deleted: true,
+        is_moderated_deletion: data.is_moderated_deletion || false,
+        content: '', // Clear content for privacy
+        deleted_at: new Date().toISOString(),
+      }
+    }
+  }
+
+  function handleMessageRestored(message: Message) {
+    const index = messages.value.findIndex((m) => m.id === message.id)
+    if (index !== -1) {
+      // Update message with restored data
+      messages.value[index] = {
+        ...messages.value[index],
+        ...message,
+        is_deleted: false,
+        is_moderated_deletion: false,
+        deleted_at: undefined,
+        deleted_by: undefined,
+      }
     }
   }
 
@@ -448,8 +473,8 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
     try {
       const chat = await api.createChat(data)
-      chats.value.unshift(chat)
-      // Chat events will come via user channel, no per-chat subscription needed
+      // Don't add chat here - it will be added via 'chat.created' event from WebSocket
+      // This prevents duplicate chats appearing in the list
       return chat
     } catch (e) {
       error.value = e instanceof ApiError ? e.message : 'Failed to create chat'
@@ -534,6 +559,43 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function restoreMessage(messageId: string) {
+    error.value = null
+    try {
+      const message = await api.restoreMessage(messageId)
+      // Update local state
+      const index = messages.value.findIndex((m) => m.id === messageId)
+      if (index !== -1) {
+        messages.value[index] = message
+      }
+      return message
+    } catch (e) {
+      error.value = e instanceof ApiError ? e.message : 'Failed to restore message'
+      throw e
+    }
+  }
+
+  async function removeFromQuote(messageId: string, quotedMessageId: string) {
+    error.value = null
+    try {
+      await api.removeFromQuote(messageId, quotedMessageId)
+      // Update local state - remove the quoted message reference
+      const index = messages.value.findIndex((m) => m.id === messageId)
+      if (index !== -1) {
+        const msg = messages.value[index]
+        if (msg.reply_to_ids) {
+          msg.reply_to_ids = msg.reply_to_ids.filter(id => id !== quotedMessageId)
+        }
+        if (msg.reply_to_messages) {
+          msg.reply_to_messages = msg.reply_to_messages.filter(m => m.id !== quotedMessageId)
+        }
+      }
+    } catch (e) {
+      error.value = e instanceof ApiError ? e.message : 'Failed to remove from quote'
+      throw e
+    }
+  }
+
   async function forwardMessage(
     message: Message,
     sourceChatId: string,
@@ -592,6 +654,42 @@ export const useChatStore = defineStore('chat', () => {
       }
     } catch (e) {
       console.error('Failed to toggle favorite', e)
+    }
+  }
+
+  async function deleteChat(chatId: string) {
+    error.value = null
+    try {
+      await api.deleteChat(chatId)
+      // handleChatDeleted will be called via WebSocket event
+    } catch (e) {
+      error.value = e instanceof ApiError ? e.message : 'Не удалось удалить чат'
+      throw e
+    }
+  }
+
+  async function addParticipant(chatId: string, userId: string, role = 'member') {
+    error.value = null
+    try {
+      await api.addParticipant(chatId, userId, role)
+      // Refresh participants list
+      const result = await api.getParticipants(chatId)
+      participants.value = result.participants || []
+    } catch (e) {
+      error.value = e instanceof ApiError ? e.message : 'Не удалось добавить участника'
+      throw e
+    }
+  }
+
+  async function removeParticipant(chatId: string, userId: string) {
+    error.value = null
+    try {
+      await api.removeParticipant(chatId, userId)
+      // Remove from local state
+      participants.value = participants.value.filter(p => p.user_id !== userId)
+    } catch (e) {
+      error.value = e instanceof ApiError ? e.message : 'Не удалось удалить участника'
+      throw e
     }
   }
 
@@ -737,9 +835,14 @@ export const useChatStore = defineStore('chat', () => {
     fetchChats,
     selectChat,
     createChat,
+    deleteChat,
+    addParticipant,
+    removeParticipant,
     sendMessage,
     updateMessage,
     deleteMessage,
+    restoreMessage,
+    removeFromQuote,
     forwardMessage,
     addReaction,
     removeReaction,

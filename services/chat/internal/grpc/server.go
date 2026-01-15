@@ -65,6 +65,10 @@ func handleError(err error) error {
 		return status.Error(codes.PermissionDenied, "access denied")
 	case errors.Is(err, service.ErrCannotWriteChat):
 		return status.Error(codes.PermissionDenied, "cannot write to this chat")
+	case errors.Is(err, service.ErrMessageNotDeleted):
+		return status.Error(codes.FailedPrecondition, "message is not deleted")
+	case errors.Is(err, service.ErrRetentionExpired):
+		return status.Error(codes.FailedPrecondition, "retention period expired")
 	default:
 		return status.Error(codes.Internal, err.Error())
 	}
@@ -141,19 +145,26 @@ func messageToProto(m *model.Message) *pb.Message {
 		return nil
 	}
 	msg := &pb.Message{
-		Id:        m.ID.String(),
-		ChatId:    m.ChatID.String(),
-		SenderId:  m.SenderID.String(),
-		Content:   m.Content,
-		SentAt:    timestamppb.New(m.SentAt),
-		IsDeleted: m.IsDeleted,
-		SeqNum:    m.SeqNum,
+		Id:                  m.ID.String(),
+		ChatId:              m.ChatID.String(),
+		SenderId:            m.SenderID.String(),
+		Content:             m.Content,
+		SentAt:              timestamppb.New(m.SentAt),
+		IsDeleted:           m.IsDeleted,
+		SeqNum:              m.SeqNum,
+		IsModeratedDeletion: m.IsModeratedDeletion,
 	}
 	if m.ParentID != nil {
 		msg.ParentId = m.ParentID.String()
 	}
 	if m.UpdatedAt != nil {
 		msg.UpdatedAt = timestamppb.New(*m.UpdatedAt)
+	}
+	if m.DeletedAt != nil {
+		msg.DeletedAt = timestamppb.New(*m.DeletedAt)
+	}
+	if m.DeletedBy != nil {
+		msg.DeletedBy = m.DeletedBy.String()
 	}
 	if m.SenderUsername != nil {
 		msg.SenderUsername = *m.SenderUsername
@@ -1339,6 +1350,47 @@ func (s *ChatServer) CreateSubthread(ctx context.Context, req *pb.CreateSubthrea
 	}
 
 	return threadToProto(thread), nil
+}
+
+// Message deletion/restoration operations
+
+func (s *ChatServer) RestoreMessage(ctx context.Context, req *pb.RestoreMessageRequest) (*pb.Message, error) {
+	messageID, err := parseUUID(req.MessageId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid message_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	message, err := s.chatService.RestoreMessage(ctx, messageID, userID)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return messageToProto(message), nil
+}
+
+func (s *ChatServer) RemoveFromQuote(ctx context.Context, req *pb.RemoveFromQuoteRequest) (*emptypb.Empty, error) {
+	messageID, err := parseUUID(req.MessageId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid message_id")
+	}
+	quotedMessageID, err := parseUUID(req.QuotedMessageId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid quoted_message_id")
+	}
+	userID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	if err := s.chatService.RemoveFromQuote(ctx, messageID, quotedMessageID, userID); err != nil {
+		return nil, handleError(err)
+	}
+
+	return &emptypb.Empty{}, nil
 }
 
 // Poll operations - not implemented yet, using UnimplementedChatServiceServer

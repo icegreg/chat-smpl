@@ -18,7 +18,9 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"github.com/icegreg/chat-smpl/pkg/metrics"
+	"github.com/icegreg/chat-smpl/pkg/migrate"
 	pb "github.com/icegreg/chat-smpl/proto/voice"
+	migrations "github.com/icegreg/chat-smpl/services/voice/migrations"
 	"github.com/icegreg/chat-smpl/services/voice/internal/chatclient"
 	"github.com/icegreg/chat-smpl/services/voice/internal/config"
 	"github.com/icegreg/chat-smpl/services/voice/internal/esl"
@@ -62,6 +64,15 @@ func main() {
 		logger.Fatal("failed to ping database", zap.Error(err))
 	}
 	logger.Info("connected to database")
+
+	// Run database migrations
+	if err := migrate.RunWithDSN(cfg.DatabaseURL, migrate.Config{
+		ServiceName:    "voice",
+		MigrationsFS:   migrations.FS,
+		MigrationsPath: ".",
+	}); err != nil {
+		logger.Fatal("failed to run migrations", zap.Error(err))
+	}
 
 	// Initialize ESL client
 	eslClient := esl.NewClient(
