@@ -138,6 +138,7 @@ func main() {
 	filesHandler := handler.NewFilesHandler(filesServiceURL, log)
 	presenceHandler := handler.NewPresenceHandler(presenceClient, log)
 	voiceHandler := handler.NewVoiceHandler(voiceClient, log)
+	eventsHandler := handler.NewEventsHandler()
 
 	// Create router
 	r := chi.NewRouter()
@@ -219,6 +220,11 @@ func main() {
 		r.Route("/voice", func(r chi.Router) {
 			r.Use(authMiddleware.Authenticate)
 			r.Mount("/", voiceHandler.Routes())
+		})
+
+		// Events documentation (public)
+		r.Route("/events", func(r chi.Router) {
+			r.Mount("/", eventsHandler.Routes())
 		})
 	})
 

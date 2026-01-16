@@ -1,0 +1,1114 @@
+asyncapi: '2.6.0'
+info:
+  title: ChatApp WebSocket Events API
+  version: '1.0.0'
+  description: |
+    Real-time события, доставляемые клиентам через Centrifugo WebSocket.
+
+    ## Архитектура
+    ```
+    Service → RabbitMQ → WebSocket Service → Centrifugo → Client
+    ```
+
+    ## Каналы подписки
+    - `user:{userId}` - персональные события пользователя
+    - `chat:{chatId}` - события конкретного чата
+    - `presence:global` - глобальные события присутствия
+  contact:
+    name: API Support
+  license:
+    name: MIT
+
+servers:
+  development:
+    url: ws://localhost:8888/connection/websocket
+    protocol: ws
+    description: Development Centrifugo WebSocket endpoint
+  production:
+    url: wss://your-domain.com/connection/websocket
+    protocol: wss
+    description: Production Centrifugo WebSocket endpoint
+
+defaultContentType: application/json
+
+channels:
+  # ===== CHAT EVENTS =====
+  chat.created:
+    description: Создан новый чат
+    subscribe:
+      operationId: onChatCreated
+      summary: Получение события создания чата
+      message:
+        $ref: '#/components/messages/ChatCreated'
+
+  chat.updated:
+    description: Чат обновлён (название, описание)
+    subscribe:
+      operationId: onChatUpdated
+      summary: Получение события обновления чата
+      message:
+        $ref: '#/components/messages/ChatUpdated'
+
+  chat.deleted:
+    description: Чат удалён
+    subscribe:
+      operationId: onChatDeleted
+      summary: Получение события удаления чата
+      message:
+        $ref: '#/components/messages/ChatDeleted'
+
+  # ===== MESSAGE EVENTS =====
+  message.created:
+    description: Новое сообщение в чате
+    subscribe:
+      operationId: onMessageCreated
+      summary: Получение нового сообщения
+      message:
+        $ref: '#/components/messages/MessageCreated'
+
+  message.updated:
+    description: Сообщение отредактировано
+    subscribe:
+      operationId: onMessageUpdated
+      summary: Получение события редактирования сообщения
+      message:
+        $ref: '#/components/messages/MessageUpdated'
+
+  message.deleted:
+    description: Сообщение удалено (soft delete)
+    subscribe:
+      operationId: onMessageDeleted
+      summary: Получение события удаления сообщения
+      message:
+        $ref: '#/components/messages/MessageDeleted'
+
+  message.restored:
+    description: Сообщение восстановлено
+    subscribe:
+      operationId: onMessageRestored
+      summary: Получение события восстановления сообщения
+      message:
+        $ref: '#/components/messages/MessageRestored'
+
+  # ===== TYPING EVENTS =====
+  typing:
+    description: Индикатор набора текста
+    subscribe:
+      operationId: onTyping
+      summary: Получение события набора текста
+      message:
+        $ref: '#/components/messages/Typing'
+
+  # ===== REACTION EVENTS =====
+  reaction.added:
+    description: Добавлена реакция на сообщение
+    subscribe:
+      operationId: onReactionAdded
+      summary: Получение события добавления реакции
+      message:
+        $ref: '#/components/messages/ReactionAdded'
+
+  reaction.removed:
+    description: Удалена реакция с сообщения
+    subscribe:
+      operationId: onReactionRemoved
+      summary: Получение события удаления реакции
+      message:
+        $ref: '#/components/messages/ReactionRemoved'
+
+  # ===== THREAD EVENTS =====
+  thread.created:
+    description: Создан новый тред
+    subscribe:
+      operationId: onThreadCreated
+      summary: Получение события создания треда
+      message:
+        $ref: '#/components/messages/ThreadCreated'
+
+  thread.archived:
+    description: Тред заархивирован
+    subscribe:
+      operationId: onThreadArchived
+      summary: Получение события архивации треда
+      message:
+        $ref: '#/components/messages/ThreadArchived'
+
+  # ===== VOICE/CONFERENCE EVENTS =====
+  conference.created:
+    description: Создана новая конференция
+    subscribe:
+      operationId: onConferenceCreated
+      summary: Получение события создания конференции
+      message:
+        $ref: '#/components/messages/ConferenceCreated'
+
+  conference.ended:
+    description: Конференция завершена
+    subscribe:
+      operationId: onConferenceEnded
+      summary: Получение события завершения конференции
+      message:
+        $ref: '#/components/messages/ConferenceEnded'
+
+  conference.scheduled:
+    description: Запланирована новая конференция
+    subscribe:
+      operationId: onConferenceScheduled
+      summary: Получение события планирования конференции
+      message:
+        $ref: '#/components/messages/ConferenceScheduled'
+
+  conference.cancelled:
+    description: Запланированная конференция отменена
+    subscribe:
+      operationId: onConferenceCancelled
+      summary: Получение события отмены конференции
+      message:
+        $ref: '#/components/messages/ConferenceCancelled'
+
+  conference.rsvp_updated:
+    description: Обновлён RSVP статус участника
+    subscribe:
+      operationId: onRSVPUpdated
+      summary: Получение события обновления RSVP
+      message:
+        $ref: '#/components/messages/RSVPUpdated'
+
+  conference.reminder:
+    description: Напоминание о предстоящей конференции
+    subscribe:
+      operationId: onConferenceReminder
+      summary: Получение напоминания о конференции
+      message:
+        $ref: '#/components/messages/ConferenceReminder'
+
+  # ===== PARTICIPANT EVENTS =====
+  participant.joined:
+    description: Участник присоединился к конференции
+    subscribe:
+      operationId: onParticipantJoined
+      summary: Получение события присоединения участника
+      message:
+        $ref: '#/components/messages/ParticipantJoined'
+
+  participant.left:
+    description: Участник покинул конференцию
+    subscribe:
+      operationId: onParticipantLeft
+      summary: Получение события выхода участника
+      message:
+        $ref: '#/components/messages/ParticipantLeft'
+
+  participant.muted:
+    description: Изменён статус mute участника
+    subscribe:
+      operationId: onParticipantMuted
+      summary: Получение события mute/unmute участника
+      message:
+        $ref: '#/components/messages/ParticipantMuted'
+
+  participant.speaking:
+    description: Участник начал/прекратил говорить
+    subscribe:
+      operationId: onParticipantSpeaking
+      summary: Получение события говорения участника
+      message:
+        $ref: '#/components/messages/ParticipantSpeaking'
+
+  participant.role_changed:
+    description: Изменена роль участника в конференции
+    subscribe:
+      operationId: onParticipantRoleChanged
+      summary: Получение события изменения роли
+      message:
+        $ref: '#/components/messages/ParticipantRoleChanged'
+
+  participant.added:
+    description: Участник добавлен в конференцию
+    subscribe:
+      operationId: onParticipantAdded
+      summary: Получение события добавления участника
+      message:
+        $ref: '#/components/messages/ParticipantAdded'
+
+  participant.removed:
+    description: Участник удалён из конференции
+    subscribe:
+      operationId: onParticipantRemoved
+      summary: Получение события удаления участника
+      message:
+        $ref: '#/components/messages/ParticipantRemoved'
+
+  # ===== CALL EVENTS =====
+  call.initiated:
+    description: Инициирован звонок
+    subscribe:
+      operationId: onCallInitiated
+      summary: Получение события входящего звонка
+      message:
+        $ref: '#/components/messages/CallInitiated'
+
+  call.answered:
+    description: Звонок принят
+    subscribe:
+      operationId: onCallAnswered
+      summary: Получение события принятия звонка
+      message:
+        $ref: '#/components/messages/CallAnswered'
+
+  call.ended:
+    description: Звонок завершён
+    subscribe:
+      operationId: onCallEnded
+      summary: Получение события завершения звонка
+      message:
+        $ref: '#/components/messages/CallEnded'
+
+components:
+  messages:
+    # ===== CHAT MESSAGES =====
+    ChatCreated:
+      name: ChatCreated
+      title: Чат создан
+      summary: Событие создания нового чата
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ChatEvent'
+
+    ChatUpdated:
+      name: ChatUpdated
+      title: Чат обновлён
+      summary: Событие обновления чата
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ChatEvent'
+
+    ChatDeleted:
+      name: ChatDeleted
+      title: Чат удалён
+      summary: Событие удаления чата
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ChatDeletedEvent'
+
+    # ===== MESSAGE MESSAGES =====
+    MessageCreated:
+      name: MessageCreated
+      title: Сообщение создано
+      summary: Событие нового сообщения
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MessageEvent'
+      examples:
+        - name: TextMessage
+          summary: Текстовое сообщение
+          payload:
+            type: message.created
+            timestamp: '2024-01-15T10:30:00Z'
+            actor_id: '550e8400-e29b-41d4-a716-446655440000'
+            chat_id: '660e8400-e29b-41d4-a716-446655440001'
+            participants:
+              - '550e8400-e29b-41d4-a716-446655440000'
+              - '550e8400-e29b-41d4-a716-446655440001'
+            data:
+              id: '770e8400-e29b-41d4-a716-446655440002'
+              chat_id: '660e8400-e29b-41d4-a716-446655440001'
+              sender_id: '550e8400-e29b-41d4-a716-446655440000'
+              content: 'Привет! Как дела?'
+              sent_at: '2024-01-15T10:30:00Z'
+              sender_username: 'john_doe'
+              sender_display_name: 'John Doe'
+
+    MessageUpdated:
+      name: MessageUpdated
+      title: Сообщение обновлено
+      summary: Событие редактирования сообщения
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MessageEvent'
+
+    MessageDeleted:
+      name: MessageDeleted
+      title: Сообщение удалено
+      summary: Событие удаления сообщения
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MessageDeletedEvent'
+
+    MessageRestored:
+      name: MessageRestored
+      title: Сообщение восстановлено
+      summary: Событие восстановления сообщения
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MessageRestoredEvent'
+
+    # ===== TYPING =====
+    Typing:
+      name: Typing
+      title: Набор текста
+      summary: Индикатор набора текста
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TypingEvent'
+
+    # ===== REACTIONS =====
+    ReactionAdded:
+      name: ReactionAdded
+      title: Реакция добавлена
+      summary: Событие добавления реакции
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ReactionEvent'
+
+    ReactionRemoved:
+      name: ReactionRemoved
+      title: Реакция удалена
+      summary: Событие удаления реакции
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ReactionEvent'
+
+    # ===== THREADS =====
+    ThreadCreated:
+      name: ThreadCreated
+      title: Тред создан
+      summary: Событие создания треда
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ThreadEvent'
+
+    ThreadArchived:
+      name: ThreadArchived
+      title: Тред заархивирован
+      summary: Событие архивации треда
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ThreadEvent'
+
+    # ===== CONFERENCE =====
+    ConferenceCreated:
+      name: ConferenceCreated
+      title: Конференция создана
+      summary: Событие создания конференции
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConferenceEvent'
+
+    ConferenceEnded:
+      name: ConferenceEnded
+      title: Конференция завершена
+      summary: Событие завершения конференции
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConferenceEvent'
+
+    ConferenceScheduled:
+      name: ConferenceScheduled
+      title: Конференция запланирована
+      summary: Событие планирования конференции
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ScheduledConferenceEvent'
+
+    ConferenceCancelled:
+      name: ConferenceCancelled
+      title: Конференция отменена
+      summary: Событие отмены конференции
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ScheduledConferenceEvent'
+
+    RSVPUpdated:
+      name: RSVPUpdated
+      title: RSVP обновлён
+      summary: Событие обновления RSVP статуса
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RSVPUpdatedEvent'
+
+    ConferenceReminder:
+      name: ConferenceReminder
+      title: Напоминание о конференции
+      summary: Событие напоминания о предстоящей конференции
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConferenceReminderEvent'
+
+    # ===== PARTICIPANTS =====
+    ParticipantJoined:
+      name: ParticipantJoined
+      title: Участник присоединился
+      summary: Событие присоединения участника
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ParticipantEvent'
+
+    ParticipantLeft:
+      name: ParticipantLeft
+      title: Участник вышел
+      summary: Событие выхода участника
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ParticipantEvent'
+
+    ParticipantMuted:
+      name: ParticipantMuted
+      title: Участник muted
+      summary: Событие изменения mute статуса
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ParticipantEvent'
+
+    ParticipantSpeaking:
+      name: ParticipantSpeaking
+      title: Участник говорит
+      summary: Событие говорения участника
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SpeakingEvent'
+
+    ParticipantRoleChanged:
+      name: ParticipantRoleChanged
+      title: Роль участника изменена
+      summary: Событие изменения роли участника
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ParticipantRoleChangedEvent'
+
+    ParticipantAdded:
+      name: ParticipantAdded
+      title: Участник добавлен
+      summary: Событие добавления участника
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ParticipantEvent'
+
+    ParticipantRemoved:
+      name: ParticipantRemoved
+      title: Участник удалён
+      summary: Событие удаления участника
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ParticipantRemovedEvent'
+
+    # ===== CALLS =====
+    CallInitiated:
+      name: CallInitiated
+      title: Звонок инициирован
+      summary: Событие входящего звонка
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CallEvent'
+
+    CallAnswered:
+      name: CallAnswered
+      title: Звонок принят
+      summary: Событие принятия звонка
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CallEvent'
+
+    CallEnded:
+      name: CallEnded
+      title: Звонок завершён
+      summary: Событие завершения звонка
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CallEvent'
+
+  schemas:
+    # ===== BASE EVENT WRAPPER =====
+    BaseEvent:
+      type: object
+      description: Базовая структура события
+      required:
+        - type
+        - timestamp
+        - actor_id
+        - chat_id
+        - participants
+        - data
+      properties:
+        type:
+          type: string
+          description: Тип события
+          example: message.created
+        timestamp:
+          type: string
+          format: date-time
+          description: Время события (RFC3339)
+          example: '2024-01-15T10:30:00Z'
+        actor_id:
+          type: string
+          format: uuid
+          description: ID пользователя, инициировавшего событие
+          example: '550e8400-e29b-41d4-a716-446655440000'
+        chat_id:
+          type: string
+          format: uuid
+          description: ID чата
+          example: '660e8400-e29b-41d4-a716-446655440001'
+        participants:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Список ID участников, которым доставляется событие
+        data:
+          type: object
+          description: Payload события (зависит от типа)
+
+    # ===== CHAT SCHEMAS =====
+    ChatData:
+      type: object
+      description: Данные чата
+      required:
+        - id
+        - name
+        - chat_type
+        - created_by
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID чата
+        name:
+          type: string
+          description: Название чата
+        chat_type:
+          type: string
+          enum: [direct, group, channel]
+          description: Тип чата
+        created_by:
+          type: string
+          format: uuid
+          description: ID создателя чата
+
+    ChatEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ChatData'
+
+    ChatDeletedEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                chat_id:
+                  type: string
+                  format: uuid
+
+    # ===== MESSAGE SCHEMAS =====
+    MessageData:
+      type: object
+      description: Данные сообщения
+      required:
+        - id
+        - chat_id
+        - sender_id
+        - content
+        - sent_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID сообщения
+        chat_id:
+          type: string
+          format: uuid
+          description: ID чата
+        sender_id:
+          type: string
+          format: uuid
+          description: ID отправителя
+        content:
+          type: string
+          description: Текст сообщения
+        sent_at:
+          type: string
+          format: date-time
+          description: Время отправки
+        updated_at:
+          type: string
+          format: date-time
+          description: Время последнего редактирования
+        parent_id:
+          type: string
+          format: uuid
+          description: ID родительского сообщения (для reply)
+        sender_username:
+          type: string
+          description: Username отправителя
+        sender_display_name:
+          type: string
+          description: Display name отправителя
+        sender_avatar_url:
+          type: string
+          format: uri
+          description: URL аватара отправителя
+        file_link_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: IDs прикреплённых файлов
+
+    MessageEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/MessageData'
+
+    MessageDeletedData:
+      type: object
+      required:
+        - message_id
+        - chat_id
+        - is_moderated_deletion
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        chat_id:
+          type: string
+          format: uuid
+        is_moderated_deletion:
+          type: boolean
+          description: True если удалено модератором
+
+    MessageDeletedEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/MessageDeletedData'
+
+    MessageRestoredData:
+      type: object
+      required:
+        - message_id
+        - chat_id
+        - sender_id
+        - content
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        chat_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+
+    MessageRestoredEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/MessageRestoredData'
+
+    # ===== TYPING SCHEMA =====
+    TypingData:
+      type: object
+      required:
+        - user_id
+        - is_typing
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: ID пользователя, который печатает
+        is_typing:
+          type: boolean
+          description: True если печатает, false если прекратил
+
+    TypingEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TypingData'
+
+    # ===== REACTION SCHEMA =====
+    ReactionData:
+      type: object
+      required:
+        - message_id
+        - emoji
+        - user_id
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        emoji:
+          type: string
+          description: Emoji реакции
+          example: '👍'
+        user_id:
+          type: string
+          format: uuid
+
+    ReactionEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ReactionData'
+
+    # ===== THREAD SCHEMA =====
+    ThreadData:
+      type: object
+      required:
+        - id
+        - chat_id
+        - thread_type
+        - message_count
+        - is_archived
+        - restricted_participants
+      properties:
+        id:
+          type: string
+          format: uuid
+        chat_id:
+          type: string
+          format: uuid
+        parent_message_id:
+          type: string
+          format: uuid
+        thread_type:
+          type: string
+          enum: [user, system, conference]
+        title:
+          type: string
+        message_count:
+          type: integer
+        created_by:
+          type: string
+          format: uuid
+        is_archived:
+          type: boolean
+        restricted_participants:
+          type: boolean
+
+    ThreadEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ThreadData'
+
+    # ===== CONFERENCE SCHEMAS =====
+    ConferenceData:
+      type: object
+      required:
+        - id
+        - name
+        - created_by
+        - status
+        - max_members
+        - participant_count
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        chat_id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, ended]
+        max_members:
+          type: integer
+        participant_count:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    ConferenceEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        chat_id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, ended]
+        max_members:
+          type: integer
+        participant_count:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    ScheduledConferenceEvent:
+      allOf:
+        - $ref: '#/components/schemas/ConferenceEvent'
+        - type: object
+          properties:
+            event_type:
+              type: string
+              enum: [adhoc, adhoc_chat, scheduled, recurring]
+            scheduled_at:
+              type: string
+              format: date-time
+            series_id:
+              type: string
+              format: uuid
+            accepted_count:
+              type: integer
+            declined_count:
+              type: integer
+
+    RSVPUpdatedEvent:
+      type: object
+      required:
+        - conference_id
+        - user_id
+        - rsvp_status
+      properties:
+        conference_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        rsvp_status:
+          type: string
+          enum: [pending, accepted, declined]
+
+    ConferenceReminderEvent:
+      type: object
+      required:
+        - conference_id
+        - user_id
+        - conference_name
+        - scheduled_at
+        - minutes_before
+      properties:
+        conference_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        conference_name:
+          type: string
+        scheduled_at:
+          type: string
+          format: date-time
+        minutes_before:
+          type: integer
+          description: За сколько минут до начала отправлено напоминание
+
+    # ===== PARTICIPANT SCHEMAS =====
+    ParticipantData:
+      type: object
+      required:
+        - id
+        - conference_id
+        - user_id
+        - status
+        - is_muted
+        - is_deaf
+        - is_speaking
+      properties:
+        id:
+          type: string
+          format: uuid
+        conference_id:
+          type: string
+          format: uuid
+        chat_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [connecting, joined, left, kicked]
+        is_muted:
+          type: boolean
+        is_deaf:
+          type: boolean
+        is_speaking:
+          type: boolean
+        username:
+          type: string
+        display_name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        joined_at:
+          type: string
+          format: date-time
+        left_at:
+          type: string
+          format: date-time
+
+    ParticipantEvent:
+      $ref: '#/components/schemas/ParticipantData'
+
+    SpeakingEvent:
+      type: object
+      required:
+        - participant_id
+        - is_speaking
+      properties:
+        participant_id:
+          type: string
+          format: uuid
+        is_speaking:
+          type: boolean
+
+    ParticipantRoleChangedEvent:
+      type: object
+      required:
+        - conference_id
+        - user_id
+        - old_role
+        - new_role
+      properties:
+        conference_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        old_role:
+          type: string
+          enum: [originator, moderator, speaker, assistant, participant]
+        new_role:
+          type: string
+          enum: [originator, moderator, speaker, assistant, participant]
+
+    ParticipantRemovedEvent:
+      type: object
+      required:
+        - conference_id
+        - user_id
+      properties:
+        conference_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+
+    # ===== CALL SCHEMAS =====
+    CallData:
+      type: object
+      required:
+        - id
+        - caller_id
+        - callee_id
+        - status
+        - duration
+      properties:
+        id:
+          type: string
+          format: uuid
+        caller_id:
+          type: string
+          format: uuid
+        callee_id:
+          type: string
+          format: uuid
+        chat_id:
+          type: string
+          format: uuid
+        conference_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [initiated, ringing, answered, ended, missed, failed]
+        duration:
+          type: integer
+          description: Длительность в секундах
+        end_reason:
+          type: string
+        caller_username:
+          type: string
+        caller_display_name:
+          type: string
+        callee_username:
+          type: string
+        callee_display_name:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        answered_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+
+    CallEvent:
+      $ref: '#/components/schemas/CallData'
+
+tags:
+  - name: chat
+    description: События чатов
+  - name: message
+    description: События сообщений
+  - name: typing
+    description: Индикаторы набора текста
+  - name: reaction
+    description: Реакции на сообщения
+  - name: thread
+    description: События тредов
+  - name: conference
+    description: События конференций
+  - name: participant
+    description: События участников конференций
+  - name: call
+    description: События звонков
