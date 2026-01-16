@@ -327,7 +327,7 @@ services:
       - "3478:3478/udp"      # STUN/TURN UDP
       - "3478:3478/tcp"      # STUN/TURN TCP
       - "5349:5349/tcp"      # TURN over TLS
-      - "49152-49252:49152-49252/udp"  # Relay ports
+      - "10000-10100:10000-10100/udp"  # Relay ports
     volumes:
       - ./deployments/coturn/turnserver.conf:/etc/turnserver.conf:ro
     command: -c /etc/turnserver.conf
