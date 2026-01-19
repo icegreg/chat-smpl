@@ -138,6 +138,7 @@ func main() {
 	filesHandler := handler.NewFilesHandler(filesServiceURL, log)
 	presenceHandler := handler.NewPresenceHandler(presenceClient, log)
 	voiceHandler := handler.NewVoiceHandler(voiceClient, log)
+	eventsDocsHandler := handler.NewEventsDocsHandler()
 
 	// Create router
 	r := chi.NewRouter()
@@ -174,6 +175,12 @@ func main() {
 
 	// API routes
 	r.Route("/api", func(r chi.Router) {
+		// Documentation routes (public)
+		r.Route("/docs", func(r chi.Router) {
+			r.Get("/events", eventsDocsHandler.GetEventsJSON)
+			r.Get("/events.html", eventsDocsHandler.GetEventsHTML)
+		})
+
 		// Auth routes (public)
 		r.Route("/auth", func(r chi.Router) {
 			// Public routes

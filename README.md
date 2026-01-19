@@ -97,6 +97,28 @@ make docker-down
 make docker-clean
 ```
 
+## API Документация
+
+После запуска приложения доступны следующие страницы документации:
+
+| Страница | URL | Описание |
+|----------|-----|----------|
+| **Swagger UI** | http://localhost:8888/swagger/index.html | REST API документация (OpenAPI) |
+| **WebSocket Events** | http://localhost:8888/api/docs/events.html | Документация WebSocket событий Centrifugo |
+| **Events JSON Schema** | http://localhost:8888/api/docs/events | JSON схема всех WebSocket событий |
+
+### WebSocket Events
+
+Все события доставляются через Centrifugo в персональный канал пользователя `user:{userId}`.
+
+Типы событий:
+- `chat.*` — создание, обновление, удаление чатов
+- `message.*` — сообщения (created, updated, deleted, restored)
+- `reaction.*` — реакции на сообщения
+- `thread.*` — треды
+- `typing` — индикатор набора текста
+- `conference.*`, `participant.*`, `call.*` — голосовые вызовы
+
 ## Разработка
 
 ### Локальный запуск сервисов
